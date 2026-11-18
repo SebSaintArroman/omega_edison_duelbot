@@ -1,0 +1,51 @@
+# One deck's own tuning: its numbers and its rules' hold costs (card units; each rule its own number).
+# The shared numbers are in bot-tuning.txt. Edit a value and restart the bot (or a DuelSim run).
+
+# --- VayuBotBrain
+VayuBotBrain.BurialBaitAt = 2   # Burial-worthy banished monsters needed to set it as bait (chained when they try to remove it).
+VayuBotBrain.BurialRankNecro = 2   # Burial / Miracle Dig pick rank: Necro Gardna with none in the graveyard.
+VayuBotBrain.BurialRankNecroSecond = 0.5   # Burial / Miracle Dig pick rank: a second Necro Gardna.
+VayuBotBrain.BurialRankPartnerEven = 1.5   # Burial / Miracle Dig pick rank: a partner with as many Vayus as partners.
+VayuBotBrain.BurialRankPartnerShort = 10   # Burial / Miracle Dig pick rank: a partner while we have more Vayus than partners.
+VayuBotBrain.BurialRankPartnerSpare = 0.3   # Burial / Miracle Dig pick rank: a partner beyond the Vayus (below Necro Gardna).
+VayuBotBrain.BurialRankPlague = 6   # Burial / Miracle Dig pick rank: Plaguespreader with none in the graveyard.
+VayuBotBrain.BurialRankPlagueSecond = 1   # Burial / Miracle Dig pick rank: a second Plaguespreader.
+VayuBotBrain.BurialRankVayuEven = 7.5   # Burial / Miracle Dig pick rank: a Vayu with as many partners as Vayus.
+VayuBotBrain.BurialRankVayuShort = 10   # Burial / Miracle Dig pick rank (high first): a Vayu while we have more partners than Vayus.
+VayuBotBrain.BurialRankVayuSpare = 4   # Burial / Miracle Dig pick rank: a Vayu beyond the partners.
+VayuBotBrain.DadDeadHandValue = 0.5   # Dark Armed Dragon in hand that can't be made live, in rough card points.
+VayuBotBrain.DadLiveHandValue = 7   # Dark Armed Dragon in hand that is live (or can be made live), in rough card points (discard / Allure choices).
+VayuBotBrain.DadLiveSetupValue = 1.2   # The search's setup value for Dark Armed Dragon in hand with exactly 3 DARKs in the graveyard (card units).
+VayuBotBrain.DadNearSetupValue = 0.4   # The search's setup value for Dark Armed Dragon in hand with 2 DARKs in the graveyard (card units).
+VayuBotBrain.HandToGraveChance = 0.35   # Chance a Vayu / partner in hand reaches the graveyard soon (set and destroyed, a cost...). Tune from logs.
+VayuBotBrain.HandToGraveWithOutletChance = 0.8   # The same with a discard outlet (Dark Grepher in hand or on the field). Tune from logs.
+VayuBotBrain.NormalSummonPlayCost = 0.5   # The turn planner's cost for using the Normal Summon in a play.
+VayuBotBrain.RecursionPlayCost = 2.5   # The turn planner's cost for a recursion play (Return from the Different Dimension / Burial) that brings Vayus back.
+VayuBotBrain.TrooperSetupValue = 1   # The search's setup value for a face-up Card Trooper of ours (a mill engine for Vayu and Dark Armed Dragon), card units.
+VayuBotBrain.UnpairedSendGain = 0.4   # Which DARK to send from the deck (Armageddon Knight / Dark Grepher), best first: - Plaguespreader if the opponent has a face-up 2300-2800 ATK monster a level 6 synchro can beat, - Vayu (graveyard-only effect), then its partner Sirocco (unless a partner is already in or headed for the GY), - a second / third Vayu, - Plaguespreader (a synchro play of its own), - Necro Gardna (a nice to have), - e...
+VayuBotBrain.HoldCost.vayu.armed-wing-stepping-stone = 1.5
+VayuBotBrain.HoldCost.vayu.black-rose-wipe = 1.5
+VayuBotBrain.HoldCost.vayu.chaos-effect = 1.5
+VayuBotBrain.HoldCost.vayu.chaos-summon = 1.5
+VayuBotBrain.HoldCost.vayu.combo-lethal = 1.5
+VayuBotBrain.HoldCost.vayu.dad-effect = 1.5
+VayuBotBrain.HoldCost.vayu.dad-summon = 1.5
+VayuBotBrain.HoldCost.vayu.dad-trim = 1.5
+VayuBotBrain.HoldCost.vayu.effect-synchro = 1.5
+VayuBotBrain.HoldCost.vayu.extra-deck-synchro = 1.5
+VayuBotBrain.HoldCost.vayu.grepher-effect = 1.5
+VayuBotBrain.HoldCost.vayu.grepher-special-for-lethal = 1.5
+VayuBotBrain.HoldCost.vayu.hold-ascendant = 1.5
+VayuBotBrain.HoldCost.vayu.hold-dad-effect-for-vayu-pieces = 1.5
+VayuBotBrain.HoldCost.vayu.hold-grepher-for-dad = 1.5
+VayuBotBrain.HoldCost.vayu.hold-knight-for-dad = 1.5
+VayuBotBrain.HoldCost.vayu.necro-for-last-moment = 1.5
+VayuBotBrain.HoldCost.vayu.necro-gardna = 1.5
+VayuBotBrain.HoldCost.vayu.necro-not-on-own-monster = 1.5
+VayuBotBrain.HoldCost.vayu.necro-protects-only-clock = 1.5
+VayuBotBrain.HoldCost.vayu.plague-synchro = 1.5
+VayuBotBrain.HoldCost.vayu.recursion-for-vayu = 1.5
+VayuBotBrain.HoldCost.vayu.summon-armageddon = 1.5
+VayuBotBrain.HoldCost.vayu.summon-grepher = 1.5
+VayuBotBrain.HoldCost.vayu.vayu-plague-level8 = 1.5
+VayuBotBrain.HoldCost.vayu.vayu-synchro = 1.5

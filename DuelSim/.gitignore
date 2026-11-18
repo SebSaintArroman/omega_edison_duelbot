@@ -1,0 +1,6 @@
+# Downloaded by setup.ps1 (engine, card scripts, card database, engine headers)
+vendor/
+# Simulation results
+out/
+bin/
+obj/

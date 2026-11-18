@@ -1,0 +1,57 @@
+# One deck's own tuning: its numbers and its rules' hold costs (card units; each rule its own number).
+# The shared numbers are in bot-tuning.txt. Edit a value and restart the bot (or a DuelSim run).
+
+# --- MachinaBotBrain
+MachinaBotBrain.BetterThanKillerMargin = 1000   # How much more threat (OpponentThreat points) another card needs before Fortress's trigger skips its killer. Tune from logs.
+MachinaBotBrain.ExplorationRate = 0.75   # Fire rate of the rules under test (see ExplorationRules).
+MachinaBotBrain.ForceFodderHandValue = 1   # Machina Force in hand with no Fortress in the graveyard (only fodder), in rough card points.
+MachinaBotBrain.ForceReadySetupValue = 1   # The search's setup value for Machina Force with 8+ Levels of Machine fodder ready.
+MachinaBotBrain.FortressBanishRiskLimit1 = 0.15
+MachinaBotBrain.FortressBanishRiskLimit2 = 0.25
+MachinaBotBrain.FortressBanishRiskLimit3 = 0.35   # Bottomless chance from which a Fortress summon is held, with 3 / 2 / 1 Fortress(es) not banished. Tune from logs.
+MachinaBotBrain.FortressDeathOwnShare = 0.5   # Machina Fortress destroyed by battle: what it gains, the killer's threat + this share of its own (it comes back).
+MachinaBotBrain.FortressHandValue = 3.5   # Machina Fortress (or Machina Force with a Fortress to revive) in hand, in rough card points.
+MachinaBotBrain.GraveJinzoValue = 0.4   # The search's value for Jinzo in our graveyard (Machina Jinzo list: Jinzo - Returner revives it), card units.
+MachinaBotBrain.SetCardIsBottomlessChance = 0.08   # Bottomless chance per set card without deck-list data. Tune from logs.
+MachinaBotBrain.SolemnPerBanishedFortress = 0.3   # Added per Fortress already banished (fewer left, each one matters more). 0.3: with two gone, the last Fortress is always protected (0.4 + 2 x 0.3 = 100%). Tune from logs.
+MachinaBotBrain.SolemnSavesFortressChance = 0.4   # Base chance to Solemn a banish aimed at Fortress. Tune from logs.
+MachinaBotBrain.UnionOnFortressMinThreat = 0.15   # Effect-destruction chance from which a union equips to a Fortress. Tune from logs.
+MachinaBotBrain.HoldCost.machina.armageddon-send = 1.5
+MachinaBotBrain.HoldCost.machina.avarice-for-value = 1.5
+MachinaBotBrain.HoldCost.machina.avarice-when-no-play = 1.5
+MachinaBotBrain.HoldCost.machina.brionac-bounce = 1.5
+MachinaBotBrain.HoldCost.machina.compulsory-gearframe = 1.5
+MachinaBotBrain.HoldCost.machina.cyber-dragon-pressure = 1.5
+MachinaBotBrain.HoldCost.machina.dad-effect = 1.5
+MachinaBotBrain.HoldCost.machina.dark-armed-dragon = 1.5
+MachinaBotBrain.HoldCost.machina.fortress-banish-risk = 1.5
+MachinaBotBrain.HoldCost.machina.fortress-for-pressure = 1.5
+MachinaBotBrain.HoldCost.machina.fortress-from-grave = 1.5
+MachinaBotBrain.HoldCost.machina.fortress-from-hand = 1.5
+MachinaBotBrain.HoldCost.machina.fortress-last-resort = 1.5
+MachinaBotBrain.HoldCost.machina.fortress-pops-its-killer = 1.5
+MachinaBotBrain.HoldCost.machina.fortress-when-no-board = 1.5
+MachinaBotBrain.HoldCost.machina.future-fusion-finish = 1.5
+MachinaBotBrain.HoldCost.machina.future-fusion-materials = 1.5
+MachinaBotBrain.HoldCost.machina.hold-fodder = 1.5
+MachinaBotBrain.HoldCost.machina.knight-before-costly-fortress = 1.5
+MachinaBotBrain.HoldCost.machina.overload-for-lethal = 1.5
+MachinaBotBrain.HoldCost.machina.phoenix-against-d-prison = 1.5
+MachinaBotBrain.HoldCost.machina.plague-synchro = 1.5
+MachinaBotBrain.HoldCost.machina.returner-crash = 1.5
+MachinaBotBrain.HoldCost.machina.returner-set = 1.5
+MachinaBotBrain.HoldCost.machina.set-flip-every-turn = 1.5
+MachinaBotBrain.HoldCost.machina.summon-gearframe = 1.5
+MachinaBotBrain.HoldCost.machina.traps-under-jinzo = 1.5
+MachinaBotBrain.HoldCost.machina.union-equip-after-battle = 1.5
+MachinaBotBrain.HoldCost.machina.union-equip-for-mirror = 1.5
+MachinaBotBrain.HoldCost.machina.union-equip-fortress = 1.5
+MachinaBotBrain.HoldCost.machina.union-equip-protect = 1.5
+MachinaBotBrain.HoldCost.machina.union-equip-safety = 1.5
+MachinaBotBrain.HoldCost.machina.union-equip-worth-it = 1.5
+MachinaBotBrain.HoldCost.machina.union-not-with-phoenix = 1.5
+MachinaBotBrain.HoldCost.machina.union-unequip-for-phoenix = 1.5
+
+# added 2026-11-17 15:32 (new in the code since the file was written)
+# --- MachinaBotBrain
+MachinaBotBrain.HoldCost.machina.gearframe-search = 3

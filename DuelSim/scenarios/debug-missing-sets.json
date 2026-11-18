@@ -1,0 +1,13 @@
+// Duel 2026-11-09_235856 Blackwing-vs-Vayu duel 1, turn 3: the rebuild kept only 1 of our 2 set cards (and 1 of their 2).
+{
+  "deck": "Blackwing", "opponent": "Vayu", "lp": [6300, 8000], "turn": 3, "phase": "main1", "decision": "idle",
+  "ours": {
+    "spells": [ { "id": 70342110, "zone": 0, "set": true }, { "id": 83968380, "zone": 1, "set": true } ],
+    "hand": [ 75498415, 75498415, 60082869 ]
+  },
+  "theirs": {
+    "monsters": [ { "id": 14536035, "zone": 0 } ],
+    "spells": [ { "zone": 0, "set": true }, { "zone": 1, "set": true } ],
+    "handCount": 1
+  }
+}

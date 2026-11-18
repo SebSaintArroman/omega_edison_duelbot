@@ -1,0 +1,19 @@
+// Live game 2026-11-10, MachinaControl turn 16, Main Phase 1 (log decision #168): Plaguespreader is out; Goyo or Brionac?
+// Their X-Saber deck isn't a bot deck: Vayu stands in for their hidden cards. Brionac (discard 1, bounce Catastor) then
+// attacks for 2300 into 600 LP: lethal unless their set card stops it.
+{
+  "deck": "MachinaControl", "opponent": "Vayu", "lp": [7900, 600], "turn": 16, "phase": "main1", "decision": "idle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 33420078, "zone": 2 }, { "id": 7359741, "zone": 3 } ],
+    "spells": [ { "id": 41420027, "zone": 2, "set": true } ],
+    "hand": [ 44330098, 5556499 ],
+    "grave": [ 64697231, 24508238, 58054262, 22624393, 53582587, 29401950 ]
+  },
+  "theirs": {
+    "monsters": [ { "id": 26593852, "zone": 1 } ],
+    "spells": [ { "zone": 0, "set": true } ],
+    "handCount": 3,
+    "grave": [ 70368879, 32807846, 70342110, 5318639, 44095762 ]
+  }
+}

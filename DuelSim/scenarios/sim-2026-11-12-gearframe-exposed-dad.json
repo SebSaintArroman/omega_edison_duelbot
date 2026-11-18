@@ -1,0 +1,13 @@
+// DuelSim 2026-11-12 (round robin, Miracle Vayu vs Machina Jinzo) MachinaJinzo turn 6 Main 2, 700 LP: Machina Fortress
+// (attacked) and Machina Gearframe (1800, ATK) against Dark Armed Dragon (2800), their hand empty. DAD into Gearframe is
+// lethal (1000); into Fortress it isn't (300). The search kept "end the turn" because its play-out DAD attacked Fortress;
+// equipping Gearframe to Fortress removes the exposed body (round-robin entries 2 and 3).
+{
+  "deck": "MachinaJinzo", "opponent": "Vayu", "lp": [700, 7200], "turn": 6, "phase": "main2", "decision": "idle",
+  "normalSummonUsed": false,
+  "ours": {
+    "monsters": [ { "id": 5556499, "zone": 1, "attacked": true }, { "id": 42940404, "zone": 2 } ],
+    "hand": [ 28985331, 19613556, 9418534 ]
+  },
+  "theirs": { "monsters": [ { "id": 65192027, "zone": 1 } ], "handCount": 0 }
+}

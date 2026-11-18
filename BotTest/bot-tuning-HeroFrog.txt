@@ -1,0 +1,70 @@
+# One deck's own tuning: its numbers and its rules' hold costs (card units; each rule its own number).
+# The shared numbers are in bot-tuning.txt. Edit a value and restart the bot (or a DuelSim run).
+
+# --- HeroFrogBotBrain
+HeroFrogBotBrain.CaiusDarkTargetShare = 0.8   # Caius targets their DARK monster (+1000 damage) when it's at least this share of their biggest threat.
+HeroFrogBotBrain.DupeLockValue = 2   # The search's setup value for the Dupe Frog lock (two face-up Dupe Frogs).
+HeroFrogBotBrain.DupeOneValue = 0.3   # The search's setup value for one face-up Dupe Frog.
+HeroFrogBotBrain.FaderMinDamage = 1500   # Direct-attack damage from which Battle Fader comes out (LP matter little above ~1500). Tune from logs.
+HeroFrogBotBrain.MonarchHoldTributeCost = 4.5   # A Monarch is held when our cheapest tribute costs at least this (a boss-level monster of ours).
+HeroFrogBotBrain.RaizaComesBackFactor = 0.5   # Raiza's value on a face-up Level 5+ main-deck monster (comes straight back): its threat x this.
+HeroFrogBotBrain.RaizaGoneForGoodFactor = 1.5   # Raiza's value on an Extra Deck monster or token (gone for good): its threat x this.
+HeroFrogBotBrain.TreebornBlockedValue = -1   # The search's setup value for Treeborn Frog in our graveyard while a spell/trap of ours blocks it (negative: a cost).
+HeroFrogBotBrain.TreebornLiveValue = 0   # The search's setup value for Treeborn Frog in our graveyard with no spell/trap of ours out (it comes back).
+HeroFrogBotBrain.TributeAbsoluteZero = 5   # Tribute order: Absolute Zero otherwise.
+HeroFrogBotBrain.TributeAbsoluteZeroLive = 0.5   # Tribute order: Absolute Zero while they have 2+ monsters (its wipe is live).
+HeroFrogBotBrain.TributeBattleFader = 1.7   # Tribute order: Battle Fader.
+HeroFrogBotBrain.TributeDesFrog = 1.8   # Tribute order: Des Frog (expendable once it has attacked).
+HeroFrogBotBrain.TributeDupe = 2.4   # Tribute order: a Dupe Frog otherwise.
+HeroFrogBotBrain.TributeDupeLock = 4   # Tribute order: a Dupe Frog while the lock (2 Dupes) is up.
+HeroFrogBotBrain.TributeInfernalProdigy = 1.6   # Tribute order: Infernal Prodigy.
+HeroFrogBotBrain.TributeJunkSynchron = 2.5   # Tribute order: Junk Synchron.
+HeroFrogBotBrain.TributeOceanStratos = 3.3   # Tribute order: Elemental HERO Ocean / Stratos.
+HeroFrogBotBrain.TributeSubstitoad = 3.2   # Tribute order: Substitoad.
+HeroFrogBotBrain.TributeSwapFrog = 2   # Tribute order: Swap Frog.
+HeroFrogBotBrain.TributeToken = 1.5   # Tribute order: a token.
+HeroFrogBotBrain.HoldCost.herofrog.aoi-strip = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.battle-fader = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.brain-control-tribute = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.clear-zone-for-treeborn = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.doomed-set-used = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.dupe-lock-first = 3
+HeroFrogBotBrain.HoldCost.herofrog.dupe-lock-from-hand = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.dupe-lock-via-swap = 3
+HeroFrogBotBrain.HoldCost.herofrog.emergency-call = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.enemy-controller-standby = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.enemy-controller-tribute = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.fusion-is-removal = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.fusion-spares-treeborn = 3
+HeroFrogBotBrain.HoldCost.herofrog.fusion-waits-for-battle = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.fusion-water-via-swap = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.hero-for-fusion = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.hold-miracle-fusion = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.hold-steal = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.junk-synchro = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.junk-synchron = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.lock-then-clock = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.miracle-fusion = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.monarch-summon = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.monarch-takes-summon = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.monarch-takes-what-battle-cant = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.no-redundant-backrow = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.ocean-returns-hero = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.ocean-returns-zero = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.one-for-one-fodder = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.pressure-summon = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.prodigy-fodder = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.raigeki-break = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.raigeki-clears-for-treeborn = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.substitoad-engine = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.substitoad-summon = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.swap-attacks = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.swap-bounce = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.swap-fodder = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.swap-frog-summon = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.swap-never-set = 1.5
+HeroFrogBotBrain.HoldCost.herofrog.treeborn-holds-sets = 1.5
+
+# added 2026-11-17 15:47 (new in the code since the file was written)
+# --- HeroFrogBotBrain
+HeroFrogBotBrain.HoldCost.herofrog.swap-bounce-after-battle = 0.75

@@ -1,0 +1,546 @@
+# Bot tuning: every weight, bonus, penalty and threshold the bot uses, one per line (Section.Name = value).
+# Edit a value and restart the bot (or a DuelSim run). Card units: 1 = about one card's worth.
+# This file: rules of play every deck shares (DeckBotBrain), the search's scoring, and how the search thinks (Search, at the end).
+# Each deck's own numbers and rules are in bot-tuning-<deck>.txt next to this file.
+# <Brain>.HoldCost.<rule>: what a search line pays for breaking that rule (card units; each rule its own number).
+# A line deleted here comes back with its built-in value the next time the bot starts.
+
+# --- DeckBotBrain
+DeckBotBrain.AheadPushExponent = 3   # Exponent on the get-through chance for a lethal push when we're well ahead anyway.
+DeckBotBrain.AllureRankBlizzardIdle = 1.5   # Allure banish rank: Blizzard with nothing to revive.
+DeckBotBrain.AllureRankBlizzardUseful = 4.5   # Allure banish rank: Blizzard with a Level 4 or lower Blackwing in the graveyard.
+DeckBotBrain.AllureRankDadNearLive = 5.5   # Allure banish rank: a Dark Armed Dragon within a DARK of live.
+DeckBotBrain.AllureRankDadOneDark = 3   # Allure banish rank: a Dark Armed Dragon with one DARK in the graveyard.
+DeckBotBrain.AllureRankDadOther = 1.2   # Allure banish rank: any other Dark Armed Dragon.
+DeckBotBrain.AllureRankDadStuck = 0.5   # Allure banish rank: a Dark Armed Dragon that can't be made live.
+DeckBotBrain.AllureRankGorz = 4   # Allure banish rank: Gorz with our field empty.
+DeckBotBrain.AllureRankGorzWithMonsters = 0.5   # Allure banish rank (low = banished first): Gorz while we have a monster out.
+DeckBotBrain.AllureRankKalutIdle = 1   # Allure banish rank: Kalut with nothing to boost.
+DeckBotBrain.AllureRankKalutUseful = 4   # Allure banish rank: Kalut with a Blackwing to boost.
+DeckBotBrain.AllureRankOther = 3   # Allure banish rank: anything else (this - ATK/10000).
+DeckBotBrain.AllureRankVayu = 3.5   # Allure banish rank: Vayu.
+DeckBotBrain.AssumedRecruitPower = 1500   # Assumed ATK/DEF of the monster a recruiter brings out (they fetch small monsters, usually 1500 or less).
+DeckBotBrain.AttackNegatorRemovalBonus = 4   # Removal-target bonus on our turn for a monster that negates attacks (Fulhelmknight). Tune from logs.
+DeckBotBrain.BackrowPunisherCount = 2   # Backrow-hitting cards (besides Heavy Storm / MST) in their deck from which we stay careful after their Storm.
+DeckBotBrain.BaitHitChance = 0.5   # Chance a set bait card is hit (untargeted-looking removal) from which it's chained. Tune from logs.
+DeckBotBrain.BanishDeniesRewardBonus = 3   # Banish-target bonus for a monster that rewards its destruction (Card Trooper, floaters). Tune from logs.
+DeckBotBrain.BattleKillChance = 0.6   # Chance a monster of ours the opponent can run over in battle actually gets destroyed that way. Tune from logs.
+DeckBotBrain.BeaterAttack = 1700   # ATK from which a monster is a beater (attacks an open field whenever it can). Tune from logs.
+DeckBotBrain.BigTurnBaseline = 0.4   # Big-turn chance at which pushing is neither boosted nor damped. Tune from logs.
+DeckBotBrain.BigTurnPerGravePlay = 0.3   # Big-turn weight of each card in their graveyard that makes a play from there (Vayu, Fortress): close to a card in hand. Cards that do nothing there count 0. Tune from logs.
+DeckBotBrain.BigTurnPerHandCard = 0.35   # Big-turn weight of each card in their hand. Tune from logs.
+DeckBotBrain.BigTurnPushMinFactor = 0.8   # The push chance is never damped below this factor by a low big-turn chance. Tune from logs.
+DeckBotBrain.BigTurnPushWeight = 1.5   # How strongly their big-turn chance moves the push chance. Tune from logs.
+DeckBotBrain.CardValueBase = 2   # A monster of ours in rough card points: this + ATK/1000 (+ ExtraDeckMonsterValue for a Synchro/Fusion/Xyz).
+DeckBotBrain.CheapUnblockDamage = 1000   # Most damage we take to let a first-in-zone-order monster attack so the better attacks behind it follow. Tune from logs.
+DeckBotBrain.ChimeratechFearChance = 0.25   # Chance their Extra Deck holds Chimeratech Fortress Dragon from which we play around it. Tune from logs.
+DeckBotBrain.CompulsorySaveMinAtk = 2000   # ATK from which our own monster is worth saving with Compulsory Evacuation Device. Tune from logs.
+DeckBotBrain.CrashDangerLp = 1500   # A crash's damage counts in full when it would leave us under this many LP; otherwise at CrashSafeDamageShare.
+DeckBotBrain.CrashSafeDamageShare = 0.25   # The share of a crash's damage that counts while we stay above CrashDangerLp.
+DeckBotBrain.CrowPreemptWeight = 0.6   # Weight of Crow's banish-first against DAD (chaining is better, so not too often). Tune from logs.
+DeckBotBrain.DadClearBackrowMirrorChance = 0.1   # Mirror Force chance from which DAD clears a set card before attacking, even at the cost of a graveyard piece.
+DeckBotBrain.DangerLifePoints = 1500   # Below this the bot plays defensively; above it, life points matter little and board development comes first.
+DeckBotBrain.DefaultExplosiveness = 0.5   # Explosiveness assumed without deck-list data. Tune from logs.
+DeckBotBrain.DirectHitScale = 2000   # Any other direct hit of theirs costs its ATK / this (rough card points).
+DeckBotBrain.DiscardedGraveyardPieceCost = 0.3   # What losing a graveyard-effect card from hand to a discard costs. Tune from logs.
+DeckBotBrain.EffectPointValue = 500   # ATK-equivalent of one effect point in TargetThreat: effects and ATK balanced.
+DeckBotBrain.EvidenceResidual = 0.2   # How much of a card's chance remains once it stayed unused when the opponent would have used it (they might have held it on purpose, so not zero).
+DeckBotBrain.ExpendableHitterMinAtk = 1000   # ATK from which an expendable monster attacks an open field (1100 Hamster, 1400 Armageddon Knight; not a 200 Ryko). Tune from logs.
+DeckBotBrain.ExpendableTributeCost = 1.5   # Tribute order: a monster costing at most this counts as expendable (fine to tribute or spend).
+DeckBotBrain.ExtraDeckMonsterValue = 1.5   # An Extra Deck monster's extra worth over its ATK, in rough card points.
+DeckBotBrain.ExtraSetRiskTolerance = 0.7   # Risk tolerance from which one more exposed set is allowed.
+DeckBotBrain.GorzAnswerableFactor = 0   # Gorz in their hand: its chance shrinks to this share when we can answer Gorz (user, 2026-11-16: 0 when we can deal with Gorz).
+DeckBotBrain.GorzChancePerCard = 0.025   # Chance per card in the opponent's hand that it is Gorz (about 1 copy in 40). Tune from logs.
+DeckBotBrain.GorzHandValue = 4   # Gorz in hand, in rough card points.
+DeckBotBrain.GorzHoldBase = 0.45   # Hold-for-Gorz chance before adjustments. Tune from logs.
+DeckBotBrain.GorzHoldMax = 1
+DeckBotBrain.GorzHoldMin = 0
+DeckBotBrain.GorzHoldPerPlay = 0.15   # Taken off per other play we could make this turn. Tune from logs.
+DeckBotBrain.GorzHoldPerThousand = 0.1   # Added per 1000 ATK of their biggest attacker (the token copies that hit). Tune from logs.
+DeckBotBrain.GorzHoldWithSolemn = 0.3   # Added to the hold-for-Gorz chance when Solemn Judgment is in hand too (it waits for Gorz). Tune from logs.
+DeckBotBrain.GorzLongClockFactor = 0.8   # Gorz in their hand: its chance shrinks to this share on a Long clock.
+DeckBotBrain.GorzOrderChance = 0.3   # Gorz chance from which Main Phase 1 sets up the attack order for it (see GorzAttackOrderAsync). Tune from logs.
+DeckBotBrain.GorzPassBoost = 3   # Per-card Gorz chance multiplier after such a pass (until they put a card on the field). Tune from logs.
+DeckBotBrain.GorzPassHand = 4   # Hand size from which passing with an empty field and nothing played reads as holding Gorz. Tune from logs.
+DeckBotBrain.GorzQuickClockFactor = 0.5   # Gorz in their hand: its chance shrinks to this share on a Quick clock (they've had to use it already).
+DeckBotBrain.GorzSetResidual = 0.3   # Cards held while setting keep this share of their Gorz chance per spell/trap of theirs on the field (0.3 for one, 0.09 for two). Tune from logs.
+DeckBotBrain.GraveReviveChance = 0.15   # Survivability: each monster in their graveyard counts this chance of coming back to attack.
+DeckBotBrain.GraveyardPieceThreat = 1000   # Attack-score units (TargetThreat) for a graveyard piece of ours lost to banishment (Vayu). Tune from logs.
+DeckBotBrain.HandBoostCardThreat = 1000   # Attack-score units (TargetThreat) for a hand card spent on a battle boost (Kalut). Tune from logs.
+DeckBotBrain.HandDamagePerCard = 1000   # Typical extra damage one card in the opponent's hand can add next turn. Tune from the logged rolls.
+DeckBotBrain.HeavyStormChancePerCard = 0.025   # Chance per card in the opponent's hand that it is Heavy Storm (one copy per deck). Tune from logs.
+DeckBotBrain.HoldMaxCurrentCost = 1   # The most the current attack may cost us (AttackCostAsync points: a destroyed monster is 2+, a small direct hit under 1) for a single answer to be saved for a bigger attacker. Tune from logs.
+DeckBotBrain.HoldWhenClockAtMost = 5   # If the opponent is already on a clock of this many turns or fewer, hold resources unless they win now or answer a threat. 2 = only hold on a quick clock, 5 = also hold on a long clock (default), larger = hold on very long clocks too.
+DeckBotBrain.HonestTradeScore = 6000   # Attack score for running into a known Honest (or Kalut) when the attack wins without it: a trade, below any kill (10,000+).
+DeckBotBrain.KnownStapleSetChance = 0.6   # Chance a set card is it when we know they hold it (e.g. seen by Trap Dustshoot) and they have set cards.
+DeckBotBrain.KnownTributeMonsterChance = 0.5   # Survivability: a Level 5+ monster we know is in their hand counts this chance of being summoned to attack.
+DeckBotBrain.LastResortBlockerDrop = 0.25   # How much a last-resort blocker must cut their lethal chance to be set.
+DeckBotBrain.LastResortLethalChance = 0.5   # Their lethal chance next turn from which a last-resort blocker is set (round-robin 5; user: "50% sounds a little high", to tune).
+DeckBotBrain.LethalHitCost = 100   # Their direct hit that would finish us: its cost (rough card points) when weighing an answer to it.
+DeckBotBrain.LifePointsPerCard = 2000   # LP worth one card when paying a cost (LP matter little above ~1500; a cost that leaves us in reach is never paid).
+DeckBotBrain.LikelyAttackerChance = 0.4   # Chance from which a monster their deck can bring next turn counts as "they'll have it" for the exposure check. Tune from logs.
+DeckBotBrain.LikelyLethalChance = 0.5   # Their chance of lethal on us from which we treat it as likely (racing, holding back).
+DeckBotBrain.LylaDeckGuard = 10   # Below this many cards in our deck, Lyla isn't summoned and one on the field crashes (her End Phase mill). Tune from logs.
+DeckBotBrain.LylaGambleChance = 0.5   # Chance to gamble Lyla's attack into their set card when we don't need it gone much. Tune from logs.
+DeckBotBrain.LylaGambleDropPerStrongSummon = 0.5   # Lyla gamble: its chance drops by this share per strong summon we have instead.
+DeckBotBrain.MaxExposedSets = 2   # Most exposed (not storm-proof) set cards we keep at once. Above this, one Heavy Storm is a disaster. Can be exceeded only when the opponent can no longer have Heavy Storm, or the card would be discarded at the End Phase.
+DeckBotBrain.MinDeckToMill = 5   # Card Trooper doesn't mill at all with fewer cards than this in the deck (it goes to defence instead). Low on purpose: running close to deck-out is fine.
+DeckBotBrain.MirrorDefenceChance = 0.05   # Mirror Force chance from which monsters that work as well in defence go to defence. Tune from logs.
+DeckBotBrain.MirrorDefenceWeight = 3   # When its attack does matter (pressure: a target worth hitting, or a faster clock), defence is a roll: chance MirrorForceChance x this weight (e.g. 9% -> 27%, 28% -> 84%). Tune from logs.
+DeckBotBrain.NearLethalHitCost = 2   # Their direct hit that leaves us within reach of their board's next attack: its cost (rough card points).
+DeckBotBrain.NearlyLiveBossBonus = 4   # Removal-score bonus for a hand card whose summon condition is live or nearly so (see NearlyLiveBossAsync).
+DeckBotBrain.NegatedBackrowIgnoredBelow = 0.1   # Traps negated: a set card whose chance of stopping an attack is below this is ignored as backrow. Tune from logs.
+DeckBotBrain.OversetPressFrom = 0.5   # Pressure (risk tolerance above its base, 0-1) from which the exposed-sets cap relaxes.
+DeckBotBrain.OwnBackrowResidual = 0.4   # Weaker evidence: the opponent put their own spells/traps on the field, which their Heavy Storm would destroy too. Cards they held then keep this share of their Heavy Storm chance per spell/trap of theirs on the field (0.4 for one, 0.16 for two, ~0.06 for three: the more they set, the more a Storm would cost them). Tune from logs.
+DeckBotBrain.PartialReadFactor = 0.5   # A set card we've learned isn't Mirror Force (or isn't Torrential) counts this share of its stop chance.
+DeckBotBrain.PushClockTurnsForCertain = 4   # A push that shortens our clock by this many turns counts as a certain push (shorter: a share of it).
+DeckBotBrain.PushFreeSummonFactor = 0.5
+DeckBotBrain.PushHandFactorPerCard = 0.8
+DeckBotBrain.PushNoClockBoost = 1.5
+DeckBotBrain.PushOpenBoost = 1.5
+DeckBotBrain.PushOpenHandMax = 2   # An opponent with no set Spell/Traps and at most this many cards in hand is "open": speed comes first.
+DeckBotBrain.PushSetTrapFactor = 0.7
+DeckBotBrain.QuickPlayShareOfStoppers = 0.2   # Without deck-list data: the share of push-stopping set cards that are quick-play spells (Book of Moon, Enemy Controller...), what's left of the threat while traps are negated. Tune from logs.
+DeckBotBrain.RaceHandLifePoints = 3000   # At or below this many life points, their hand counts towards "they kill us next turn" for racing.
+DeckBotBrain.RiskAheadDrop = 0.1   # Risk tolerance taken off when we're 2+ cards ahead.
+DeckBotBrain.RiskBase = 0.3   # Risk tolerance at the start of the duel. Tune from logs.
+DeckBotBrain.RiskBehindGrowth = 2   # Behind on cards: how fast the added risk tolerance grows per card behind (2 = doubles each card).
+DeckBotBrain.RiskBehindMax = 0.6   # Behind on cards: the most it adds to risk tolerance.
+DeckBotBrain.RiskBehindStart = 0.03   # Behind on cards (count or value): the curve starts at this (x (growth^deficit - 1)).
+DeckBotBrain.RiskDeckRaceAheadShare = 0.3   # Deck race: the share that applies when their deck is no bigger than ours.
+DeckBotBrain.RiskDeckRaceFrom = 15   # Deck race: below this many cards in our deck, risk tolerance starts rising.
+DeckBotBrain.RiskDeckRaceMax = 0.4   # Deck race: the most it adds (at an empty deck, when ours is the smaller deck).
+DeckBotBrain.RiskHoldCeiling = 1.5   # Hold-back chances (a push into their set cards, a summon into Ryko, Heavy Storm exposure) scale with (this - risk tolerance).
+DeckBotBrain.RiskLowLpMax = 0.5   # Risk tolerance added as our life points fall: this much at 0 LP, scaled from 8000.
+DeckBotBrain.RiskMin = 0.05   # Risk tolerance never goes below this.
+DeckBotBrain.RiskPerTurn = 0.03   # Risk tolerance added per turn after turn 2, up to RiskStageMax.
+DeckBotBrain.RiskScaledBase = 0.6   # A risk-scaled chance: chance x (this + RiskScaledSlope x risk tolerance).
+DeckBotBrain.RiskScaledSlope = 0.8   # A risk-scaled chance: chance x (RiskScaledBase + this x risk tolerance).
+DeckBotBrain.RiskStageMax = 0.3
+DeckBotBrain.RiskStallFreeTurns = 2   # A stall: turns without an LP change before it starts adding risk tolerance.
+DeckBotBrain.RiskStallMax = 0.5   # A stall: the most it adds to risk tolerance.
+DeckBotBrain.RiskStallPerTurn = 0.1   # A stall (no LP change): risk tolerance added per turn past RiskStallFreeTurns.
+DeckBotBrain.RiskTwoTurnClock = 0.2   # Risk tolerance added when their clock on us is 2 turns.
+DeckBotBrain.RykoBreaksPush = 0.8   # Chance a Ryko flip in the way breaks a lethal push (it destroys one of the attackers). Tune from logs.
+DeckBotBrain.RykoHoldWeight = 0.5   # Weight of the Ryko hold (medium: user, "don't obsess over this ryko rule"). Tune from logs.
+DeckBotBrain.RykoPlayAroundChance = 0.2   # Ryko chance from which a face-down monster is played around as a Ryko. Tune from logs.
+DeckBotBrain.RykoRiskOffset = 0.5   # Ryko play-around: a face-down is treated as Ryko when its Ryko chance is at least RykoPlayAroundChance x (this + risk tolerance).
+DeckBotBrain.SetCardBaseScore = 1   # Removal-target score of an opponent's set spell/trap otherwise: one card. Tune from logs.
+DeckBotBrain.SetCardBeforeAttackScore = 7   # Removal-target score of an opponent's set card in our Main Phase 1 with attackers out (it could be Mirror Force). Above most monsters (a 2000 beater is about 4-6), below the biggest threats. Tune from logs.
+DeckBotBrain.SetCardIsDPrisonChance = 0.1   # Chance that any one of the opponent's set cards is Dimensional Prison. Tune from logs.
+DeckBotBrain.SetCardIsMirrorForceChance = 0.08   # Chance that any one of the opponent's set cards is Mirror Force (about 1 in 12 set cards). Tune from logs.
+DeckBotBrain.SetCardIsTorrentialChance = 0.08   # Chance that any one of the opponent's set cards is Torrential Tribute.
+DeckBotBrain.SetCardLeftCost = 1.5   # Combined-lethal plans: extra cost per set card of theirs the plan leaves standing (a trap there likely stops it).
+DeckBotBrain.SetCardStopsPushChance = 0.35   # Chance any one of the opponent's set cards stops a push (Mirror Force, Torrential, Sakuretsu, D-Prison, ...). Tune from logs.
+DeckBotBrain.SetIntoBouncerFactor = 0.05   # Against Grand Mole, a face-down monster does nothing: Mole attacks it and returns it to our hand (a flipped Ryko gets bounced too). Setting monsters is scaled by this (1 = no change, 0 = never). Tune from logs.
+DeckBotBrain.SetterHandDiscount = 0.5   # A card that likes being set (graveyard effect, expendable, flip) counts this much less when choosing what to set with the last Normal Summon.
+DeckBotBrain.ShelterMirrorChance = 0.15   # Mirror Force chance from which spare attackers go to defence before battle, at neutral risk tolerance. Tune from logs.
+DeckBotBrain.ShelterRiskOffset = 0.5   # Sheltering from Mirror Force: the threshold is ShelterMirrorChance x (this + risk tolerance).
+DeckBotBrain.SolemnEarlyGameLifePoints = 6000   # From this many LP of ours, Solemn Judgment is set after our other traps (early game). Tune from logs.
+DeckBotBrain.SolemnMajorThreatAtk = 2800   # ATK from which a summoned big threat is "major" enough for Solemn Judgment. Tune from logs.
+DeckBotBrain.SolemnMinLifePoints = 2000   # Below this many LP, paying half for Solemn Judgment is too risky to count on it. Tune from logs.
+DeckBotBrain.SolemnMinNetGain = 0.5   # Solemn on a summon: negate when gain minus cost is at least this (cards).
+DeckBotBrain.SolemnPushBoost = 2   # Push chance multiplier with Solemn Judgment set. Tune from logs.
+DeckBotBrain.SolemnSavedCardGain = 1   # Solemn on a summon: the extra gain when its effect would take a card of ours (cards).
+DeckBotBrain.SolemnSummonGain = 1   # Solemn on a summon: the gain of negating a monster (cards).
+DeckBotBrain.SolemnTributeBonus = 0.5   # Solemn on a summon: the extra gain when it's a tribute summon (cards).
+DeckBotBrain.SpareClockStep = 2   # Clock turns each spare resource copy lowers the hold threshold (HoldWhenClockAtMost) by.
+DeckBotBrain.SparePushBoost = 1.5   # Push chance multiplier per spare resource copy.
+DeckBotBrain.SpellTrapCardValue = 2.5   # A spell/trap in hand, in rough card points.
+DeckBotBrain.StormExposureWeight = 2   # How fast the urge to hold grows with what we already have exposed: the k-th extra set is held with chance 1 - (1 - storm chance)^(weight * k^2). With a 12% Heavy Storm chance and weight 2: the 2nd set ~23%, the 3rd ~64%, the 4th ~90%. Nobody should set four into a possible Heavy Storm. Tune from logs.
+DeckBotBrain.StormGoneChance = 0.05   # Their Heavy Storm chance below which it's treated as gone (one more set allowed).
+DeckBotBrain.StrongEffectScore = 6   # Effect score (see EffectEvaluator) from which a monster counts as a big threat on its effect alone.
+DeckBotBrain.StrongMonsterAttack = 2000   # A monster at least this big counts as a strong monster for "big play" purposes.
+DeckBotBrain.SuggestionCost = 1.5   # The cost (card units) of a line going against a strong suggestion.
+DeckBotBrain.SurvivabilityCardLimit = 3   # Fewer than this many cards of ours (hand, monsters, spells/traps) counts as "low on cards".
+DeckBotBrain.SurvivabilityGain = 0.25   # How much less likely the new monster must be to be run over (0-1) for the spend to count. Tune from logs. was 0.3 (user, 2026-11-16: "make them a little bit stronger", slowly)
+DeckBotBrain.SurvivorSpellKillCost = 2.5   # Their attacker that survives and then destroys one of our spells/traps (Lyla): that extra loss (rough card points).
+DeckBotBrain.TorrentialTestChance = 0.1   # Whatever the brain chose, sets wait for Main Phase 2 when a battle worth entering is ahead (deck.sets-after-battle): recorded for every deck after its decision, so a line that sets now pays even where the brain's flow picked its play before it ever considered sets (seen 2026-11-11: Icarus Attack set before Goyo's synchro, Raigeki Break before Indomitable, both unpenalised). Not when the brain s...
+DeckBotBrain.TorrentialTestMargin = 0.5   # Test for Torrential: a tester must be worth this much less than what it protects.
+DeckBotBrain.TributeExpendable = 1.2   # Tribute cost of any other expendable monster: this + ATK/10000.
+DeckBotBrain.TributeGraveEffect = 1   # Tribute cost of an expendable monster with a graveyard effect (it wants to be there).
+DeckBotBrain.TributeLylaSpent = 1.3   # Tribute cost of a Lyla that's used her effect.
+DeckBotBrain.TributeOther = 3   # Tribute cost of everything else: this + ATK/1000.
+DeckBotBrain.TributeTokenBig = 1.65   # Tribute cost of a token at TributeTokenFrom ATK or more: this + (ATK - TributeTokenFrom)/1000.
+DeckBotBrain.TributeTokenFrom = 1500   # Tokens under this ATK are nearly free to tribute (TributeTokenSmall); from it, TributeTokenBig and up by ATK.
+DeckBotBrain.TributeTokenSmall = 1.5   # Tribute cost of a small token: this + ATK/10000.
+DeckBotBrain.TributeTreeborn = 0.1   # Tribute cost of Treeborn Frog (the most expendable: it comes back).
+DeckBotBrain.TypicalHandAttacker = 1800   # A typical attacker their hand can bring next turn (a Level 4 beater). Tune from logs.
+DeckBotBrain.UnknownDeckRykoChance = 0.3   # Least Ryko chance for a face-down while the deck read is unclear (top type under KnownTypeChance). Tune from logs.
+DeckBotBrain.UnpressuredExposureFactor = 2   # How much more the urge to hold back sets grows when they can wait (see TheyCanWait).
+DeckBotBrain.UnpressuredStormResidual = 0.7   # Share of Heavy Storm chance kept when they skip a Storm while under no pressure (weak evidence).
+DeckBotBrain.UnusedNormalSummonValue = 1   # What an unused Normal Summon is worth (card units): a monster in hand worth less than this gets set rather than waste it. Tune from logs.
+DeckBotBrain.ValueSetSummonAttack = 1500   # A value-set monster below this ATK is never the "safe" face-up Normal Summon: it's set instead.
+DeckBotBrain.VayuSynchroAttack = 2500   # A Blackwing synchro Vayu brings back (Armor Master 2500, Armed Wing 2300, Silverwind 2800). Tune from logs.
+DeckBotBrain.HoldCost.deck.allure-of-darkness = 1.5
+DeckBotBrain.HoldCost.deck.attack-remembered-face-down = 1.5
+DeckBotBrain.HoldCost.deck.avoid-battle-removal = 1.5
+DeckBotBrain.HoldCost.deck.avoid-hand-limit-discard = 1.5
+DeckBotBrain.HoldCost.deck.battle-protection = 1.5
+DeckBotBrain.HoldCost.deck.bottomless-over-torrential = 1.5
+DeckBotBrain.HoldCost.deck.bottomless-trap-hole = 1.5
+DeckBotBrain.HoldCost.deck.brain-control = 1.5
+DeckBotBrain.HoldCost.deck.brionac-bounce = 1.5
+DeckBotBrain.HoldCost.deck.chain-bait = 1.5
+DeckBotBrain.HoldCost.deck.charge-of-the-light-brigade = 1.5
+DeckBotBrain.HoldCost.deck.cheap-attack-unblocks = 1.5
+DeckBotBrain.HoldCost.deck.cheap-into-face-down = 1.5
+DeckBotBrain.HoldCost.deck.cheapest-into-bouncer = 1.5
+DeckBotBrain.HoldCost.deck.chimeratech-safety-fuse = 1.5
+DeckBotBrain.HoldCost.deck.clear-zone-blocker = 1.5
+DeckBotBrain.HoldCost.deck.compulsory-on-attack = 1.5
+DeckBotBrain.HoldCost.deck.compulsory-saves-own = 1.5
+DeckBotBrain.HoldCost.deck.crash-for-battle-payoff = 1.5
+DeckBotBrain.HoldCost.deck.crash-trades = 1.5
+DeckBotBrain.HoldCost.deck.crow-stops-dad = 1.5
+DeckBotBrain.HoldCost.deck.crow-stops-reviver = 1.5
+DeckBotBrain.HoldCost.deck.dad-effect = 1.5
+DeckBotBrain.HoldCost.deck.dad-trim = 1.5
+DeckBotBrain.HoldCost.deck.dd-crow-chain = 1.5
+DeckBotBrain.HoldCost.deck.defence-on-their-turn = 1.5
+DeckBotBrain.HoldCost.deck.defence-when-hit-is-lethal = 1.5
+DeckBotBrain.HoldCost.deck.defer-summon-for-attack-order = 1.5
+DeckBotBrain.HoldCost.deck.develop-when-bleeding = 1.5
+DeckBotBrain.HoldCost.deck.dimensional-prison = 1.5
+DeckBotBrain.HoldCost.deck.doomed-card-used = 1.5
+DeckBotBrain.HoldCost.deck.doomed-monster-used = 1.5
+DeckBotBrain.HoldCost.deck.draw-for-gorz = 1.5
+DeckBotBrain.HoldCost.deck.draw-when-no-play = 1.5
+DeckBotBrain.HoldCost.deck.expendable-attacks-open-field = 1.5
+DeckBotBrain.HoldCost.deck.field-tuner-synchro = 1.5
+DeckBotBrain.HoldCost.deck.flip-before-summon = 1.5
+DeckBotBrain.HoldCost.deck.flip-for-threat = 1.5
+DeckBotBrain.HoldCost.deck.gamble-when-losing = 1.5
+DeckBotBrain.HoldCost.deck.gorz-attack-order = 1.5
+DeckBotBrain.HoldCost.deck.gorz-chain = 1.5
+DeckBotBrain.HoldCost.deck.gorz-waits-for-biggest = 1.5
+DeckBotBrain.HoldCost.deck.heavy-storm = 1.5
+DeckBotBrain.HoldCost.deck.hold-dad-effect-for-pieces = 1.5
+DeckBotBrain.HoldCost.deck.hold-for-bigger-attacker = 1.5
+DeckBotBrain.HoldCost.deck.hold-for-gorz = 1.5
+DeckBotBrain.HoldCost.deck.hold-for-threat-or-win = 1.5
+DeckBotBrain.HoldCost.deck.hold-monster-sets-for-battle = 1.5
+DeckBotBrain.HoldCost.deck.hold-set-for-storm = 1.5
+DeckBotBrain.HoldCost.deck.hold-sets-for-battle = 1.5
+DeckBotBrain.HoldCost.deck.hold-sets-for-storm = 1.5
+DeckBotBrain.HoldCost.deck.hold-spend = 1.5
+DeckBotBrain.HoldCost.deck.hold-synchro-into-bouncer = 1.5
+DeckBotBrain.HoldCost.deck.hold-when-already-lethal = 1.5
+DeckBotBrain.HoldCost.deck.idle-materials-synchro = 1.5
+DeckBotBrain.HoldCost.deck.keep-committed-attack = 3
+DeckBotBrain.HoldCost.deck.keep-gorz-live = 1.5
+DeckBotBrain.HoldCost.deck.last-resort-blocker = 1.5
+DeckBotBrain.HoldCost.deck.low-lp-no-exposure = 1.5
+DeckBotBrain.HoldCost.deck.lyla-after-battle = 1.5
+DeckBotBrain.HoldCost.deck.lyla-clears-the-way = 1.5
+DeckBotBrain.HoldCost.deck.lyla-destroy = 1.5
+DeckBotBrain.HoldCost.deck.mirror-force-multi = 1.5
+DeckBotBrain.HoldCost.deck.mirror-force-single = 1.5
+DeckBotBrain.HoldCost.deck.mole-lock = 1.5
+DeckBotBrain.HoldCost.deck.mst-before-key-attack = 1.5
+DeckBotBrain.HoldCost.deck.mst-for-big-play = 1.5
+DeckBotBrain.HoldCost.deck.mst-into-continuous = 1.5
+DeckBotBrain.HoldCost.deck.no-attack-without-gain = 1.5
+DeckBotBrain.HoldCost.deck.no-blockers = 1.5
+DeckBotBrain.HoldCost.deck.no-chimeratech-exposure = 1.5
+DeckBotBrain.HoldCost.deck.no-chip-into-backrow = 1.5
+DeckBotBrain.HoldCost.deck.no-destroy-into-negator = 1.5
+DeckBotBrain.HoldCost.deck.no-empty-burial-set = 1.5
+DeckBotBrain.HoldCost.deck.no-redundant-sets = 1.5
+DeckBotBrain.HoldCost.deck.no-ryko-into-face-down = 1.5
+DeckBotBrain.HoldCost.deck.no-set-into-bouncer = 1.5
+DeckBotBrain.HoldCost.deck.no-set-into-lyla = 1.5
+DeckBotBrain.HoldCost.deck.no-set-into-stealer = 1.5
+DeckBotBrain.HoldCost.deck.no-trap-into-negator = 1.5
+DeckBotBrain.HoldCost.deck.on-summon-into-bouncer = 1.5
+DeckBotBrain.HoldCost.deck.one-answer-per-summon = 1.5
+DeckBotBrain.HoldCost.deck.one-hit-lethal-first = 1.5
+DeckBotBrain.HoldCost.deck.only-needed-answers = 1.5
+DeckBotBrain.HoldCost.deck.plague-summon-for-synchro = 1.5
+DeckBotBrain.HoldCost.deck.protected-attack = 1.5
+DeckBotBrain.HoldCost.deck.push-for-clock = 1.5
+DeckBotBrain.HoldCost.deck.reinforcement-of-the-army = 1.5
+DeckBotBrain.HoldCost.deck.reposition-for-direct-hit = 1.5
+DeckBotBrain.HoldCost.deck.reposition-to-attack = 1.5
+DeckBotBrain.HoldCost.deck.reposition-to-defence = 1.5
+DeckBotBrain.HoldCost.deck.return-dimension-block-lethal = 1.5
+DeckBotBrain.HoldCost.deck.return-dimension-lethal = 1.5
+DeckBotBrain.HoldCost.deck.ryko-holds-big-summon = 1.5
+DeckBotBrain.HoldCost.deck.safe-summon = 1.5
+DeckBotBrain.HoldCost.deck.save-mole-for-better-answer = 1.5
+DeckBotBrain.HoldCost.deck.set-ryko = 1.5
+DeckBotBrain.HoldCost.deck.set-ryko-first-turn = 1.5
+DeckBotBrain.HoldCost.deck.set-traps = 1.5
+DeckBotBrain.HoldCost.deck.sets-after-battle = 1.5
+DeckBotBrain.HoldCost.deck.shelter-spares-from-mirror = 1.5
+DeckBotBrain.HoldCost.deck.skip-empty-battle-phase = 1.5
+DeckBotBrain.HoldCost.deck.skip-unworthy-attacks = 1.5
+DeckBotBrain.HoldCost.deck.smashing-ground = 1.5
+DeckBotBrain.HoldCost.deck.solemn-judgment = 1.5
+DeckBotBrain.HoldCost.deck.solemn-waits-for-gorz = 1.5
+DeckBotBrain.HoldCost.deck.spare-body-waits = 1.5
+DeckBotBrain.HoldCost.deck.spare-removal-trap = 1.5
+DeckBotBrain.HoldCost.deck.spend-for-blocker-when-low = 1.5
+DeckBotBrain.HoldCost.deck.spend-for-effect-answer = 1.5
+DeckBotBrain.HoldCost.deck.spend-for-lethal = 1.5
+DeckBotBrain.HoldCost.deck.spend-for-survivability = 1.5
+DeckBotBrain.HoldCost.deck.spend-removal-on-bouncer = 1.5
+DeckBotBrain.HoldCost.deck.spend-to-answer-threat = 1.5
+DeckBotBrain.HoldCost.deck.spend-when-racing = 1.5
+DeckBotBrain.HoldCost.deck.spend-when-refunded = 1.5
+DeckBotBrain.HoldCost.deck.stat-boost-in-damage-step = 3
+DeckBotBrain.HoldCost.deck.storm-not-with-solemn = 1.5
+DeckBotBrain.HoldCost.deck.strongest-into-face-down = 1.5
+DeckBotBrain.HoldCost.deck.summon-for-effect = 1.5
+DeckBotBrain.HoldCost.deck.summon-in-defence-under-mirror = 1.5
+DeckBotBrain.HoldCost.deck.summon-lyla = 1.5
+DeckBotBrain.HoldCost.deck.summon-to-kill = 1.5
+DeckBotBrain.HoldCost.deck.summon-to-trade = 1.5
+DeckBotBrain.HoldCost.deck.summon-trooper = 1.5
+DeckBotBrain.HoldCost.deck.synchro-before-battle = 1.5
+DeckBotBrain.HoldCost.deck.test-for-torrential = 0.75
+DeckBotBrain.HoldCost.deck.torrential-tribute = 1.5
+DeckBotBrain.HoldCost.deck.trap-dustshoot = 1.5
+DeckBotBrain.HoldCost.deck.tribute-expendable = 1.5
+DeckBotBrain.HoldCost.deck.trooper-deck-guard = 1.5
+DeckBotBrain.HoldCost.deck.trooper-defence-when-thin = 1.5
+DeckBotBrain.HoldCost.deck.trooper-into-face-down = 1.5
+DeckBotBrain.HoldCost.deck.trooper-mill = 1.5
+DeckBotBrain.HoldCost.deck.turn-planner-combo = 1.5
+DeckBotBrain.HoldCost.deck.unblock-attack-order = 1.5
+DeckBotBrain.HoldCost.deck.upstart-goblin = 1.5
+DeckBotBrain.HoldCost.deck.upstart-waits-for-lethal = 1.5
+DeckBotBrain.HoldCost.deck.use-normal-summon = 1.5
+DeckBotBrain.HoldCost.deck.value-set = 1.5
+DeckBotBrain.HoldCost.deck.waboku-own-turn = 3
+DeckBotBrain.HoldCost.deck.weak-dont-attack-directly = 1.5
+DeckBotBrain.HoldCost.matchup.xsaber.hyunlei-backrow = 1.5
+
+# --- DeckExplosiveness
+DeckExplosiveness.Blackwing = 0.6   # how explosive this deck type is, 0-1
+DeckExplosiveness.Diva-Frog = 0.3   # how explosive this deck type is, 0-1
+DeckExplosiveness.Diva-Hero = 0.5   # how explosive this deck type is, 0-1
+DeckExplosiveness.Diva-Hero-Beat = 0.6   # how explosive this deck type is, 0-1
+DeckExplosiveness.Diva-Hero-Zombie = 0.55   # how explosive this deck type is, 0-1
+DeckExplosiveness.Diva-Zombie = 0.55   # how explosive this deck type is, 0-1
+DeckExplosiveness.Dragon-Beat = 0.6   # how explosive this deck type is, 0-1
+DeckExplosiveness.Dragon-Turbo = 0.75   # how explosive this deck type is, 0-1
+DeckExplosiveness.Fairy = 0.3   # how explosive this deck type is, 0-1
+DeckExplosiveness.Frog-Monarch = 0.45   # how explosive this deck type is, 0-1
+DeckExplosiveness.Frog-OTK = 0.85   # how explosive this deck type is, 0-1
+DeckExplosiveness.Gigavise = 0.85   # how explosive this deck type is, 0-1
+DeckExplosiveness.Gladiator-Beast = 0.6   # how explosive this deck type is, 0-1
+DeckExplosiveness.Hero-Beat = 0.6   # how explosive this deck type is, 0-1
+DeckExplosiveness.Hero-Frog = 0.4   # how explosive this deck type is, 0-1
+DeckExplosiveness.Lightsworn = 0.75   # how explosive this deck type is, 0-1
+DeckExplosiveness.Lightsworn-Fairy = 0.75   # how explosive this deck type is, 0-1
+DeckExplosiveness.Machina-Control = 0.3   # how explosive this deck type is, 0-1
+DeckExplosiveness.Machina-Gadget = 0.45   # how explosive this deck type is, 0-1
+DeckExplosiveness.Quickdraw-Plant = 0.3   # how explosive this deck type is, 0-1
+DeckExplosiveness.Vayu-Turbo = 0.75   # how explosive this deck type is, 0-1
+DeckExplosiveness.Zombie-TeleDAD = 0.6   # how explosive this deck type is, 0-1
+
+# --- EffectEvaluator
+EffectEvaluator.AllRemovalFactor = 1.75   # Removal of all of something (Absolute Zero, Mirror Force, Heavy Storm) against one card: this factor on the rule's value. user, 2026-11-13: "removing all should be worth about 1.75x the original"
+EffectEvaluator.BanishRecursionBonus = 2   # Extra value of banishing (instead of destroying) a monster that can come back from the graveyard.
+EffectEvaluator.BlockedBattleTriggerFactor = 0.5   # A monster effect that needs battle damage: its points x this when their monster blocks it.
+EffectEvaluator.Effect.banishes = 2.5
+EffectEvaluator.Effect.bounces = 2
+EffectEvaluator.Effect.card.68366996 = 5
+EffectEvaluator.Effect.card.82199284 = 4
+EffectEvaluator.Effect.destroys = 3
+EffectEvaluator.Effect.discards-the-opponent's-hand = 3
+EffectEvaluator.Effect.draws = 3
+EffectEvaluator.Effect.inflicts-damage = 1
+EffectEvaluator.Effect.negates = 4
+EffectEvaluator.Effect.negates-an-attack = 0.5
+EffectEvaluator.Effect.protects-itself = 1.5
+EffectEvaluator.Effect.recovers-from-the-graveyard = 2
+EffectEvaluator.Effect.searches-the-deck = 4
+EffectEvaluator.Effect.special-summons = 2
+EffectEvaluator.Effect.special-summons-from-the-deck = 4
+EffectEvaluator.Effect.takes-control = 5
+EffectEvaluator.GraveBanishBase = 0.3   # Banishing a card with a graveyard effect: the base chance it's worth it.
+EffectEvaluator.GraveBanishPerCopy = 0.25   # Banishing a card with a graveyard effect: chance taken off per copy already in their graveyard.
+EffectEvaluator.GraveBanishPerPartner = 0.15   # Banishing a card with a graveyard effect: added chance per monster in their graveyard it can use (up to 4).
+EffectEvaluator.GraveyardEffectBanishBonus = 1   # Banish bonus for a card with a graveyard effect when the roll says it's worth banishing (low: banishing what it would make is usually just as good).
+EffectEvaluator.LiveBattleTriggerFactor = 2   # A monster effect that needs battle damage: its points x this when nothing of theirs blocks it.
+EffectEvaluator.NoTargetShare = 0.1   # An effect that needs a graveyard target (recover, revive) keeps this share of its points when there's none.
+EffectEvaluator.OnDestroyedShare = 0.5   # A monster effect that only works when it's destroyed: this share of its points.
+EffectEvaluator.RepeatableSummonBonus = 1.5   # Bonus for a Special Summon effect a monster can use every turn (Faultroll's revive, Gemini Soldier's recruit).
+EffectEvaluator.ReviveTargetShare = 0.5   # Share of the best graveyard target's own score a reviver adds (Kinka-byo bringing back Moja, which in turn brings out King of the Beasts): reviving is only as good as what it revives.
+
+# --- LineTally
+LineTally.AttackLockCost = 0.4   # Per other monster of ours that could still attack, for an effect of ours that stops them attacking (Sirocco's boost, Chaos Sorcerer's banish): the downside of the effect, which a big enough gain (the boost winning a battle) overcomes. User, 2026-11-16: "stopping your things attacking is a negative part of an effect, it should have that".
+LineTally.DrawLaterCost = 0.5   # was 0.2 (CSV S4: too small to put draws first)
+LineTally.EquipBeforeBattleCost = 1.5
+LineTally.FusionWithoutBattleCost = 1.5
+LineTally.IdleSummonCost = 1.5
+LineTally.LylaBeforeBattleCost = 0.5
+LineTally.PriorityWindowBonus = 0.3   # Bonus (card units) for a monster's effect used in a chain window of our turn (its priority window) rather than later.
+LineTally.SetBeforeBattleCost = 1.5
+
+# --- MctsEvaluator
+MctsEvaluator.AliveFloor = 0.05   # The least a position still alive at the horizon scores (and 1 minus the most): survival over a loss.
+MctsEvaluator.AtkTable = 0, 0.01, 0.011, 0.012, 0.013, 0.014, 0.015, 0.02, 0.021, 0.022, 0.03, 0.031, 0.04, 0.041, 0.3, 0.31, 0.4, 0.41, 0.5, 0.51, 1, 1.01, 1.1, 1.11, 1.2, 1.21, 1.25, 1.26, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7, 1.75, 1.8, 1.85, 1.9, 1.95, 2, 2.01, 2.1, 2.11, 2.2, 2.21, 2.25, 2.26, 2.4, 2.49, 2.5, 2.55, 2.6, 2.61, 2.62, 2.63, 2.7, 2.701, 2.702, 2.703, 2.8, 2.801, 2.802, 2.803, 2.804, 2.805, 2.806, 2.807, 2.808, 2.809, 2.81, 2.811, 2.812, 2.813, 2.814, 2.815, 2.816, 2.817, 2.818, 2.819, 2.82, 2.821, 2.822, 2.823, 2.824, 2.825, 2.826, 2.827, 2.828, 2.829, 2.83, 2.831, 2.832, 2.833, 2.834, 2.835, 2.836, 2.837, 2.838, 2.839, 2.84   # A monster's battle size in card units by ATK, one entry per 50 ATK from 0 to 5000 (above 5000 counts as 5000). Not linear: reshape it here.
+MctsEvaluator.AttackerOddsStep = 100   # ATK steps of AttackerOdds: index i is "an attacker of at least i × 100 ATK".
+MctsEvaluator.BaitWeight = 0.5   # A set bait card gains this times our other sets' worth over the number of our sets (the share of a random pick).
+MctsEvaluator.DefenceShare = 0.6   # A monster in defence position counts this share of its DEF as its battle size.
+MctsEvaluator.DominanceBonus = 0.1   # Bonus for the single largest face-up monster on the whole field, to its side (user, 2026-11-13: "move the dominance score down to just 0.1 for now, and only apply it if its the largest on both sides of the field ... nominal - a lever we can pull later"; the ATK table does most of the work).
+MctsEvaluator.DrawBonus = 0.01   # Per card we draw in our turn, on top of the card itself: a drawn card counts as 1.01 cards (CSV S6, so free draws aren't skipped for a tie).
+MctsEvaluator.FaceUpSpellBase = 0.3   # A face-up spell/trap's base worth, before its lasting effect.
+MctsEvaluator.FieldEffectWeight = 0.25   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
+MctsEvaluator.GraveEffectWeight = 0.15   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
+MctsEvaluator.HandAtkScale = 2000   # A monster in hand: its ATK counts as effect points at ATK / this.
+MctsEvaluator.HandCardBase = 0.5   # A card in hand: its base worth, before its effects and ATK.
+MctsEvaluator.HeldEffectWeight = 0.1   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
+MctsEvaluator.KeptDominanceBonus = 0   # Extra when that monster is the one that dominated when the search started. 0 for now: a lever for later.
+MctsEvaluator.LesserExposureWeight = 0.25   # Single-card removal and Icarus Attack count at this share of what Mirror Force / Torrential count (user, 2026-11-15: "~25%").
+MctsEvaluator.LowDeckCostPerCard = 0.5   # The deck-out cost per card under LowDeckFrom (card units).
+MctsEvaluator.LowDeckFrom = 5   # With our deck under this many cards, each missing card costs LowDeckCostPerCard (deck-out risk).
+MctsEvaluator.LowLpFullAt = 100   # Our LP at or below which a stopping/removing set card gets the full LowLpRemovalWeight.
+MctsEvaluator.LowLpRemovalWeight = 0.6   # With our LP at 0 (scaled up from ProtectionLpFrom), a set card that stops or removes an attacker gains this much.
+MctsEvaluator.LowLpScale = 1500   # How fast that value falls as our LP rise above LowLpFullAt: exp(-(LP - LowLpFullAt) / this). 1500: about 55% at 1000 LP, 28% at 2000, 7% at 4000, 0.5% at 8000.
+MctsEvaluator.LpHighWorth = 1   # Life points: everything from LpLowBand to 8000 is worth this many card units in all.
+MctsEvaluator.LpLowBand = 2000   # Life points: the band that counts at LpLowWorth.
+MctsEvaluator.LpLowWorth = 2.5   # Life points: the first LpLowBand of them are worth this many card units in all (each point matters more when low).
+MctsEvaluator.MonsterBase = 0.6   # A face-up monster's base worth, before its ATK (the ATK table) and its effects.
+MctsEvaluator.OversetCurve = 0.5   # The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).
+MctsEvaluator.PlusOneBonus = 1   # Per card of advantage won in our turn (card units, on top of the cards' own worth): a +1 (a card gained without losing one: Black Whirlwind's search, Pot of Greed) or a card of theirs taken for nothing (DAD's effect). A 1-for-1 trade is 0; a card spent for nothing (Kalut into a battle that changes nothing) is -1. User, 2026-11-16: "a very large bonus (per card)".
+MctsEvaluator.ProtectBodyShare = 0.5   # How much of a monster's body counts toward "how good it is" for protection (its effects count in full).
+MctsEvaluator.ProtectNeedCap = 2   # The most a monster's protection need counts for (card units).
+MctsEvaluator.ProtectionLpFrom = 4000   # Below this many life points, removal and protection gain value even with no monster to protect.
+MctsEvaluator.ProtectionWeight = 0.5   # A set card that protects (CardValue.Protects) gains this times what our most-at-risk monster needs (ProtectionNeed). Card units; adjust slowly.
+MctsEvaluator.RemoveThreatWeight = 0.3   # A set card that can remove a card of theirs already on the field gains this times that card's worth (card units).
+MctsEvaluator.ReserveWeight = 0.5   # Held monsters count at this share of their field worth: safe from the removal, but they accomplish nothing this turn (user, 2026-11-15: Fortress and Gearframe both out must beat Fortress alone with Gearframe held).
+MctsEvaluator.RiskDiscountMax = 0.6   # How much the fear of their cards drops at full pressure (risk tolerance at its top): 0.6 = to 40%.
+MctsEvaluator.Scale = 3   # How many card units of difference move the score from 0.5 to about 0.73 (the logistic's scale).
+MctsEvaluator.SetFlipBase = 0.9   # A face-down monster that gains from being set (a flip, a floater, a graveyard effect): its base worth.
+MctsEvaluator.SetQuickPlayBonus = 0.1   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
+MctsEvaluator.SetSpellBase = 0.5   # A set spell/trap's base worth, before what it will do.
+MctsEvaluator.SetTrapBonus = 0.25   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
+MctsEvaluator.SittingDuckWeight = 0.3
+MctsEvaluator.SpellInHandBonus0 = 0.5   # A normal / continuous / field / equip spell is worth this much more in hand than set (CSV S3: setting Miracle Dig was a bad play).
+MctsEvaluator.TaperScale = 1   # How slowly the taper bends: 1 puts Absolute Zero (5.25 points with the "all" factor) at 3.45, Stardust (9) at 4.1, Shura (10) at 4.2.
+MctsEvaluator.TaperStart = 2   # Effect points are linear up to this, then taper (see Taper).
+MctsEvaluator.ThreatFirstShare = 0.6   # Their unknown cards' threat: the share of our best face-up monster at risk.
+MctsEvaluator.ThreatRestShare = 0.2   # Their unknown cards' threat: the share of each other face-up monster at risk.
+MctsEvaluator.ThreatRiskMax = 0.9   # The most of our board their unknown cards are assumed to answer (a chance, 0-1).
+MctsEvaluator.TributeSetupBase = 0.3   # A Level 5+ monster in hand with the tributes for it on the field: its base worth as a setup.
+MctsEvaluator.UnknownCardRisk = 0.08   # Each unknown card's share of the risk to our board (the explosiveness scales it). Tune from logs.
+MctsEvaluator.UnknownCardWorth = 0.5   # Each of their unknown cards (hand, set) counts as this much of a card of theirs.
+MctsEvaluator.UnknownSetWorth = 0.5   # The worth of an unknown set card of theirs, as a removal target.
+MctsEvaluator.WallValue = 0.3   # Any other face-down monster: just a wall (walls are worth little).
+
+# --- OpponentDeckPredictor
+OpponentDeckPredictor.DefaultTypeExplosiveness = 0.5   # Deck read: the explosiveness of a deck type neither DeckExplosiveness nor the deck data rates.
+OpponentDeckPredictor.KnownTypeChance = 0.35   # From this top deck-type chance, we have an idea of what deck they're on (also the log's "unclear" line).
+OpponentDeckPredictor.MismatchPenalty = 0.05   # Weight of a list per copy it can't account for (we saw more copies than it runs). Small, not zero: lists tech.
+OpponentDeckPredictor.SetWeightPlainMonster = 0.25   # Deck read (no per-card data): how likely a plain monster is to be the one they set, against a flip monster (1).
+OpponentDeckPredictor.SetWeightQuickPlay = 0.5   # Deck read: how likely a quick-play spell is to be the card they set, against a trap (1).
+OpponentDeckPredictor.SetWeightSpell = 0.1   # Deck read: how likely any other spell is to be the card they set, against a trap (1).
+
+# --- Search (how the bot thinks: line counts, timings, tree limits; not rules of play)
+Search.DefaultMinPlayLines = 200   # Lines the best move needs at the start of a decision (both moves of a replacement need them); tapers to TaperFloorLines with time.
+Search.ExtraRunMs = 2000   # The budget of each extra run while the search thinks longer (ms). The taper itself counts elapsed time, not runs.
+Search.ExtraThinkStepMs = 2000   # Extra thinking per step when the search is unsure, and the most added to one decision (ms).
+Search.LineValueVisits = 30   # Lines a follow-up answer needs before a move's value is read through it (MctsNode.LineValue). Tune from logs.
+Search.MaxExtraThinkMs = 6000
+Search.MaxPickOptions = 64   # Most answers to one multi-card selection listed at once (the rest are sampled afresh per line).
+Search.MaxTreePickCards = 80   # Most cards a pick may offer and still be a decision of the tree (was 12; user, 2026-11-15: "this should be unlimited, or like 80 or fewer if a limit is truly needed"). Several-card picks are sampled (MaxPickOptions).
+Search.MinBrainPickLines = 15   # Fewest lines behind the brain's own pick. Lower than MinOverrideLines: the tree is biased toward the brain's pick, so a pick it then barely explores is one it found bad (seen 2026-11-11: Goyo 85 over 712 lines vs the brain's end the turn 52 over 17 lines, kept). The 2-sigma noise term still covers the small sample.
+Search.MinOverrideLines = 50   # Fewest lines behind the MCTS's best move before it may replace the brain's.
+Search.MinPlanVisits = 20   # Fewest lines behind a step of a line (a pick, or a later move in the logged line): the same bar as the move the search plays (DeckBotBrain.MinPlayLines). Fewer: the line stops there (user, 2026-11-13: "so that we never go through lower-confidence sections"; a 3-line "end the turn" after Lyla's summon skipped her effect).
+Search.NoProgressRunsToStop = 2   # Extra runs in a row that add no lines to a decision before the search stops thinking and decides on what it has.
+Search.OverrideBigGap = 0.3   # A score gap (0-1) this big counts as clear: the search needs only OverrideBigGapLines lines to be sure.
+Search.OverrideBigGapLines = 20   # Lines needed to be sure of a clear (OverrideBigGap) lead.
+Search.OverrideMidGap = 0.15   # A score gap (0-1) this big counts as fair: OverrideMidGapLines lines to be sure.
+Search.OverrideMidGapLines = 35   # Lines needed to be sure of a fair (OverrideMidGap) lead.
+Search.OverrideNoiseFactor = 1   # Standard errors of the search's best move the gap must clear on top of the margin (was 2). Lowered (user, 2026-11-13: "maybe we should lower the limit for the planner to overwrite? seems like the planner is doing relatively well while the brain keeps throwing up dumb things"): at 2 a 5-point preference needed 13-17 points at 2 s of lines and never got through.
+Search.ProgressNoteMs = 5000   # The progress note's interval while a decision takes longer than that (S9: "log every 5s").
+Search.RoutineCheckLines = 4   # Engine play-outs per routine check (different hidden cards each).
+Search.SearchOverrideMargin = 0.02   # How much better (position score, 0-1) another action must look before it replaces the brain's choice.
+Search.TaperAfterMs = 6000   # From this point on the line requirement tapers, and "significantly ahead" is no longer required.
+Search.TaperFloorLines = 100   # The taper never goes below this (user, 2026-11-16: "lets even keep it up at 100 lines"; a slow good bot over a fast bad one).
+Search.TaperLines = 10   # The requirement drops by TaperLines every TaperStepMs (user, 2026-11-15: "after 6s drop it by 10 every half a second").
+Search.TaperStepMs = 500   # The requirement drops by TaperLines every TaperStepMs (user, 2026-11-15: "after 6s drop it by 10 every half a second").
+Search.UnknownStrength = 1500   # A face-down monster's assumed strength (unknown: an average set monster).
+
+# added 2026-11-17 10:41 (new in the code since the file was written)
+# --- Search
+Search.MaxThinkMs = 30000   # The most a decision thinks (ms): past it the best move so far is played and the log flags it loudly with every move's lines and scores.
+Search.ScreenLines = 40   # Every legal move needs this many lines before a decision is made (a fair look at each), however far ahead another is.
+Search.WatchdogGraceMs = 20000   # A search thread still busy this long past its budget (ms) is reported as stuck and left behind.
+
+# added 2026-11-17 10:57 (new in the code since the file was written)
+# --- DeckBotBrain
+DeckBotBrain.HoldChanceForBrain = 0.5   # A former dice roll: the brain holds the move itself when the chance is at least this (the search pays the cost in proportion either way).
+# --- Search
+Search.SettledError = 0.01   # A move's score counts as settled when its margin of error (standard error, 0-1 scale: 0.01 = 1 point) is at most this; a settled move meets the line requirement below the count.
+
+# added 2026-11-17 15:32 (new in the code since the file was written)
+# --- DeckBotBrain
+DeckBotBrain.HoldCost.deck.grave-banish-target = 0.75
+
+# added 2026-11-17 15:46 (new in the code since the file was written)
+# --- LineTally
+LineTally.EmptyBattleCost = 1   # A line that enters the Battle Phase and makes no attack (user, 2026-11-17: it should outweigh the Main Phase 2 gains).
+# --- MctsEvaluator
+MctsEvaluator.ClockBonus = 1.5   # A side's clock on the other, as part of the board: ClockBonus / turns (card units). The turns are the brain's own clock (BoardAssessment.TurnsToWin).
+
+# added 2026-11-17 15:47 (new in the code since the file was written)
+# --- DeckBotBrain
+DeckBotBrain.HoldCost.deck.no-revive-grave-effect = 1.5
+DeckBotBrain.HoldCost.deck.no-steal-recruiter = 1.5
+
+# added 2026-11-17 16:11 (new in the code since the file was written)
+# --- DeckBotBrain
+DeckBotBrain.DarkFuelLimit = 3   # Against a Dark Armed Dragon deck: DARKs in their graveyard up to which banishing one is a goal (DAD wants 3).
+DeckBotBrain.FairyFuelLimit = 4   # Against a Fairy deck: Fairies in their graveyard up to which banishing one is a goal (a card wants 4 there).
+DeckBotBrain.FuelGoalDeckChance = 0.5   # The deck-read chance (their deck type, or their list running Dark Armed Dragon) from which a graveyard fuel goal applies.
+DeckBotBrain.HonestSuspectChance = 0.3   # Honest counts as suspected in their hand from this deck-read chance (or when known).
+# --- MctsEvaluator
+MctsEvaluator.DamageBonusPer1000 = 0.1   # A line that attacked gets this much extra (card units) per 1000 damage dealt in our turn, up to DamageBonusMax. Small: damage is mostly the clock's business.
+
+# added 2026-11-17 16:20 (new in the code since the file was written)
+# --- EffectEvaluator
+EffectEvaluator.OnDestroyedReplaceValue = 1   # A search or recruit from the deck that only happens when the card is destroyed (Peacekeeper, Shining Angel): it replaces the card, this many points.
+EffectEvaluator.SelfSummonValue = 0.25   # A monster effect that only Special Summons the card itself (a union's unequip, Machina Fortress's own summon): this many points.
+
+# added 2026-11-17 16:31 (new in the code since the file was written)
+# --- MctsEvaluator
+MctsEvaluator.WinBonus = 10   # A line that wins: this many card units on top of its position, times the chance the win really works (WinChance). Large.
+# --- SearchCardValues
+SearchCardValues.GraveFloor = 0   # A card that works from the graveyard is worth at least this there (card points), whatever its graveyard effects score.
+
+# added 2026-11-17 16:43 (new in the code since the file was written)
+# --- EffectEvaluator
+EffectEvaluator.GraveSelfReviveValue = 1   # A monster that brings itself back from the graveyard (Plaguespreader, Treeborn, Machina Fortress): this many points there (one card regained).
+
+# added 2026-11-17 16:45 (new in the code since the file was written)
+# --- EffectEvaluator
+EffectEvaluator.GraveStatBoostValue = 0.5   # A graveyard effect that boosts ATK / DEF for a battle (Skill Successor): this many points there.
+
+# added 2026-11-17 17:03 (new in the code since the file was written)
+# --- MctsEvaluator
+MctsEvaluator.BigHitBonus = 0.25
+MctsEvaluator.BigHitDamage = 1500   # Damage dealt in a line from this much up earns BigHitBonus (card units, on top of the LP themselves). Small: adjust slowly.
+MctsEvaluator.WinCardsSpread = 0.009   # Won lines: how far the cards a win spent can lower its score (cheaper wins second).
+MctsEvaluator.WinLengthSpread = 0.0009   # Won lines: how far a win's length can lower its score (shorter wins last).
+MctsEvaluator.WinRiskSpread = 0.04   # Won lines: how far the risk a win ran can lower its score below 1 (lower-risk wins first).
+
+# added 2026-11-17 19:37 (new in the code since the file was written)
+# --- MctsEvaluator
+MctsEvaluator.GorzReadyBonus = 0.3   # Gorz in our hand and our field empty at the end of a line: this small bonus (card units): Gorz can come out on their direct hit.
+
+# added 2026-11-17 20:01 (new in the code since the file was written)
+# --- DeckBotBrain
+DeckBotBrain.VayuPairShare = 0.15   # A live Vayu pair in our graveyard (Vayu + a non-Tuner Blackwing whose Levels make a Blackwing Synchro in our Extra Deck) counts this share of that synchro's body (its effects are negated). Below 1: a goal stays below what it converts into.
+
+# added 2026-11-17 20:06 (new in the code since the file was written)
+# --- EffectEvaluator
+EffectEvaluator.TunerValue = 0.5   # A Tuner monster (in hand or on the field): this many points, for the synchros it opens.
+
+# added 2026-11-17 20:07 (new in the code since the file was written)
+# --- SearchCardValues
+SearchCardValues.VayuGraveReading = 0.8   # Vayu's own graveyard worth (card points; its pairing is scored by the Vayu / Blackwing brains on top). User, 2026-11-17: about as valuable in the GY as Plaguespreader, more than Necro Gardna.

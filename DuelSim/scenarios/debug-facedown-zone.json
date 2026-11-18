@@ -1,0 +1,7 @@
+// Live 2026-11-10 08:59, Vayu turn 4 battle: the search aimed at "the face-down monster in zone 3", but it sits in M5.
+{
+  "deck": "Vayu", "opponent": "HeroFrog", "lp": [8000, 8000], "turn": 4, "phase": "main1", "decision": "battle",
+  "normalSummonUsed": true,
+  "ours": { "monsters": [ { "id": 28985331, "zone": 2 } ], "hand": [ 19613556, 6343408, 48976825 ] },
+  "theirs": { "monsters": [ { "id": 26202185, "zone": 3 }, { "zone": 4, "pos": "set" } ], "spells": [ { "zone": 0, "set": true } ], "handCount": 3 }
+}

@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!--
+      32-bit: the play search runs the rules engine in-process (ocgcore.dll is 32-bit). Self-contained, so no x86 .NET
+      install is needed (as DuelSim).
+    -->
+    <PlatformTarget>x86</PlatformTarget>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The bot's own mini simulator for the play search (Game/AI/Search): DuelSim's engine layer, compiled in from
+      DuelSim/src so both share one copy. Card data and scripts are read from DuelSim/vendor at run time.
+    -->
+    <Compile Include="..\DuelSim\src\Native\*.cs;..\DuelSim\src\Engine\*.cs;..\DuelSim\src\Data\*.cs;..\DuelSim\src\SimPaths.cs"
+             Link="Simulator\%(RecursiveDir)%(Filename)%(Extension)" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    <None Include="..\DuelSim\vendor\ocgcore\ocgcore.dll" CopyToOutputDirectory="PreserveNewest" Link="ocgcore.dll"
+          Condition="Exists('..\DuelSim\vendor\ocgcore\ocgcore.dll')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OmegaBotWrapper\OmegaBotWrapper.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="wwwroot\assets\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Edison deck lists for reading the opponent's deck (built with DuelSim's edison-data command). -->
+    <EmbeddedResource Include="Game\AI\Brains\Data\edison-decks.json" />
+  </ItemGroup>
+
+</Project>

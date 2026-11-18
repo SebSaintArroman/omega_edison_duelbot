@@ -1,0 +1,37 @@
+# One deck's own tuning: its numbers and its rules' hold costs (card units; each rule its own number).
+# The shared numbers are in bot-tuning.txt. Edit a value and restart the bot (or a DuelSim run).
+
+# --- GladiatorBeastsBotBrain
+GladiatorBeastsBotBrain.FlipThreatChance = 0.25   # A face-down monster of theirs with at least this Ryko chance counts as a flip effect coming (War Chariot worth more).
+GladiatorBeastsBotBrain.GladBodyBase = 0.6   # A Gladiator board's worth for the tag-out weighing: per monster, this + GladBodyPerThousand x ATK/1000.
+GladiatorBeastsBotBrain.GladBodyPerThousand = 0.8   # A Gladiator board's worth: card units per 1000 ATK of each monster.
+GladiatorBeastsBotBrain.RecycledIndomitableCost = 0.1   # Gladiator Proving Ground / recycled Indomitable: the cost of each one recycled.
+GladiatorBeastsBotBrain.TagBestiariChoiceBonus = 0.3   # Tag-out value: Bestiari's extra when they have 2+ spells/traps to choose from.
+GladiatorBeastsBotBrain.TagBestiariValue = 1   # Tag-out value: Bestiari destroying a spell/trap of theirs (card units).
+GladiatorBeastsBotBrain.TagBodySafeBonus = 0.3   # Tag-out value: extra when the tagged-in monster is bigger than their best attacker.
+GladiatorBeastsBotBrain.TagBodyShare = 0.2   # Tag-out value: the share of the tagged-in monster's body (ATK table) that counts.
+GladiatorBeastsBotBrain.TagDariusIdleValue = 0.1   # Tag-out value: Darius when its revive sets nothing up.
+GladiatorBeastsBotBrain.TagDariusUsefulValue = 1.2   # Tag-out value: Darius reviving a Gladiator Beast for Gyzarus / Heraklinos.
+GladiatorBeastsBotBrain.TagEquesteChariotNeededBonus = 0.5   # Tag-out value: Equeste's extra for War Chariot when a monster effect of theirs is likely next turn.
+GladiatorBeastsBotBrain.TagEquesteChariotValue = 1   # Tag-out value: Equeste returning War Chariot.
+GladiatorBeastsBotBrain.TagEquesteGladValue = 1   # Tag-out value: Equeste returning a Gladiator Beast.
+GladiatorBeastsBotBrain.TagEquesteGladWithOneInHand = 0.8   # Tag-out value: Equeste returning a Gladiator Beast with one already in hand.
+GladiatorBeastsBotBrain.TagMurmilloOtherAnswerShare = 0.5   # Tag-out value: Murmillo's kill counts this share when Raigeki Break in hand could do it too.
+GladiatorBeastsBotBrain.TagRetiariMinorValue = 0.3   # Tag-out value: Retiari banishing a minor card from their graveyard.
+GladiatorBeastsBotBrain.TagRetiariStrongValue = 1.2   # Tag-out value: Retiari banishing an important card from their graveyard.
+GladiatorBeastsBotBrain.HoldCost.glads.bestiari-for-gyzarus = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.boost-over-wall = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.discard = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.glad-summon = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.gyzarus = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.gyzarus-for-ryko = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.gyzarus-tag = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.heraklinos = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.heraklinos-negate = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.indomitable-recycle = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.raigeki-threat = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.shield-warrior-for-raigeki = 0.75
+GladiatorBeastsBotBrain.HoldCost.glads.tag-out = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.tag-out-unusable = 0.75
+GladiatorBeastsBotBrain.HoldCost.glads.tag-pick = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.war-chariot = 1.5

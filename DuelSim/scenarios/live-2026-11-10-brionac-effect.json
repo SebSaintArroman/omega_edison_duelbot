@@ -1,0 +1,19 @@
+// Live game 2026-11-10, turn 16, Battle Phase : had Brionac been summoned instead of Goyo, its effect next (discard N, return N cards).
+// Their side: Catastor and a set card; does the search find what to discard and what to return?
+{
+  "deck": "MachinaControl", "opponent": "Vayu", "lp": [7900, 600], "turn": 16, "phase": "main1", "decision": "idle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 50321816, "zone": 2 } ],
+    "spells": [ { "id": 41420027, "zone": 2, "set": true } ],
+    "hand": [ 44330098, 5556499 ],
+    "grave": [ 64697231, 24508238, 58054262, 22624393, 53582587, 29401950, 7359741 ],
+    "banished": [ 33420078 ]
+  },
+  "theirs": {
+    "monsters": [ { "id": 26593852, "zone": 1 } ],
+    "spells": [ { "zone": 0, "set": true } ],
+    "handCount": 3,
+    "grave": [ 70368879, 32807846, 70342110, 5318639, 44095762 ]
+  }
+}

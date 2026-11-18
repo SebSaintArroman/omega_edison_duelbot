@@ -1,0 +1,12 @@
+// Rebuild check (round-robin entry 6): Machina Gearframe equipped to Machina Fortress. The search's rebuilt board lost the
+// union (S/T one short); it must keep it, and offer both unequipping it and leaving it on.
+{
+  "deck": "MachinaJinzo", "opponent": "Vayu", "lp": [3000, 7200], "turn": 6, "phase": "main1", "decision": "idle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 5556499, "zone": 1 } ],
+    "spells": [ { "id": 42940404, "zone": 0, "equippedTo": 1 } ],
+    "hand": [ 19613556 ]
+  },
+  "theirs": { "monsters": [ { "id": 65192027, "zone": 1 } ], "handCount": 1 }
+}

@@ -1,0 +1,1729 @@
+﻿using BotTest.Game.AI.Brains;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using DuelSim.Engine;
+using OmegaBotWrapper.Enum;
+using OmegaBotWrapper.States;
+using OmegaBotWrapper.Struct;
+
+namespace BotTest.Game.AI.Search
+{
+    internal sealed record SearchSettings(
+        int BudgetMs = 1500,
+        int Threads = 1,
+        int MaxIterations = int.MaxValue,
+        /// <summary>UCB exploration constant (values are position scores, 0-1).</summary>
+        double Exploration = 0.5,
+        /// <summary>Bonus for our brain's own pick at each of our decisions in the tree, fading with visits (progressive bias).</summary>
+        double PriorBonus = 0.1,
+        /// <summary>Turns played per line: 2 = the rest of ours and their whole reply (user, 2026-11-11); 3 = also our next turn.</summary>
+        int Horizon = 2,
+        /// <summary>Progressive widening for card picks with many answers: at most 1 + Widening x sqrt(visits) children.</summary>
+        double Widening = 2,
+        /// <summary>
+        /// Progressive widening at our own main / battle decisions: at most 1 + MainWidening x sqrt(visits) answers open, the
+        /// brain's own first, then the moves it didn't hold back, the held ones last. The tree deepens along lines like the
+        /// brain's before it branches into rule-breaking ones (user, 2026-11-11: "search through similar lines to the brain").
+        /// </summary>
+        double MainWidening = 3,
+        /// <summary>Debugging: record the play-by-play of up to TraceLines lines whose first choice is this root key.</summary>
+        string? TraceRoot = null,
+        int TraceLines = 0,
+        /// <summary>Root moves to send lines to until each has FocusLines, the one with the fewest first (user, 2026-11-16: both sides of a
+        /// replacement need the same lines; the search's own exploration spreads lines over every root move and hardly visits one
+        /// that scores far lower, so a decision took 30-300 s to fill the two that matter).</summary>
+        IReadOnlyList<string>? FocusRoots = null,
+        int FocusLines = 0);
+
+    /// <param name="Mean">The move's score: its line value (MctsNode.LineValue), 0-1.</param>
+    /// <param name="Average">The plain average of every line through it (what Mean was before 2026-11-16), for the log.</param>
+    internal sealed record RootStat(string Key, string Label, int Visits, double Mean, double Average = double.NaN, double StdErr = 1);
+
+    /// <summary>
+    /// What this search's lines through one root choice ended in, averaged (for the log: user, 2026-11-13, "the log should
+    /// show more"): how often they won or lost outright, LP and board value (card units) on each side, and the cost paid
+    /// for going against the brain's rules.
+    /// </summary>
+    internal sealed record RootDetail(int Lines, double WinRate, double LossRate, double OurLp, double TheirLp, double OurBoard, double TheirBoard, double Penalty)
+    {
+        public string Describe() =>
+            $"won {WinRate:P0}, lost {LossRate:P0} of {Lines} lines; at the end LP {OurLp:0} vs {TheirLp:0}, board {OurBoard:0.0} vs {TheirBoard:0.0} card units" +
+            (Penalty > 0.05 ? $", rules broken cost {Penalty:0.0}" : "");
+    }
+
+    internal sealed record PlanStep(BotState State, string Key, string Label);
+
+    internal sealed record SearchOutcome(List<RootStat> Root, int Iterations, int Failures, TimeSpan Elapsed, string? FirstFailure,
+        /// <summary>The best line's next own pick after the root choice (e.g. the attack target), or null.</summary>
+        string? FollowUpKey,
+        /// <summary>A difference between the rebuilt board and the bot's view (monsters / spells-traps per side), or null when they match.</summary>
+        string? PositionMismatch = null,
+        /// <summary>
+        /// Per root choice, our follow-up picks along its most-visited line (discards, targets, yes/no) up to our next main or
+        /// battle decision: followed when the MCTS's move replaces the brain's (see DeckBotBrain.FollowPlan).
+        /// </summary>
+        IReadOnlyDictionary<string, List<PlanStep>>? Plans = null,
+        /// <summary>Recorded lines (SearchSettings.TraceRoot), each a play-by-play ending with its score.</summary>
+        IReadOnlyList<string>? Traces = null,
+        /// <summary>Lines behind the root (this search and every earlier one that reached it: dead time, earlier decisions).</summary>
+        int TreeVisits = 0,
+        /// <summary>The deepest line in the tree below the root, in decisions.</summary>
+        int Depth = 0,
+        /// <summary>The most-visited line from the root through our turn (main, battle and picks), for the log.</summary>
+        IReadOnlyList<PlanStep>? BestLine = null,
+        /// <summary>The brain's holds at the root: option key -> (what a line paid for the move, the rule).</summary>
+        IReadOnlyDictionary<string, (double Cost, string Rule)>? RootHolds = null,
+        /// <summary>Our brain's own answer at the root (the real brain's pick live, the twin's in the bench), or null.</summary>
+        string? RootPrior = null,
+        /// <summary>For the top root choices: the most-visited line through our turn that starts with that choice (for the log).</summary>
+        IReadOnlyDictionary<string, List<PlanStep>>? RootLines = null,
+        /// <summary>Per root choice followed by our own card pick (an attack target): each pick tried, with visits and mean.</summary>
+        IReadOnlyDictionary<string, List<RootStat>>? FollowUps = null,
+        /// <summary>Per root choice: what this search's lines through it ended in (see RootDetail).</summary>
+        IReadOnlyDictionary<string, RootDetail>? Details = null,
+        /// <summary>Pairs of root moves whose best lines reach the same position within our turn (transpositions: another order of the same play).</summary>
+        IReadOnlyList<(string A, string B)>? Transposed = null)
+    {
+        public RootStat? Stat(string key) => Root.FirstOrDefault(r => r.Key == key) ??
+            (SearchActions.SameMoveIn(key, Root.Select(r => r.Key)) is { } same ? Root.FirstOrDefault(r => r.Key == same) : null);
+    }
+
+    /// <summary>One decision in the MCTS tree: its statistics, and the answers tried from it.</summary>
+    internal sealed class MctsNode
+    {
+        public readonly object Lock = new();
+        public readonly Dictionary<string, MctsNode> Children = new();
+        public string Label = "";
+        public int Visits;
+        public double Total;
+        /// <summary>Times this node was a legal answer when its parent was visited (ISMCTS availability).</summary>
+        public int Available;
+        /// <summary>The kind of decision this node's children answer.</summary>
+        public BotState ChildState;
+        /// <summary>Whose decision this node's children are (0 = us).</summary>
+        public int ChildPlayer = -1;
+        /// <summary>Our brain's own answer at this decision (the first time it was asked), for the progressive bias.</summary>
+        public string? PriorKey;
+        public bool PriorAsked;
+        /// <summary>The answers our brain held back here (option key -> what a line pays for it, and the rule), once asked.</summary>
+        public Dictionary<string, (double Cost, string Rule)>? Holds;
+        /// <summary>At their card pick: how many genuinely different picks they had (copies of the same card, wherever they are,
+        /// count once), or -1 when not one of their picks. More than one: we couldn't know what they'd choose.</summary>
+        public int DistinctPicks = -1;
+        /// <summary>The decision key this node was registered under (our decisions), or null.</summary>
+        public string? Key;
+        /// <summary>Lines through this node met an open outcome before our next decision that isn't a branch of the tree: a pick of
+        /// theirs among more than one different card answered outside it (over 80 to pick from), or chance (a coin, a die, a
+        /// random selection). Above 1: the decision after it can't have been planned.</summary>
+        public int OpenBelow;
+        /// <summary>Steps into the line (tree nodes above it) when this node was filed as a position, or -1: a transposition only merges
+        /// nodes at the same depth.</summary>
+        public int Depth = -1;
+        /// <summary>The search start (root decision) whose lines first reached this node: transpositions only merge nodes of one start, so a
+        /// continued tree never mixes in lines from before the real game moved on (2026-11-17: after Charge resolved, an old "Charge, then
+        /// change position" node was merged under the new root, and its stale score and label stood in for the brain's Gorz summon).</summary>
+        public MctsNode? Origin;
+        public double Mean => Visits == 0 ? 0 : Total / Visits;
+        /// <summary>The sum of its lines' squared scores (for how settled its score is).</summary>
+        public double SumSq;
+        /// <summary>The margin of error of its lines' average score (the standard error, 0-1): small = settled, more lines won't move it.</summary>
+        public double StdErr => Visits < 2 ? 1 : Math.Sqrt(Math.Max(0, SumSq / Visits - Mean * Mean) / Visits);
+
+        /// <summary>
+        /// What a line through this node reaches when we play it well: at our own decisions, the best well-explored answer's value (at
+        /// least <paramref name="minVisits"/> lines behind it), recursively; at theirs and where nothing is explored enough, the plain
+        /// average. The plain average punished every move with choices after it (manual games 2026-11-16: "end the turn", with
+        /// nothing to decide, scored exactly; "summon Bora" averaged every pick, chain and attack its lines tried, good and bad, so
+        /// a line worth 90 read as 76 and the bot ended turn after turn with a full hand).
+        /// </summary>
+        public double LineValue(int minVisits) => LineValue(minVisits, new Dictionary<MctsNode, double>(ReferenceEqualityComparer.Instance));
+
+        // Memoised: transpositions make the tree a graph (two orders of the same play share a subtree), so an unmemoised walk
+        // revisits shared subtrees once per path, which blew up on a board with four set cards (seen 2026-11-16: the bot stopped
+        // answering after Jar of Greed). A node met again while its own value is being worked out answers its mean.
+        private double LineValue(int minVisits, Dictionary<MctsNode, double> memo)
+        {
+            if (memo.TryGetValue(this, out double known))
+                return known;
+            memo[this] = Mean;
+            List<MctsNode> explored;
+            lock (Lock)
+            {
+                if (ChildPlayer != 0 || Children.Count == 0)
+                    return Mean;
+                explored = Children.Values.Where(c => c.Visits >= minVisits).ToList();
+            }
+            if (explored.Count == 0)
+                return Mean;
+            double best = double.NegativeInfinity;
+            foreach (var child in explored)
+                best = Math.Max(best, child.LineValue(minVisits, memo));
+            // Scores are 0-1: anything else is a damaged node (counted for the bench), not a line worth playing.
+            if (best < 0 || best > 1 || double.IsNaN(best))
+            {
+                Interlocked.Increment(ref Mcts.DamagedNodes);
+                best = Mean;
+            }
+            memo[this] = best;
+            return best;
+        }
+    }
+
+    /// <summary>
+    /// One MCTS tree, kept across searches: dead time builds it from our next turn's start, each decision continues it, and
+    /// a decision finds its node again by the board and the answers on offer (DecisionKey), so the work carries over.
+    /// </summary>
+    internal sealed class MctsTree
+    {
+        public MctsNode Root { get; } = new();
+        private readonly ConcurrentDictionary<string, MctsNode> _decisions = new();
+        private const int MaxDecisions = 200_000;
+        public long Iterations;
+        public string Label { get; init; } = "";
+
+        public void Register(string key, MctsNode node)
+        {
+            node.Key ??= key;
+            if (_decisions.Count < MaxDecisions && _decisions.TryAdd(key, node))
+                _byBoard.GetOrAdd(BoardOf(key), _ => new ConcurrentBag<(string, MctsNode)>()).Add((key, node));
+        }
+
+        // Decisions by board (the key without its options): the fallback lookup below.
+        private readonly ConcurrentDictionary<string, ConcurrentBag<(string Key, MctsNode Node)>> _byBoard = new();
+
+        private static string BoardOf(string key) => key.LastIndexOf('#') is int hash and >= 0 ? key[..hash] : key;
+        private static HashSet<string> OptionsOf(string key) =>
+            key.LastIndexOf('#') is int hash and >= 0 ? key[(hash + 1)..].Split(';').ToHashSet(StringComparer.Ordinal) : new HashSet<string>();
+
+        /// <summary>
+        /// The decision with this key; else one on the same board whose lines were offered every answer the real game offers and more
+        /// (the engine and Omega disagree on an option now and then: seen 2026-11-17, a union's unequip offered in the lines right after
+        /// it equipped, never by Omega, and the next decision found no node: a DESYNC). The extra answers are never played: only the
+        /// real game's options are legal. The best-explored such node.
+        /// </summary>
+        /// <summary>
+        /// For a DESYNC report: the filed decision closest to this key (the most key parts equal, the same kind of prompt), and which
+        /// parts differ (part: ours vs the tree's). Null when the tree has none of that kind.
+        /// </summary>
+        public (string Key, string Differences)? Closest(string key)
+        {
+            static string[] Parts(string k) => k.Split('|', '#');
+            string kind = key.Split('|')[0];
+            var mine = Parts(key);
+            string[] names = { "prompt", "our LP", "their LP", "our hand", "our monsters", "our spells/traps", "our GY",
+                               "their monsters (face-up + face-down count)", "their spells/traps (face-up + set count)", "their GY", "options" };
+            (string Key, int Same)? best = null;
+            foreach (var filed in _decisions.Keys)
+            {
+                if (!filed.StartsWith(kind + "|"))
+                    continue;
+                var theirs = Parts(filed);
+                int same = mine.Zip(theirs).Count(p => p.First == p.Second);
+                if (best == null || same > best.Value.Same)
+                    best = (filed, same);
+            }
+            if (best == null)
+                return null;
+            var other = Parts(best.Value.Key);
+            var diffs = new List<string>();
+            for (int i = 0; i < Math.Max(mine.Length, other.Length); i++)
+            {
+                string a = i < mine.Length ? mine[i] : "-", b = i < other.Length ? other[i] : "-";
+                if (a != b)
+                    diffs.Add($"{(i < names.Length ? names[i] : $"part {i}")}: [{a}] vs the tree's [{b}]");
+            }
+            return (best.Value.Key, string.Join("; ", diffs));
+        }
+
+        public MctsNode? Find(string key)
+        {
+            if (_decisions.TryGetValue(key, out var node))
+                return node;
+            if (!_byBoard.TryGetValue(BoardOf(key), out var sameBoard))
+                return null;
+            var real = OptionsOf(key);
+            return sameBoard.Where(c => OptionsOf(c.Key).IsSupersetOf(real)).Select(c => c.Node).OrderByDescending(n => n.Visits).FirstOrDefault();
+        }
+
+        // Positions for transpositions, by a stricter key than decisions (DecisionKey.Strict): only an exact match is merged.
+        private readonly ConcurrentDictionary<string, MctsNode> _positions = new();
+
+        public void RegisterPosition(string strictKey, MctsNode node)
+        {
+            if (_positions.Count < MaxDecisions)
+                _positions.TryAdd(strictKey, node);
+        }
+
+        public MctsNode? FindPosition(string strictKey) => _positions.TryGetValue(strictKey, out var node) ? node : null;
+
+        /// <summary>
+        /// The way from an earlier decision of ours (<paramref name="from"/>) down to the decision with this key: whether the tree
+        /// reaches it, and on the way the first pick of theirs among more than one genuinely different card (its count), or 0
+        /// when every pick of theirs on the way had a single distinct answer (the plan accounted for it). User, 2026-11-13: "if
+        /// they target any card ... with an effect that had more than one valid target, this should also trigger a rebuild. If
+        /// they only have one valid target though, the planner should have accounted for that target ... and then continue."
+        /// </summary>
+        public (bool Reached, int OpenChoice) TheirChoicesOnTheWay(MctsNode from, string key)
+        {
+            var parent = new Dictionary<MctsNode, MctsNode>(ReferenceEqualityComparer.Instance) { [from] = from };
+            var queue = new Queue<MctsNode>();
+            queue.Enqueue(from);
+            while (queue.Count > 0 && parent.Count < MaxDecisions)
+            {
+                var node = queue.Dequeue();
+                if (!ReferenceEquals(node, from) && node.Key == key)
+                {
+                    for (var at = parent[node]; ; at = parent[at])
+                    {
+                        if (at.ChildPlayer == 1 && at.DistinctPicks > 1)
+                            return (true, at.DistinctPicks);
+                        if (at.OpenBelow > 1)
+                            return (true, at.OpenBelow);
+                        if (ReferenceEquals(at, from))
+                            break;
+                    }
+                    return (true, 0);
+                }
+                List<MctsNode> children;
+                lock (node.Lock)
+                    children = node.Children.Values.ToList();
+                foreach (var child in children)
+                    if (parent.TryAdd(child, node))
+                        queue.Enqueue(child);
+            }
+            return (false, 0);
+        }
+        public int Decisions => _decisions.Count;
+    }
+
+    /// <summary>
+    /// Conventional Monte Carlo tree search over our turn and their whole reply (user, 2026-11-11: "a conventional mcts",
+    /// long combos the brain can't see, "scored by the brain's rules about what cards are good"). Each iteration deals a
+    /// fresh guess at the hidden cards (our deck order and draws, their hand, sets and deck from the deck read: information-set
+    /// MCTS), rebuilds the position in the engine, then:
+    ///  1. selects down the tree by UCB, at every decision of the horizon (ours maximise the score, theirs minimise it),
+    ///     our brain's own pick getting a fading bonus (progressive bias), card picks with many answers widening slowly;
+    ///  2. expands one new node;
+    ///  3. rolls out to the horizon: our side played by our own brain twin, theirs by the quick policy (MctsPolicy);
+    ///  4. scores the end position with MctsEvaluator (the deck brain's card values), minus the strong suggestions the
+    ///     line's own choices went against;
+    ///  5. backs the score up the path.
+    /// The threads share one tree (virtual loss keeps them apart).
+    /// </summary>
+    internal sealed class Mcts
+    {
+        private const int SearchTurn = 1;
+
+        private static void MarkOpen(MctsNode node, int choices)
+        {
+            if (choices <= 1)
+                return;
+            lock (node.Lock)
+                node.OpenBelow = Math.Max(node.OpenBelow, choices);
+        }
+
+        /// <summary>A card pick's genuinely different answers (copies of one card count once; all of them required: one), or null
+        /// when the prompt isn't a card pick.</summary>
+        private static int? TheirPickCards(Prompt prompt)
+        {
+            var (cards, min) = prompt.Data switch
+            {
+                SelectCardData d => (d.SelectableCards, d.Minimum),
+                SelectTributeData d => (d.SelectableCards, d.Minimum),
+                SelectUnselectCardData d => (d.SelectableCards, d.Minimum),
+                _ => (null, 0),
+            };
+            if (cards == null || cards.Length == 0)
+                return null;
+            int distinct = cards.Select(c => SearchHost.CanonicalId(c.ID) is > 0 and var id ? id : c.ID).Distinct().Count();
+            return min >= cards.Length ? 1 : distinct;
+        }
+
+        /// <summary>
+        /// How many genuinely different answers a card pick has: each pick by its card(s) alone, without where they are, so two
+        /// copies of the same card count once (user, 2026-11-13: Jinzo - Returner with two Jinzo in the graveyard "has to bring
+        /// back one, but it makes no difference which"). A "cancel" isn't a card.
+        /// </summary>
+        private static int DistinctTargets(IEnumerable<string> keys) =>
+            keys.Where(k => k.StartsWith("card:") || k.StartsWith("cards:"))
+                .Select(k => string.Join('+', k[(k.IndexOf(':') + 1)..].Split('+').Select(c => c.Split('@')[0]).OrderBy(c => c, StringComparer.Ordinal)))
+                .Distinct().Count();
+
+        /// <summary>Most prompts one line may take before it's abandoned as a loop.</summary>
+        private const int MaxPromptsPerLine = 3000;
+
+        /// <summary>Steps of our lines that went against one of the brain's holds and paid for it (for the bench).</summary>
+        public static long HoldsCharged;
+        /// <summary>Held moves that matched an answer on offer at a tree node (for the bench).</summary>
+        public static long HoldsMatched;
+        // (CSV S5's clear-the-way bonus was dropped, user 2026-11-16: the exposure already rewards clearing their set cards first.)
+
+        /// <summary>Lines that met a position another order of moves had reached (transpositions), for the bench and the log.</summary>
+        public static long Transpositions;
+        /// <summary>Nodes whose best line's value fell outside 0-1 (MctsNode.LineValue): should stay 0.</summary>
+        public static long DamagedNodes;
+
+        // Where each search thread's line is (thread id -> its last prompt), for the watchdog's report.
+        private readonly ConcurrentDictionary<int, string> _lineStatus = new();
+
+        [Tunable("A search thread still busy this long past its budget (ms) is reported as stuck and left behind.", Section = "Search")]
+        public static int WatchdogGraceMs = 20000;
+
+        private sealed record Option(string Key, string Label, byte[] Packet);
+
+        private readonly SearchView _view;
+        private readonly MctsTree _tree;
+        private readonly MctsNode _start;
+        private readonly BotState _rootState;
+        private readonly string? _priorKey;
+        private readonly IReadOnlyCollection<int> _usedThisTurn;
+        private readonly SearchSettings _settings;
+        private readonly MctsEvaluator _evaluator;
+        private readonly Func<SearchBrain>? _brainFactory;
+
+        /// <summary>Moves no line of ours may contain (card code, action): the deck's very rare bans. Default: all allowed.</summary>
+        public Func<int, MainAction, bool>? MayChoose { get; init; }
+
+        /// <summary>The deck's strong suggestions: a cost (card units) when the step at this index goes against one.</summary>
+        public Func<IReadOnlyList<PlanStep>, int, IReadOnlyList<string>, SideSummary, double>? Suggestions { get; init; }
+
+        /// <summary>
+        /// A routine the brain's move starts (user, 2026-11-13: "score routines on the engine. *everything* should be tested and
+        /// scored in-engine"): lines through <c>RootKey</c> follow its remaining main / battle steps while they're on offer
+        /// (then the brain), so that move's score is the routine's outcome and it's weighed against every other move as usual.
+        /// </summary>
+        public (string RootKey, IReadOnlyList<PlanStep> Steps, Func<PlanStep, IReadOnlyCollection<string>, string?> Match)? Routine { get; init; }
+
+        /// <summary>
+        /// Mid-chain search (DeckBotBrain.MidChain): the position is the last searched decision of our turn, and each line first
+        /// plays the real game's answers since then (and their revealed cards) to reach the chain window that is the root.
+        /// </summary>
+        public ReplayScript? Replay { get; init; }
+
+        /// <summary>
+        /// Our field effects already used this turn, as "official id:effect description" (the rebuilt cards forgot their once-per-turn
+        /// counts): not offered again at our main decisions and chain windows. By effect, not by card (seen 2026-11-15: Gearframe's
+        /// summon trigger used hid its equip effect). Null: the older per-card list (usedThisTurn).
+        /// </summary>
+        public IReadOnlyCollection<string>? UsedEffects { get; init; }
+
+        private bool EffectUsed(int cardId, long description) =>
+            UsedEffects != null && UsedEffects.Contains($"{(SearchHost.CanonicalId(cardId) is > 0 and var official ? official : cardId)}:{description}");
+
+        /// <summary>Lines whose replay didn't reach the chain window (for the log: each one is a bug to find), and the first reason.</summary>
+        public int ReplayMisses => _replayMisses;
+        private int _replayMisses;
+        public string? FirstReplayMiss { get; private set; }
+
+        private string ReplayMiss(string why)
+        {
+            if (Interlocked.Increment(ref _replayMisses) == 1)
+                FirstReplayMiss = why;
+            return "replay: " + why;
+        }
+
+        /// <param name="start">The node whose decision is the root prompt (the tree's root, or a decision found again).</param>
+        /// <param name="priorKey">The real brain's pick at the root (its answer gets the progressive bias there).</param>
+        /// <param name="rootHolds">The real brain's holds at the root: option key -> (cost, rule) a line pays for the move.</param>
+        public Mcts(SearchView view, MctsTree tree, MctsNode start, BotState rootState, string? priorKey, IReadOnlyCollection<int> usedThisTurn,
+            SearchSettings settings, MctsEvaluator evaluator, Func<SearchBrain>? brainFactory,
+            IReadOnlyDictionary<string, (double Cost, string Rule)>? rootHolds = null)
+        {
+            _view = view;
+            if (rootHolds != null)
+                lock (start.Lock)
+                    start.Holds ??= new Dictionary<string, (double, string)>(rootHolds);
+            _tree = tree;
+            _start = start;
+            _rootState = rootState;
+            _priorKey = priorKey;
+            _usedThisTurn = usedThisTurn;
+            _settings = settings;
+            _evaluator = evaluator;
+            _brainFactory = brainFactory;
+            if (priorKey != null)
+                lock (start.Lock)
+                    if (!start.PriorAsked)
+                        (start.PriorKey, start.PriorAsked) = (priorKey, true);
+        }
+
+        // ---------------------------------------------------------------- engine pool and warm-up
+
+        /// <summary>Engine duels between searches: each keeps its loaded card scripts, so a new search starts warm.</summary>
+        private static readonly ConcurrentBag<PuzzleEngine> EnginePool = new();
+
+        private sealed class PoolReturn : IDisposable
+        {
+            private readonly PuzzleEngine _engine;
+            public PoolReturn(PuzzleEngine engine) => _engine = engine;
+            public void Dispose() => EnginePool.Add(_engine);
+        }
+
+        private static readonly object WarmLock = new();
+
+        /// <summary>
+        /// Gets the search ready for a duel's cards: scores every card (EffectEvaluator values, kept across searches) and
+        /// makes sure the engine pool holds one duel per search thread that has already loaded these cards' scripts. Engines
+        /// past half their life are rebuilt here, in idle time. Returns at once when everything is already warm.
+        /// </summary>
+        /// <returns>How long it took (ms).</returns>
+        public static long WarmUp(IReadOnlyCollection<int> cardIds, int threads)
+        {
+            if (!SearchHost.Available || cardIds.Count == 0)
+                return 0;
+            var clock = Stopwatch.StartNew();
+            lock (WarmLock)
+            {
+                var ids = cardIds.Where(id => id > 0).Distinct().OrderBy(id => id).ToList();
+                int key = ids.Aggregate(17, (h, id) => unchecked(h * 31 + id));
+                SearchHost.Register(ids);
+                var values = new SearchCardValues(Array.Empty<int>(), Array.Empty<int>());
+                foreach (int id in ids)
+                    values.Get(id, 0);
+
+                var engines = new List<PuzzleEngine>();
+                while (EnginePool.TryTake(out var engine))
+                    engines.Add(engine);
+                var rng = new Random();
+                while (engines.Count < threads)
+                    engines.Add(new PuzzleEngine(SearchHost.Cards, SearchHost.Scripts, rng.Next()));
+                string? lua = null;
+                foreach (var engine in engines)
+                {
+                    if (engine.Uses > PuzzleEngine.RebuildEvery / 2)
+                        engine.Discard(); // rebuild now, while idle
+                    if (engine.WarmedFor != key)
+                    {
+                        // A position holding every card (all in the decks) makes the engine load every script once.
+                        if (lua == null)
+                        {
+                            var position = new SearchPosition();
+                            int n = 0;
+                            foreach (int id in ids.Where(SearchHost.Knows))
+                                position.Add(id, n++ % 2, SearchPosition.LocDeck, 0, SearchPosition.PosFaceDown);
+                            lua = position.ToLua(DuelHost.PuzzleFlags);
+                        }
+                        engine.Load(lua, out _)?.Dispose();
+                        engine.WarmedFor = key;
+                    }
+                    EnginePool.Add(engine);
+                }
+            }
+            return clock.ElapsedMilliseconds;
+        }
+
+        private static int _warming;
+
+        /// <summary>WarmUp on a low-priority background thread (the opponent's turn, or as we end ours).</summary>
+        public static void WarmUpInBackground(IReadOnlyCollection<int> cardIds, int threads)
+        {
+            if (!SearchHost.Available || cardIds.Count == 0 || Interlocked.Exchange(ref _warming, 1) == 1)
+                return;
+            var thread = new Thread(() =>
+            {
+                try { WarmUp(cardIds, threads); }
+                catch { /* only an optimisation */ }
+                finally { Interlocked.Exchange(ref _warming, 0); }
+            }) { IsBackground = true, Name = "mcts warm-up", Priority = ThreadPriority.BelowNormal };
+            thread.Start();
+        }
+
+        // ---------------------------------------------------------------- the search
+
+        private int _maxDepth;
+
+        /// <summary>Searches until the budget (or MaxIterations, or cancellation), then reports the root's answers.</summary>
+        public SearchOutcome Run(int seed, CancellationToken ct = default, ThreadPriority priority = ThreadPriority.Normal)
+        {
+            SearchHost.Register(_view.AllKnownIds());
+            var clock = Stopwatch.StartNew();
+            int threads = Math.Max(1, _settings.Threads);
+            var iterations = new int[threads];
+            var failures = new int[threads];
+            string? firstFailure = null;
+            var deadline = _settings.BudgetMs <= 0 ? TimeSpan.MaxValue : TimeSpan.FromMilliseconds(_settings.BudgetMs);
+            long maxIterations = _settings.MaxIterations;
+            long done = 0;
+
+            void Work(int t)
+            {
+                var rng = new Random(seed * 7919 + t);
+                // A pooled engine duel keeps the card scripts it has loaded from one decision to the next (see WarmUp).
+                var engine = EnginePool.TryTake(out var pooled) ? pooled : new PuzzleEngine(SearchHost.Cards, SearchHost.Scripts, rng.Next());
+                using var giveBack = new PoolReturn(engine);
+                SearchBrain? brain = null;
+                try { brain = _brainFactory?.Invoke(); }
+                catch { /* no brain: the quick policy plays our side */ }
+                while (clock.Elapsed < deadline && Interlocked.Read(ref done) < maxIterations && !ct.IsCancellationRequested)
+                {
+                    string? failure = Iterate(rng, engine, brain);
+                    iterations[t]++;
+                    Interlocked.Increment(ref done);
+                    if (failure != null)
+                    {
+                        failures[t]++;
+                        Interlocked.CompareExchange(ref firstFailure, failure, null);
+                        // A position the engine can't build won't build next time either.
+                        if (failure.StartsWith("position"))
+                            break;
+                    }
+                }
+            }
+
+            // Dedicated threads, not the thread pool: live, the pool is busy with the bot's own blocking server calls and hands
+            // out workers slowly (seen 2026-11-10: about 6 lines in 2-4 s instead of hundreds in 1 s).
+            var workers = Enumerable.Range(0, threads).Select(t => new Thread(() =>
+            {
+                try { Work(t); }
+                catch (Exception ex) { Interlocked.CompareExchange(ref firstFailure, $"search thread failed: {ex.Message}", null); }
+            }) { IsBackground = true, Name = $"mcts {t}", Priority = priority }).ToList();
+            foreach (var worker in workers)
+                worker.Start();
+            // Watchdog (2026-11-17: bots went silent mid-decision until the server gave up): a thread still busy WatchdogGraceMs past the
+            // budget is stuck in one line; it's reported (where its line was) and left behind, and the search returns what it has.
+            var hardStop = _settings.BudgetMs > 0 ? deadline + TimeSpan.FromMilliseconds(WatchdogGraceMs) : TimeSpan.MaxValue;
+            foreach (var worker in workers)
+            {
+                var left = hardStop - clock.Elapsed;
+                if (_settings.BudgetMs > 0 && !worker.Join(left > TimeSpan.Zero ? left : TimeSpan.Zero))
+                {
+                    string where = _lineStatus.TryGetValue(worker.ManagedThreadId, out var s) ? s : "unknown";
+                    string report = $"search WATCHDOG: thread '{worker.Name}' stuck in one line for over {WatchdogGraceMs / 1000} s past the budget " +
+                                    $"(last seen: {where}); left behind, the search decides on what it has";
+                    Console.WriteLine(report);
+                    Interlocked.CompareExchange(ref firstFailure, report, null);
+                }
+                else if (_settings.BudgetMs <= 0)
+                    worker.Join();
+            }
+            Interlocked.Add(ref _tree.Iterations, iterations.Sum());
+            return Outcome(clock.Elapsed, iterations.Sum(), failures.Sum(), firstFailure);
+        }
+
+        /// <summary>Lines a follow-up answer needs before a move's value is read through it (MctsNode.LineValue). Tune from logs.</summary>
+        [Tunable("Lines a follow-up answer needs before a move's value is read through it (MctsNode.LineValue). Tune from logs.", Section = "Search")]
+        public static int LineValueVisits = 30;
+
+        /// <summary>This search's line totals per root key, averaged.</summary>
+        private Dictionary<string, RootDetail> Details()
+        {
+            lock (_details)
+                return _details.Where(kv => kv.Value.Lines > 0).ToDictionary(kv => kv.Key, kv =>
+                {
+                    var d = kv.Value;
+                    double n = d.Lines;
+                    return new RootDetail(d.Lines, d.Wins / n, d.Losses / n, d.OurLp / n, d.TheirLp / n, d.OurBoard / n, d.TheirBoard / n, d.Penalty / n);
+                });
+        }
+
+        // Per root key, this search's line totals (see RootDetail).
+        private readonly Dictionary<string, (int Lines, int Wins, int Losses, double OurLp, double TheirLp, double OurBoard, double TheirBoard, double Penalty)> _details = new();
+
+        /// <summary>The root's answers, most visited first, with the line below each.</summary>
+        private SearchOutcome Outcome(TimeSpan elapsed, int iterations, int failures, string? firstFailure)
+        {
+            List<RootStat> stats;
+            int rootVisits;
+            lock (_start.Lock)
+            {
+                stats = _start.Children.Select(kv => new RootStat(kv.Key, kv.Value.Label, kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
+                    .OrderByDescending(s => s.Visits).ThenByDescending(s => s.Mean).ToList();
+                rootVisits = _start.Visits;
+            }
+            string? followUp = null;
+            if (stats.Count > 0 && _start.Children.TryGetValue(stats[0].Key, out var bestChild))
+                lock (bestChild.Lock)
+                    if (bestChild.ChildState is BotState.SelectCard && bestChild.ChildPlayer == 0)
+                        followUp = bestChild.Children.OrderByDescending(kv => kv.Value.Visits).Select(kv => kv.Key).FirstOrDefault();
+            Dictionary<string, (double Cost, string Rule)>? rootHolds;
+            lock (_start.Lock)
+                rootHolds = _start.Holds == null ? null : new Dictionary<string, (double, string)>(_start.Holds);
+            // Per root choice whose next decision is our own card pick (an attack target): every pick tried there, with its stats.
+            var followUps = new Dictionary<string, List<RootStat>>();
+            foreach (var s in stats.Take(8))
+                if (_start.Children.TryGetValue(s.Key, out var child))
+                    lock (child.Lock)
+                        if (child.ChildState is BotState.SelectCard && child.ChildPlayer == 0)
+                            followUps[s.Key] = child.Children.Select(kv => new RootStat(kv.Key, kv.Value.Label, kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
+                                .OrderByDescending(v => v.Visits).ToList();
+            return new SearchOutcome(stats, iterations, failures, elapsed, firstFailure, followUp, _mismatch, Plans(stats), _traces.ToList(),
+                rootVisits, _maxDepth, BestLine(), rootHolds, _start.PriorKey,
+                stats.Take(5).ToDictionary(s => s.Key, s => BestLine(s.Key)), followUps, Details(), Transposed(stats));
+        }
+
+        /// <summary>One iteration. Returns a failure note, or null when it scored a line.</summary>
+        private string? Iterate(Random rng, PuzzleEngine engine, SearchBrain? brain)
+        {
+            long start = Stopwatch.GetTimestamp();
+            var position = _view.Determinize(rng);
+            SearchTimings.Add(ref SearchTimings.Cards, position.Cards.Count);
+            var lua = position.ToLua(_view.FirstTurnOfDuel ? DuelHost.PuzzleFlags & ~0x02UL : DuelHost.PuzzleFlags); // 0x02: attacks on the first turn
+            SearchTimings.Add(ref SearchTimings.Deal, Stopwatch.GetTimestamp() - start);
+            var host = engine.Load(lua, out var error);
+            if (host == null)
+                return $"position: {error}";
+            try
+            {
+                brain?.Attach(host, Math.Max(0, _view.RealTurn - 1));
+                var failure = Play(rng, host, position, brain);
+                if (failure != null)
+                    engine.Discard(); // a line that went wrong: start the next one on a fresh duel
+                return failure;
+            }
+            finally
+            {
+                long disposing = Stopwatch.GetTimestamp();
+                host.Dispose();
+                SearchTimings.Add(ref SearchTimings.Dispose, Stopwatch.GetTimestamp() - disposing);
+                SearchTimings.Add(ref SearchTimings.Lines, 1);
+            }
+        }
+
+        private readonly ConcurrentQueue<string> _traces = new();
+
+        // A step of the path: the node entered, and the virtual loss put on it while the line is played.
+        private readonly record struct PathStep(MctsNode Node, double VirtualLoss);
+
+        private string? Play(Random rng, DuelHost host, SearchPosition position, SearchBrain? brain)
+        {
+            var trace = _settings.TraceLines > 0 ? new List<string>() : null;
+            string? rootKey = null;
+            if (trace != null)
+                host.Event += line => trace.Add(line);
+            long phaseStart = Stopwatch.GetTimestamp();
+            int prompts = 0;
+            host.SetLifePoints(position.LifePoints[0], position.LifePoints[1]);
+
+            var path = new List<PathStep>();
+            var node = _start;
+            bool inTree = true, rootReached = false, autoBattle = _view.InBattlePhase;
+            bool anchorReached = false;
+            int replayNext = 0, extraPrompts = 0;
+            long revealsUsed = 0;
+            int pendingTargets = -1;
+            var line = new MctsPolicy.LineState();
+            var steps = new List<PlanStep>();
+            double penalty = 0;
+            int lastTurn = 0, depth = 0;
+            string? lastKey = null; // the answer that led into the current node (for transpositions)
+            bool attacked = false;
+            (SideSummary Ours, SideSummary Theirs, bool Attacked)? turnEnd = null;
+            bool followRoutine = false;
+            int randomSeen = host.RandomEvents;
+            int routineNext = 0;
+            // The sequence penalties of our turn (LineTally), starting from what the real turn has already done (TurnRecord).
+            var tally = new LineTally(_view.Record, _view.InBattlePhase || _view.BattlePhaseDone, _view.FirstTurnOfDuel)
+            {
+                // Our other face-up attack-position monsters, while the Battle Phase is still to come or under way (#135).
+                OtherAttackers = code =>
+                {
+                    if (host.Turn != SearchTurn || _view.FirstTurnOfDuel ||
+                        host.Phase is not ((int)OmegaBotWrapper.Enum.DuelPhase.Main1 or (int)OmegaBotWrapper.Enum.DuelPhase.BattleStart or
+                            (int)OmegaBotWrapper.Enum.DuelPhase.BattleStep or (int)OmegaBotWrapper.Enum.DuelPhase.Battle))
+                        return 0;
+                    var attackers = host.Summary(0).Monsters.Where(m => m.FaceUp && m.AttackPosition).ToList();
+                    int self = attackers.FindIndex(m => m.Code == code);
+                    return Math.Max(0, attackers.Count - (self >= 0 ? 1 : 0));
+                },
+            };
+            penalty += tally.Start;
+            Action<string>? note = trace != null ? trace.Add : null;
+            void NoteOurMainMove(Prompt p, byte[] packet)
+            {
+                if (rootReached && p.Player == 0 && host.Turn == SearchTurn)
+                    penalty += tally.OnOurAnswer(p, packet, note);
+            }
+
+            // Overexposure along the line (user, 2026-11-15: part of the score): Torrential at each of our summons, Mirror Force at
+            // each of our attacks (the worst point of each: they spring it then), Heavy Storm on our sets as the turn ends.
+            double peakTorrential = 0, peakMirror = 0, heavyExposure = 0, peakSpot = 0, peakIcarus = 0;
+            // The same peaks without monsters of theirs we control (C1, user 2026-11-16): used when those all went back (or died) by the end
+            // of our turn, i.e. borrowed ones (Brain Control). One still ours as the turn ends (Goyo's) counts.
+            double ownTorrential = 0, ownMirror = 0, ownSpot = 0, ownIcarus = 0;
+            bool sawForeign = false;
+            SideSummary Own(SideSummary o)
+            {
+                if (o.Foreign == 0)
+                    return o;
+                sawForeign = true;
+                return host.Summary(0, excludeForeign: true);
+            }
+            // Single-card removal and Icarus Attack: at our summons, our attacks and as our turn ends (they can use them any time).
+            void NoteLesser(SideSummary o, SideSummary t)
+            {
+                peakSpot = Math.Max(peakSpot, _evaluator.SpotExposure(o, t));
+                peakIcarus = Math.Max(peakIcarus, _evaluator.IcarusExposure(o, t));
+                var own = Own(o);
+                ownSpot = Math.Max(ownSpot, _evaluator.SpotExposure(own, t));
+                ownIcarus = Math.Max(ownIcarus, _evaluator.IcarusExposure(own, t));
+            }
+            int ourMonsters = -1, ourSpells = -1, ourDeck = -1, ourHand = -1, drawn = 0;
+            int OurCards() => host.CountIn(0, SearchPosition.LocHand) + host.CountIn(0, SearchPosition.LocMZone) + host.CountIn(0, SearchPosition.LocSZone);
+            int ourCardsAtRoot = -1; // CSV S15: a won line's cards spent
+            int? rootAdvantage = null; // our cards minus theirs at the decision (the +1 bonus)
+            void NoteMirror()
+            {
+                if (!rootReached || host.Turn != SearchTurn)
+                    return;
+                var (o, t) = (host.Summary(0), host.Summary(1));
+                peakMirror = Math.Max(peakMirror, _evaluator.MirrorExposure(o, t));
+                ownMirror = Math.Max(ownMirror, _evaluator.MirrorExposure(Own(o), t));
+                NoteLesser(o, t);
+            }
+            void NoteSummons()
+            {
+                int now = host.CountIn(0, SearchPosition.LocMZone);
+                if (ourMonsters >= 0 && now > ourMonsters)
+                {
+                    var (o, t) = (host.Summary(0), host.Summary(1));
+                    peakTorrential = Math.Max(peakTorrential, _evaluator.TorrentialExposure(o, t));
+                    ownTorrential = Math.Max(ownTorrential, _evaluator.TorrentialExposure(Own(o), t));
+                    NoteLesser(o, t);
+                }
+                ourMonsters = now;
+                // A card set or placed in our spell/trap zone: single removal and Icarus Attack see the board as it is now.
+                int spellsNow = host.CountIn(0, SearchPosition.LocSZone);
+                if (ourSpells >= 0 && spellsNow > ourSpells)
+                    NoteLesser(host.Summary(0), host.Summary(1));
+                ourSpells = spellsNow;
+                // Cards from our deck to our hand (a draw, or a search: a free card either way) for the draw bonus (CSV S6).
+                int deckNow = host.CountIn(0, SearchPosition.LocDeck), handNow = host.CountIn(0, SearchPosition.LocHand);
+                if (ourDeck >= 0 && deckNow < ourDeck && handNow > ourHand)
+                    drawn += Math.Min(ourDeck - deckNow, handNow - ourHand);
+                (ourDeck, ourHand) = (deckNow, handNow);
+            }
+
+            void Undo()
+            {
+                foreach (var step in path)
+                    lock (step.Node.Lock)
+                    {
+                        step.Node.Visits--;
+                        step.Node.Total -= step.VirtualLoss;
+                    }
+            }
+
+            Prompt? prompt;
+            try
+            {
+                while ((prompt = host.NextPrompt(SearchTurn + _settings.Horizon)) != null)
+                {
+                    prompts++;
+                    _lineStatus[Environment.CurrentManagedThreadId] = $"turn {host.Turn}, phase 0x{host.Phase:x}, {prompt.State} for player {prompt.Player}, prompt {prompts} of the line";
+                    // Chance (a coin, a die, a random selection) during our turn, while the line is still in the tree: what came
+                    // up couldn't be known, so the decision after it is re-planned (marked on the node it happened under).
+                    if (host.RandomEvents != randomSeen)
+                    {
+                        randomSeen = host.RandomEvents;
+                        if (rootReached && inTree && host.Turn == SearchTurn)
+                            MarkOpen(node, 2);
+                    }
+                    // A line that never ends (an engine prompt loop) mustn't hang the search: abandoned as failed.
+                    if (prompts > MaxPromptsPerLine)
+                    {
+                        Undo();
+                        return "line stopped: over 3000 prompts (a loop)";
+                    }
+                    if (host.Turn != lastTurn && lastTurn == SearchTurn && rootReached && turnEnd == null)
+                    {
+                        turnEnd = (host.Summary(0), host.Summary(1), attacked); // our turn just ended: the board their backrow would have hit
+                        heavyExposure = _evaluator.HeavyExposure(turnEnd.Value.Ours);
+                        NoteLesser(turnEnd.Value.Ours, turnEnd.Value.Theirs);
+                        penalty += tally.OnOurTurnEnd(turnEnd.Value.Ours, note);
+                    }
+                    if (host.Turn != lastTurn)
+                    {
+                        lastTurn = host.Turn;
+                        line.IdleActions[0] = line.IdleActions[1] = 0;
+                    }
+                    if (prompt.Attempts > 0)
+                    {
+                        // The engine rejected our answer: fall back to its safe answers in turn.
+                        int fallback = prompt.Attempts - 1;
+                        if (fallback >= prompt.Fallbacks.Count)
+                        {
+                            Undo();
+                            return rootReached ? $"no valid answer to {prompt.State}" : $"position: no valid answer to {prompt.State} before our decision";
+                        }
+                        host.Respond(prompt, prompt.Fallbacks[fallback]);
+                        continue;
+                    }
+
+                    bool ours = prompt.Player == 0 && host.Turn == SearchTurn;
+                    if (ours && rootReached)
+                        NoteSummons();
+                    if (ours && !rootReached)
+                    {
+                        if (autoBattle && prompt.State == BotState.SelectIdleCmd)
+                        {
+                            // The real decision is in the Battle Phase: the rebuilt turn goes straight there.
+                            autoBattle = false;
+                            if (((IdleCmdData)prompt.Data).CanBattlePhase)
+                            {
+                                Answer(host, prompt, SearchActions.Packet((int)MainAction.ToBattlePhase, 0));
+                                continue;
+                            }
+                        }
+                        if (Replay is { } replay)
+                        {
+                            // Mid-chain: from the last searched decision, the real game's answers in order, then the chain window.
+                            if (!anchorReached && prompt.State == replay.AnchorState)
+                            {
+                                anchorReached = true;
+                                CheckPosition(host);
+                            }
+                            if (anchorReached)
+                            {
+                                if (replayNext < replay.Ours.Count)
+                                {
+                                    var step = replay.Ours[replayNext];
+                                    if (SameKind(prompt.State, step.State) && ReplayKeys.Packet(prompt.Data, step) is { } replayed)
+                                    {
+                                        replayNext++;
+                                        Answer(host, prompt, replayed);
+                                        continue;
+                                    }
+                                    // A prompt the real game never showed us (an optional one): declined, and the replay goes on.
+                                    if (!SameKind(prompt.State, step.State) && Passive(prompt) is { } declined && extraPrompts++ < 8)
+                                    {
+                                        Answer(host, prompt, declined);
+                                        continue;
+                                    }
+                                    Undo();
+                                    return ReplayMiss($"step {replayNext + 1} ({step.Label}, {step.State}) not on offer at {prompt.State}");
+                                }
+                                var windowOptions = OptionsFor(prompt, true, rng)?.Select(o => o.Key).ToList() ?? new List<string>();
+                                if (prompt.State != _rootState || DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), windowOptions) != replay.TargetKey)
+                                {
+                                    if (prompt.State != _rootState && Passive(prompt) is { } skip && extraPrompts++ < 8)
+                                    {
+                                        Answer(host, prompt, skip);
+                                        continue;
+                                    }
+                                    Undo();
+                                    return ReplayMiss($"reached {prompt.State} [{DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), windowOptions)}], " +
+                                                      $"not the window [{replay.TargetKey}]");
+                                }
+                                rootReached = true;
+                                ourMonsters = host.CountIn(0, SearchPosition.LocMZone);
+                                ourSpells = host.CountIn(0, SearchPosition.LocSZone);
+                                (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
+                                ourCardsAtRoot = OurCards();
+                                rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
+                                long reachedAt = Stopwatch.GetTimestamp();
+                                SearchTimings.Add(ref SearchTimings.ToRoot, reachedAt - phaseStart);
+                                phaseStart = reachedAt;
+                            }
+                        }
+                        else if (prompt.State == _rootState)
+                        {
+                            rootReached = true;
+                            ourMonsters = host.CountIn(0, SearchPosition.LocMZone);
+                            ourSpells = host.CountIn(0, SearchPosition.LocSZone);
+                            (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
+                            ourCardsAtRoot = OurCards();
+                            rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
+                            CheckPosition(host);
+                            long now = Stopwatch.GetTimestamp();
+                            SearchTimings.Add(ref SearchTimings.ToRoot, now - phaseStart);
+                            phaseStart = now;
+                        }
+                    }
+                    // ...and their pick for it takes what it really targeted.
+                    if (!rootReached && Replay is { } targetReplay && prompt.Player == 1 && pendingTargets >= 0 &&
+                        ReplayKeys.TheirTargets(prompt.Data, targetReplay.Theirs[pendingTargets]) is { } targeted)
+                    {
+                        pendingTargets = -1;
+                        Answer(host, prompt, targeted);
+                        continue;
+                    }
+                    // ...and their other picks among our cards take what really left (a discard from our hand, a card of ours removed).
+                    if (!rootReached && Replay is { } outcomeReplay && prompt.Player == 1 && ReplayKeys.TheirPickFromOutcome(prompt.Data, outcomeReplay) is { } outcomePick)
+                    {
+                        Answer(host, prompt, outcomePick);
+                        continue;
+                    }
+                    // Mid-chain replay: their cards we saw come into play are played where the real game played them.
+                    if (!rootReached && Replay is { } theirReplay && prompt.Player == 1 && prompt.Data is SelectChainData theirChain)
+                    {
+                        byte[]? revealed = null;
+                        for (int r = 0; r < theirReplay.Theirs.Count && revealed == null; r++)
+                            if ((revealsUsed & (1L << r)) == 0 && theirReplay.Theirs[r].AfterOurAnswers <= replayNext &&
+                                ReplayKeys.Reveal(theirChain, theirReplay.Theirs[r]) is { } play)
+                            {
+                                revealsUsed |= 1L << r;
+                                revealed = play;
+                                pendingTargets = r;
+                            }
+                        if (revealed != null)
+                        {
+                            Answer(host, prompt, revealed);
+                            continue;
+                        }
+                    }
+                    // The routine the brain's move started: its next main / battle step while it's on offer (out of the tree: the
+                    // routine is the line), else the routine is over and the brain plays on.
+                    if (followRoutine && ours && Routine is { } routine && routineNext < routine.Steps.Count &&
+                        prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd && routine.Steps[routineNext].State == prompt.State)
+                    {
+                        var offeredNow = OptionsFor(prompt, true, rng);
+                        if (offeredNow != null && routine.Match(routine.Steps[routineNext], offeredNow.Select(o => o.Key).ToList()) is string routineKey)
+                        {
+                            routineNext++;
+                            inTree = false;
+                            if (routineKey.StartsWith("attack:"))
+                                { attacked = true; NoteMirror(); }
+                            trace?.Add($"  routine step: {routineKey}");
+                            NoteOurMainMove(prompt, offeredNow.First(o => o.Key == routineKey).Packet);
+                            Answer(host, prompt, offeredNow.First(o => o.Key == routineKey).Packet);
+                            continue;
+                        }
+                        routineNext = routine.Steps.Count; // a step not on offer: the routine breaks off here
+                    }
+                    if (rootReached && inTree && OptionsFor(prompt, ours, rng) is { Count: > 1 } options)
+                    {
+                        // Our main / battle decisions are filed by board and answers, so a later decision finds them again.
+                        if (ours && prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd)
+                        {
+                            string decision = DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), options.Select(o => o.Key));
+                            // A transposition (user, 2026-11-15: "the same moves in a different order"): this board and these answers were
+                            // reached by another order of moves this turn. The line carries on in that node, so both orders share what
+                            // follows (one position, one score below the meeting point). Each line's own costs (order penalties, broken
+                            // holds) stay with the moves it made above it.
+
+                            string strictPosition = decision + "#" + host.Fingerprint(); // as strict as possible (user, 2026-11-15)
+                            // Only a node at the same depth (the same number of steps into the line): the same board can't be reached
+                            // with a different number of moves, and a merge with one further down would make a loop in the tree.
+                            if (_tree.FindPosition(strictPosition) is { } same && same != node && same != _start && node != _start && path.Count > 0 &&
+                                path[^1].Node == node && lastKey != null && same.Depth == path.Count && same.Origin == _start && !path.Any(s => s.Node == same))
+                            {
+                                var parent = path.Count >= 2 ? path[^2].Node : _start;
+                                bool linked = false;
+                                lock (parent.Lock)
+                                    if (parent.Children.TryGetValue(lastKey, out var current) && current == node)
+                                    {
+                                        parent.Children[lastKey] = same;
+                                        linked = true;
+                                    }
+                                if (linked)
+                                {
+                                    lock (node.Lock)
+                                        lock (same.Lock)
+                                        {
+                                            same.Visits += node.Visits;
+                                            same.Total += node.Total;
+                                            same.SumSq += node.SumSq;
+                                            // Moved, not copied: a node with more than one parent (merged into before) was merged again from
+                                            // the next parent, and its lines counted twice each time (seen 2026-11-16: a node's score of 10^20).
+                                            node.Visits = 0;
+                                            node.Total = 0;
+                                            node.SumSq = 0;
+                                            foreach (var kv in node.Children)
+                                                same.Children.TryAdd(kv.Key, kv.Value);
+                                        }
+                                    path[^1] = new PathStep(same, path[^1].VirtualLoss);
+                                    node = same;
+                                    Interlocked.Increment(ref Transpositions);
+                                }
+                            }
+                            else
+                            {
+                                if (node.Depth < 0)
+                                    node.Depth = path.Count;
+                                node.Origin ??= _start;
+                                _tree.Register(decision, node);
+                                _tree.RegisterPosition(strictPosition, node);
+                            }
+                        }
+                        // Our brain's own answer here, once per node: the progressive bias toward the brain's play.
+                        if (prompt.Player == 0 && brain != null && !node.PriorAsked)
+                        {
+                            var packet = brain.Decide(prompt);
+                            string? prior = packet == null ? null : MatchKey(options, packet, prompt.State);
+                            // ...and the moves it held back here: the brain's rules as penalties on the lines that break them.
+                            var holds = brain.HoldsFor(options.Select(o => o.Key));
+                            Interlocked.Add(ref HoldsMatched, holds.Count);
+                            lock (node.Lock)
+                                if (!node.PriorAsked)
+                                {
+                                    (node.PriorKey, node.PriorAsked) = (prior, true);
+                                    node.Holds ??= holds;
+                                }
+                        }
+                        var (child, key, isNew, loss) = Select(node, options, rng, prompt.Player, prompt.State);
+                        lastKey = key;
+                        path.Add(new PathStep(child, loss));
+                        depth++;
+                        if (node == _start)
+                        {
+                            rootKey = key;
+                            followRoutine = Routine is { } r && r.RootKey == key;
+                        }
+                        if (ours)
+                        {
+                            (double Cost, string Rule)? held = null;
+                            lock (node.Lock)
+                                if (node.Holds != null && node.Holds.TryGetValue(key, out var h))
+                                    held = h;
+                            if (held is { } broken)
+                            {
+                                penalty += broken.Cost;
+                                Interlocked.Increment(ref HoldsCharged);
+                                trace?.Add($"  (against the brain's hold {broken.Rule}: -{broken.Cost:0.#})");
+                            }
+                        }
+                        if (ours && key.StartsWith("attack:"))
+                            { attacked = true; NoteMirror(); }
+                        if (key.StartsWith("attack:") && prompt.Data is BattleCmdData attacking)
+                            MctsPolicy.NoteAttacker(line, attacking, attacking.AttackableCards!
+                                .FirstOrDefault(card => $"attack:{SearchActions.CardKey(card)}" == key) is { ActionIndex: not null } picked
+                                ? picked : attacking.AttackableCards![0]);
+                        // The deck's strong suggestions, for our own choices in our turn.
+                        if (ours && Suggestions != null)
+                        {
+                            steps.Add(new PlanStep(prompt.State, key, child.Label));
+                            try { penalty += Suggestions(steps, steps.Count - 1, options.Select(o => o.Key).ToList(), host.Summary(1)); }
+                            catch { /* a suggestion that fails costs nothing */ }
+                        }
+                        node = child;
+                        inTree = !isNew;
+                        NoteOurMainMove(prompt, options.First(o => o.Key == key).Packet);
+                        Answer(host, prompt, options.First(o => o.Key == key).Packet);
+                        continue;
+                    }
+                    // Before our decision the rebuilt turn only replays phases the real turn has already had (Draw, Standby):
+                    // nobody uses anything optional there, or the position would change before we decide (seen 2026-11-10: our
+                    // set Jar of Greed and their traps fired in the replayed Standby Phase).
+                    if (!rootReached && Passive(prompt) is { } pass)
+                    {
+                        Answer(host, prompt, pass);
+                        continue;
+                    }
+                    // Rollout: our side by our own brain (as the bot really would play), theirs by the quick policy.
+                    if (prompt.Player == 0 && brain != null && brain.Decide(prompt) is { } brainPacket)
+                    {
+                        if (prompt.Data is BattleCmdData && brainPacket.Length >= 1 && brainPacket[0] == (byte)BattleAction.Attack && host.Turn == SearchTurn)
+                            { attacked = true; NoteMirror(); }
+                        if (prompt.Data is BattleCmdData battling && brainPacket.Length >= 2 && brainPacket[0] == (byte)BattleAction.Attack && (battling.AttackableCards?.Length ?? 0) > 0)
+                            MctsPolicy.NoteAttacker(line, battling, battling.AttackableCards![0]);
+                        NoteOurMainMove(prompt, brainPacket);
+                        Answer(host, prompt, brainPacket);
+                        continue;
+                    }
+                    // A pick of theirs in our turn the tree didn't branch on (over 80 cards to pick from): open if it had more than
+                    // one genuinely different answer.
+                    if (prompt.Player == 1 && rootReached && inTree && host.Turn == SearchTurn && TheirPickCards(prompt) is { } pickFrom)
+                        MarkOpen(node, pickFrom);
+                    var policyPacket = MctsPolicy.Answer(prompt, rng, line, host);
+                    if (prompt.Player == 0 && host.Turn == SearchTurn && prompt.Data is BattleCmdData && policyPacket.Length >= 1 && policyPacket[0] == (byte)BattleAction.Attack)
+                        { attacked = true; NoteMirror(); }
+                    NoteOurMainMove(prompt, policyPacket);
+                    Answer(host, prompt, policyPacket);
+                }
+            }
+            catch
+            {
+                Undo();
+                throw;
+            }
+
+            SearchTimings.Add(ref SearchTimings.Prompts, prompts);
+            SearchTimings.Add(ref (rootReached ? ref SearchTimings.Playout : ref SearchTimings.ToRoot), Stopwatch.GetTimestamp() - phaseStart);
+            if (!rootReached)
+            {
+                Undo();
+                return host.Result?.Error is { } ? $"position: duel stopped before our decision ({host.Result.Reason})" : "position: our decision never came up";
+            }
+            if (host.Result?.Error is { } err)
+            {
+                Undo();
+                return $"line stopped: {host.Result.Reason}";
+            }
+            long scoring = Stopwatch.GetTimestamp();
+            // A line that ended within our turn (a win, or a horizon of 1): its board now is the one their backrow would hit.
+            if (turnEnd == null && host.Turn == SearchTurn)
+            {
+                turnEnd = (host.Summary(0), host.Summary(1), attacked);
+                heavyExposure = _evaluator.HeavyExposure(turnEnd.Value.Ours);
+                NoteLesser(turnEnd.Value.Ours, turnEnd.Value.Theirs);
+            }
+            // Monsters of theirs we controlled during the turn, all gone back (or gone) as it ended: borrowed, not ours to lose (C1).
+            if (sawForeign && turnEnd is { } ended && ended.Ours.Foreign == 0)
+                (peakTorrential, peakMirror, peakSpot, peakIcarus) = (ownTorrential, ownMirror, ownSpot, ownIcarus);
+            double sittingDuck = turnEnd is { } atEnd ? _evaluator.SittingDuckExposure(atEnd.Ours) : 0;
+            double exposure = peakTorrential + peakMirror + heavyExposure + peakSpot + peakIcarus + sittingDuck;
+            if (exposure > 0.05)
+                trace?.Add($"  (overexposure: Torrential {peakTorrential:0.00}, Mirror Force {peakMirror:0.00}, Heavy Storm {heavyExposure:0.00}, " +
+                           $"single removal {peakSpot:0.00}, Icarus Attack {peakIcarus:0.00}, sitting duck {sittingDuck:0.00})");
+            // Card advantage won or lost in our turn (user, 2026-11-16: "a +1 - getting a new card without losing a card - should get a very
+            // large bonus per card"; DAD's free removal is the same idea, a card of theirs for nothing): our cards minus theirs (hand and
+            // field, tokens aside) as our turn ended, against the same at the decision.
+            double advantage = 0;
+            if (rootAdvantage is int atRoot && turnEnd is { } advEnd)
+            {
+                int gained = MctsEvaluator.CardAdvantage(advEnd.Ours, advEnd.Theirs) - atRoot;
+                advantage = gained * MctsEvaluator.PlusOneBonus;
+                if (gained != 0)
+                    trace?.Add($"  (card advantage {gained:+0;-0} in our turn: {advantage:+0.0;-0.0})");
+            }
+            double value = _evaluator.Evaluate(host, penalty - advantage + exposure * _evaluator.RiskDiscount - drawn * MctsEvaluator.DrawBonus, turnEnd,
+                winRisk: exposure, cardsSpent: ourCardsAtRoot >= 0 ? Math.Max(0, ourCardsAtRoot - OurCards()) : 0, length: prompts);
+            if (rootKey != null)
+            {
+                var ours = host.Summary(0);
+                var theirs = host.Summary(1);
+                double ourBoard = _evaluator.SideScore(ours, 0, theirs), theirBoard = _evaluator.SideScore(theirs, 1);
+                int winner = host.Result?.Winner ?? -1;
+                lock (_details)
+                {
+                    _details.TryGetValue(rootKey, out var d);
+                    _details[rootKey] = (d.Lines + 1, d.Wins + (winner == 0 ? 1 : 0), d.Losses + (winner == 1 ? 1 : 0),
+                        d.OurLp + Math.Max(0, host.LifePoints(0)), d.TheirLp + Math.Max(0, host.LifePoints(1)), d.OurBoard + ourBoard, d.TheirBoard + theirBoard,
+                        d.Penalty + penalty);
+                }
+            }
+            if (trace != null && rootKey == _settings.TraceRoot && _traces.Count < _settings.TraceLines)
+                _traces.Enqueue(string.Join("\n", trace) + $"\n  => position score {value * 100:0}" + (penalty > 0 ? $" (suggestions cost {penalty:0.0})" : ""));
+            SearchTimings.Add(ref SearchTimings.Evaluate, Stopwatch.GetTimestamp() - scoring);
+            lock (_start.Lock)
+            {
+                _start.Visits++;
+                _start.Total += value;
+                _start.SumSq += value * value;
+            }
+            foreach (var step in path)
+                lock (step.Node.Lock)
+                {
+                    step.Node.Total += value - step.VirtualLoss; // its visit was counted on the way down
+                    step.Node.SumSq += value * value;
+                }
+            if (depth > _maxDepth)
+                _maxDepth = depth;
+            return null;
+        }
+
+        /// <summary>
+        /// UCB pick at a decision of <paramref name="player"/> (we maximise the score, they minimise it). An answer not tried
+        /// yet comes first (our brain's own first); card picks with many answers open new ones only as visits grow
+        /// (progressive widening). The child entered carries a virtual loss until the line is scored.
+        /// </summary>
+        private (MctsNode Child, string Key, bool IsNew, double Loss) Select(MctsNode node, List<Option> options, Random rng, int player, BotState state)
+        {
+            // A visit that would look bad to whoever picks here, so the other threads spread out meanwhile.
+            double loss = player == 0 ? 0 : 1;
+            lock (node.Lock)
+            {
+                node.ChildState = state;
+                node.ChildPlayer = player;
+                if (player != 0 && node.DistinctPicks < 0 && state is BotState.SelectCard or BotState.SelectTribute or BotState.SelectUnselectCard)
+                    node.DistinctPicks = DistinctTargets(options.Select(o => o.Key));
+                foreach (var option in options)
+                    if (node.Children.TryGetValue(option.Key, out var existing))
+                        existing.Available++;
+
+                bool picks = state is BotState.SelectCard or BotState.SelectTribute or BotState.SelectUnselectCard;
+                bool ourMain = player == 0 && state is BotState.SelectIdleCmd or BotState.SelectBattleCmd;
+                int open = options.Count(o => node.Children.ContainsKey(o.Key));
+                int allowed = picks ? 1 + (int)(_settings.Widening * Math.Sqrt(node.Visits))
+                    : ourMain ? 1 + (int)(_settings.MainWidening * Math.Sqrt(node.Visits))
+                    : int.MaxValue;
+                var unexpanded = options.Where(o => !node.Children.ContainsKey(o.Key)).ToList();
+                if (unexpanded.Count > 0 && (open < allowed || open == 0))
+                {
+                    // Our brain's own answer first; then the moves it didn't hold back; the held ones (rule-breaking) last.
+                    Option pick;
+                    if (player == 0 && node.PriorKey != null && unexpanded.FirstOrDefault(o => o.Key == node.PriorKey) is { } prior)
+                        pick = prior;
+                    else
+                    {
+                        var free = node.Holds == null ? unexpanded : unexpanded.Where(o => !node.Holds.ContainsKey(o.Key)).ToList();
+                        var pool = free.Count > 0 ? free : unexpanded;
+                        pick = pool[rng.Next(pool.Count)];
+                    }
+                    var fresh = new MctsNode { Label = pick.Label, Available = 1, Visits = 1, Total = loss };
+                    node.Children[pick.Key] = fresh;
+                    return (fresh, pick.Key, true, loss);
+                }
+
+                Option? best = null;
+                double bestScore = double.NegativeInfinity;
+                if (node == _start && _settings.FocusRoots is { Count: > 0 } focusKeys)
+                {
+                    MctsNode? focused = null;
+                    Option? focusOption = null;
+                    foreach (string key in focusKeys)
+                        if (node.Children.TryGetValue(key, out var child) && child.Visits < _settings.FocusLines &&
+                            (focused == null || child.Visits < focused.Visits) && options.FirstOrDefault(o => o.Key == key) is { } option)
+                            (focused, focusOption) = (child, option);
+                    if (focused != null)
+                    {
+                        lock (focused.Lock)
+                        {
+                            focused.Visits++;
+                            focused.Total += loss;
+                        }
+                        return (focused, focusOption!.Key, false, loss);
+                    }
+                }
+                foreach (var option in options)
+                {
+                    if (!node.Children.TryGetValue(option.Key, out var child))
+                        continue;
+                    double mean = player == 0 ? child.Mean : 1 - child.Mean;
+                    double score = mean + _settings.Exploration * Math.Sqrt(Math.Log(Math.Max(1, child.Available)) / Math.Max(1, child.Visits));
+                    if (player == 0 && option.Key == node.PriorKey)
+                        score += _settings.PriorBonus / Math.Sqrt(1 + child.Visits);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        best = option;
+                    }
+                }
+                var chosen = node.Children[best!.Key];
+                lock (chosen.Lock)
+                {
+                    chosen.Visits++;
+                    chosen.Total += loss;
+                }
+                return (chosen, best.Key, false, loss);
+            }
+        }
+
+        /// <summary>The option key our brain's answer (a bot packet) means, or null.</summary>
+        private static string? MatchKey(List<Option> options, byte[] packet, BotState state)
+        {
+            if (state == BotState.SelectBattleCmd && packet.Length >= 1 && packet[0] == (byte)BattleAction.Attack)
+                return options.FirstOrDefault(o => o.Key.StartsWith("attack:"))?.Key;
+            if (state is BotState.SelectCard or BotState.SelectTribute && packet.Length >= 1)
+            {
+                var want = packet.Skip(1).OrderBy(b => b).ToArray();
+                return options.FirstOrDefault(o => o.Packet.Length == packet.Length && o.Packet.Skip(1).OrderBy(b => b).SequenceEqual(want))?.Key;
+            }
+            return options.FirstOrDefault(o => o.Packet.AsSpan().SequenceEqual(packet))?.Key;
+        }
+
+        // ---------------------------------------------------------------- reporting
+
+        /// <summary>
+        /// Fewest lines behind a step of a line (a pick, or a later move in the logged line): the same bar as the move the search
+        /// plays (DeckBotBrain.MinPlayLines). Fewer: the line stops there (user, 2026-11-13: "so that we never go through
+        /// lower-confidence sections"; a 3-line "end the turn" after Lyla's summon skipped her effect).
+        /// </summary>
+        [Tunable("Fewest lines behind a step of a line (a pick, or a later move in the logged line): the same bar as the move the search plays (DeckBotBrain.MinPlayLines). Fewer: the line stops there (user, 2026-11-13: \"so that we never go through lower-confidence sections\"; a 3-line \"end the turn\" after Lyla's summon skipped her effect).", Section = "Search")]
+        private static int MinPlanVisits = 20;
+
+        // Our step at a node: the best-scoring answer among those with MinPlanVisits+ lines (like the move the search plays),
+        // or null. Their answers (walked past, never planned): the most-visited.
+        private static KeyValuePair<string, MctsNode>? StepAt(MctsNode node, bool ours)
+        {
+            var tried = node.Children.Where(kv => kv.Value.Visits >= MinPlanVisits).ToList();
+            if (tried.Count == 0)
+                return null;
+            return ours ? tried.OrderByDescending(kv => kv.Value.Mean).First() : tried.OrderByDescending(kv => kv.Value.Visits).First();
+        }
+
+        // Our picks below each root answer along its most-visited line, up to our next main / battle decision.
+        private Dictionary<string, List<PlanStep>> Plans(List<RootStat> stats)
+        {
+            var plans = new Dictionary<string, List<PlanStep>>();
+            foreach (var stat in stats)
+            {
+                MctsNode? node;
+                lock (_start.Lock)
+                    node = _start.Children.GetValueOrDefault(stat.Key);
+                var steps = new List<PlanStep>();
+                while (node != null)
+                {
+                    KeyValuePair<string, MctsNode> next;
+                    BotState state;
+                    lock (node.Lock)
+                    {
+                        if (node.Children.Count == 0 || node.ChildPlayer != 0 || node.ChildState is BotState.SelectIdleCmd or BotState.SelectBattleCmd)
+                            break;
+                        if (StepAt(node, ours: true) is not { } step)
+                            break;
+                        next = step;
+                        state = node.ChildState;
+                    }
+                    // Chain decisions stay with the brain's chain rules: walk past them, don't plan them.
+                    if (state != BotState.SelectChain)
+                        steps.Add(new PlanStep(state, next.Key, next.Value.Label));
+                    node = next.Value;
+                }
+                plans[stat.Key] = steps;
+            }
+            return plans;
+        }
+
+        /// <summary>The line from the root through our turn (our decisions by StepAt; theirs are walked past), for the log.</summary>
+        /// <param name="firstKey">The root choice the line starts with (null: the most-visited one).</param>
+        private List<PlanStep> BestLine(string? firstKey = null)
+        {
+            var steps = new List<PlanStep>();
+            var node = _start;
+            for (int guard = 0; guard < 64; guard++)
+            {
+                KeyValuePair<string, MctsNode> next;
+                BotState state;
+                int player;
+                lock (node.Lock)
+                {
+                    if (node.Children.Count == 0)
+                        break;
+                    if (guard == 0 && firstKey != null)
+                    {
+                        if (!node.Children.TryGetValue(firstKey, out var first))
+                            break;
+                        next = new KeyValuePair<string, MctsNode>(firstKey, first);
+                    }
+                    else if (StepAt(node, ours: node.ChildPlayer == 0) is { } step)
+                        next = step;
+                    else
+                        break;
+                    state = node.ChildState;
+                    player = node.ChildPlayer;
+                }
+                // Our chains are in the line too (not passes): a real chain the chosen line didn't have is logged as unplanned.
+                if (player == 0 && (state != BotState.SelectChain || next.Key != "pass"))
+                    steps.Add(new PlanStep(state, next.Key, next.Value.Label));
+                // Our turn ends where we pass to the End Phase.
+                if (player == 0 && next.Key == "end")
+                    break;
+                node = next.Value;
+            }
+            return steps;
+        }
+
+        // The nodes along the most-visited line from this root move through our turn (stops at "end").
+        private HashSet<MctsNode> LineNodes(string firstKey)
+        {
+            var seen = new HashSet<MctsNode>(ReferenceEqualityComparer.Instance);
+            MctsNode? node;
+            lock (_start.Lock)
+                node = _start.Children.GetValueOrDefault(firstKey);
+            for (int guard = 0; node != null && guard < 64; guard++)
+            {
+                if (!seen.Add(node))
+                    break;
+                KeyValuePair<string, MctsNode>? next;
+                lock (node.Lock)
+                    next = node.Children.Count == 0 ? null : node.Children.OrderByDescending(kv => kv.Value.Visits).First();
+                if (next is not { } step || step.Key == "end")
+                    break;
+                node = step.Value;
+            }
+            return seen;
+        }
+
+        // Among the top root moves: pairs whose best lines meet in the same node (another order of the same play).
+        private List<(string A, string B)> Transposed(List<RootStat> stats)
+        {
+            var top = stats.Take(4).Select(s => (s.Key, Nodes: LineNodes(s.Key))).ToList();
+            var pairs = new List<(string, string)>();
+            for (int i = 0; i < top.Count; i++)
+                for (int j = i + 1; j < top.Count; j++)
+                    if (top[i].Nodes.Overlaps(top[j].Nodes))
+                        pairs.Add((top[i].Key, top[j].Key));
+            return pairs;
+        }
+
+        private int _checked;
+        private string? _mismatch;
+
+        /// <summary>
+        /// Once per search: does the rebuilt board match the bot's view (monsters and spells/traps on each side)? A rebuild
+        /// that puts a card on the wrong side or loses it would make every line wrong.
+        /// </summary>
+        private void CheckPosition(DuelHost host)
+        {
+            if (Interlocked.Exchange(ref _checked, 1) != 0)
+                return;
+            var ours = host.Summary(0);
+            var theirs = host.Summary(1);
+            string seen = $"ours {ours.Monsters.Count} monsters / {ours.SpellCodes.Count} S/T, theirs {theirs.Monsters.Count} / {theirs.SpellCodes.Count}";
+            string view = $"ours {_view.OwnMonsters.Count} / {_view.OwnSpells.Count}, theirs {_view.EnemyMonsters.Count} / {_view.EnemySpells.Count}";
+            if (ours.Monsters.Count != _view.OwnMonsters.Count || ours.SpellCodes.Count != _view.OwnSpells.Count ||
+                theirs.Monsters.Count != _view.EnemyMonsters.Count || theirs.SpellCodes.Count != _view.EnemySpells.Count)
+                _mismatch = $"rebuilt board: {seen}; real board: {view}";
+        }
+
+        /// <summary>The "do nothing" answer to an optional prompt (no chain, don't use the effect), or null when it must be answered.</summary>
+        /// <summary>
+        /// The same kind of prompt for a replay: a card pick is one whichever pick prompt asks it (seen 2026-11-17: Substitoad's tribute was a
+        /// SelectCard on Omega and a SelectUnselectCard in the search's engine, and every mid-chain replay after it missed).
+        /// </summary>
+        private static bool SameKind(BotState a, BotState b) =>
+            a == b || IsPick(a) && IsPick(b);
+
+        private static bool IsPick(BotState state) =>
+            state is BotState.SelectCard or BotState.SelectUnselectCard or BotState.SelectTribute or BotState.SelectSum;
+
+        private static byte[]? Passive(Prompt prompt) => prompt.Data switch
+        {
+            SelectChainData { Forced: false } => BitConverter.GetBytes(-1),
+            SelectEffectYnData or SelectYesNoData => new byte[] { 0 },
+            _ => null,
+        };
+
+        private static void Answer(DuelHost host, Prompt prompt, byte[] packet)
+        {
+            var response = DuelHost.TranslatePacket(prompt, packet) ?? prompt.Fallbacks.FirstOrDefault() ?? packet;
+            host.Respond(prompt, response);
+        }
+
+        /// <summary>What playing a plan out in the engine showed: lines tried, lines where every step was on offer, lines that
+        /// ended with their LP at 0 within our turn, and the first step that wasn't on offer (with its line count).</summary>
+        internal sealed record LineCheck(int Lines, int Completed, int Lethal, string? Broke, int BrokeLines);
+
+        /// <summary>
+        /// Plays a plan out on the engine before it's adopted (user, 2026-11-12: "test it in engine before committing all the
+        /// plays"): from this decision, our main / battle steps in order (the first one included), the picks between them by
+        /// our brain, the rest of our turn by our brain; they pass every chance to respond (whether they can stop it is the
+        /// push roll's question, not this one). Checks that each step is actually on offer when its turn comes (the rules
+        /// engine knows what the brain's arithmetic doesn't: Lyla in defence after her effect can't attack) and, for a lethal
+        /// plan, that their LP really reach 0. <paramref name="match"/> finds a step's live option among the offered keys.
+        /// </summary>
+        public LineCheck CheckLine(IReadOnlyList<PlanStep> steps, Func<PlanStep, IReadOnlyCollection<string>, string?> match, int lines, int seed)
+        {
+            SearchHost.Register(_view.AllKnownIds());
+            var engine = EnginePool.TryTake(out var pooled) ? pooled : new PuzzleEngine(SearchHost.Cards, SearchHost.Scripts, seed);
+            using var giveBack = new PoolReturn(engine);
+            SearchBrain? brain = null;
+            try { brain = _brainFactory?.Invoke(); }
+            catch { /* no brain: the quick policy makes our picks */ }
+            int completed = 0, lethal = 0, tried = 0;
+            var broke = new Dictionary<string, int>();
+            for (int i = 0; i < lines; i++)
+            {
+                var rng = new Random(seed * 31 + i);
+                var position = _view.Determinize(rng);
+                var host = engine.Load(position.ToLua(_view.FirstTurnOfDuel ? DuelHost.PuzzleFlags & ~0x02UL : DuelHost.PuzzleFlags), out _);
+                if (host == null)
+                    continue;
+                tried++;
+                try
+                {
+                    brain?.Attach(host, Math.Max(0, _view.RealTurn - 1));
+                    host.SetLifePoints(position.LifePoints[0], position.LifePoints[1]);
+                    var line = new MctsPolicy.LineState();
+                    bool rootReached = false, autoBattle = _view.InBattlePhase;
+                    int next = 0;
+                    string? stop = null;
+                    int checkPrompts = 0;
+                    Prompt? prompt;
+                    // NextPrompt(n) stops when turn n *begins*: SearchTurn + 1 plays our whole turn and stops at theirs.
+                    while ((prompt = host.NextPrompt(SearchTurn + 1)) != null && stop == null)
+                    {
+                        if (++checkPrompts > MaxPromptsPerLine) { stop = "over 3000 prompts (a loop)"; break; }
+                        if (prompt.Attempts > 0)
+                        {
+                            int fallback = prompt.Attempts - 1;
+                            if (fallback >= prompt.Fallbacks.Count) { stop = $"no valid answer to {prompt.State}"; break; }
+                            host.Respond(prompt, prompt.Fallbacks[fallback]);
+                            continue;
+                        }
+                        bool ours = prompt.Player == 0;
+                        if (ours && !rootReached)
+                        {
+                            if (autoBattle && prompt.State == BotState.SelectIdleCmd && ((IdleCmdData)prompt.Data).CanBattlePhase)
+                            {
+                                autoBattle = false;
+                                Answer(host, prompt, SearchActions.Packet((int)MainAction.ToBattlePhase, 0));
+                                continue;
+                            }
+                            rootReached = prompt.State == _rootState;
+                        }
+                        if (!rootReached && Passive(prompt) is { } pass)
+                        {
+                            Answer(host, prompt, pass);
+                            continue;
+                        }
+                        // Their side passes: no responses (see above).
+                        if (!ours)
+                        {
+                            Answer(host, prompt, Passive(prompt) ?? MctsPolicy.Answer(prompt, rng, line, host));
+                            continue;
+                        }
+                        // Our main / battle decisions: the plan's steps while there are any, then our brain.
+                        if (rootReached && next < steps.Count && prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd)
+                        {
+                            var step = steps[next];
+                            var options = OptionsFor(prompt, true, rng) ?? new List<Option>();
+                            var key = step.State == prompt.State ? match(step, options.Select(o => o.Key).ToList()) : null;
+                            if (key == null)
+                            {
+                                stop = $"step {next + 1} ({step.Label}) not on offer";
+                                break;
+                            }
+                            next++;
+                            Answer(host, prompt, options.First(o => o.Key == key).Packet);
+                            continue;
+                        }
+                        Answer(host, prompt, brain?.Decide(prompt) is { } decided ? decided : MctsPolicy.Answer(prompt, rng, line, host));
+                    }
+                    if (stop == null && next < steps.Count)
+                        stop = !rootReached ? "the position never reached our decision" : $"the turn ended before step {next + 1} ({steps[next].Label})";
+                    if (stop != null)
+                        broke[stop] = broke.GetValueOrDefault(stop) + 1;
+                    else
+                        completed++;
+                    if (host.LifePoints(1) <= 0 || host.Result is { Winner: 0 })
+                        lethal++;
+                }
+                catch (Exception ex)
+                {
+                    broke[$"failed: {ex.Message}"] = broke.GetValueOrDefault($"failed: {ex.Message}") + 1;
+                }
+                finally
+                {
+                    host.Dispose();
+                }
+            }
+            var worst = broke.OrderByDescending(kv => kv.Value).FirstOrDefault();
+            return new LineCheck(tried, completed, lethal, worst.Key, worst.Value);
+        }
+
+        // ---------------------------------------------------------------- tree answers
+
+        /// <summary>Pot of Greed (draw 2): always activated at the first chance (DeckBotBrain.PotOfGreedFirst).</summary>
+        public const int PotOfGreedId = 55144522;
+
+        /// <summary>Most answers to one multi-card selection listed at once (the rest are sampled afresh per line).</summary>
+        [Tunable("Most answers to one multi-card selection listed at once (the rest are sampled afresh per line).", Section = "Search")]
+        private static int MaxPickOptions = 64;
+
+        /// <summary>Most cards a pick may offer and still be a decision of the tree (was 12; user, 2026-11-15: "this should be unlimited,
+        /// or like 80 or fewer if a limit is truly needed"). Several-card picks are sampled (MaxPickOptions).</summary>
+        [Tunable("Most cards a pick may offer and still be a decision of the tree (was 12; user, 2026-11-15: \"this should be unlimited, or like 80 or fewer if a limit is truly needed\"). Several-card picks are sampled (MaxPickOptions).", Section = "Search")]
+        private static int MaxTreePickCards = 80;
+
+        private static List<Option> Picks(List<SearchActions.Pick> picks) => picks.Select(p => new Option(p.Key, p.Label, p.Packet)).ToList();
+
+        /// <param name="ourTurn">Our own decision in our turn: drop field effects we already used this turn, and moves the deck bans.</param>
+        private List<Option>? OptionsFor(Prompt prompt, bool ourTurn, Random rng)
+        {
+            switch (prompt.Data)
+            {
+                case IdleCmdData idle:
+                {
+                    var choices = SearchActions.Idle(idle, ourTurn && UsedEffects == null ? _usedThisTurn : null)
+                        .Where(c => !ourTurn || UsedEffects == null || c.Response.Action != MainAction.Activate || !(c.Key.Contains("@0.4.") || c.Key.Contains("@0.8.")) ||
+                                    !long.TryParse(c.Key[(c.Key.LastIndexOf(':') + 1)..], out long desc) || !EffectUsed(SearchActions.KeyCardId(c.Key), desc))
+                        .Where(c => c.Response.Action != MainAction.ShuffleHand)
+                        .Where(c => !ourTurn || MayChoose == null || c.Response.Action is MainAction.ToBattlePhase or MainAction.ToEndPhase ||
+                                    MayChoose(SearchActions.KeyCardId(c.Key), c.Response.Action))
+                        .ToList();
+                    // Pot of Greed is activated at the first chance, always (a fixed rule, user 2026-11-12): our lines do the same.
+                    if (prompt.Player == 0 && choices.FirstOrDefault(c => c.Response.Action == MainAction.Activate &&
+                                                                          SearchActions.KeyCardId(c.Key) == PotOfGreedId) is { } pot)
+                        choices = new() { pot };
+                    return choices.Select(c => new Option(c.Key, c.Label, SearchActions.Packet(c.Response))).ToList();
+                }
+                case BattleCmdData battle:
+                    // Ours: no "end the turn" from the Battle Phase while Main Phase 2 is on offer (CSV S10).
+                    return SearchActions.Battle(battle, anyOrder: prompt.Player != 0)
+                        .Where(c => !(prompt.Player == 0 && c.Key == "end" && battle.CanMainPhaseTwo)).Select(c => new Option(c.Key, c.Label, SearchActions.Packet(c.Response))).ToList();
+                // Card picks, single or several (Brionac's discards and targets). No "cancel" for an attack target: whether to
+                // attack is decided at the battle prompt (seen 2026-11-10: "attack, then cancel" cancelled the brain's attacks).
+                case SelectCardData select when (select.SelectableCards?.Length ?? 0) is var n && n > 0 && n <= MaxTreePickCards:
+                {
+                    bool attackTarget = select.SelectionHint == (int)DHint.ATTACKTARGET;
+                    return Picks(SearchActions.CardPicks(select.SelectableCards!, attackTarget ? Math.Max(1, select.Minimum) : select.Minimum, select.Maximum,
+                        select.Cancelable && !attackTarget && prompt.Player != 0, rng, MaxPickOptions));
+                }
+                case SelectTributeData tribute when (tribute.SelectableCards?.Length ?? 0) is var n && n > 0 && n <= MaxTreePickCards:
+                    return Picks(SearchActions.CardPicks(tribute.SelectableCards!, tribute.Minimum, tribute.Maximum, false, rng, MaxPickOptions));
+                case SelectUnselectCardData unselect when (unselect.SelectableCards?.Length ?? 0) is var n && n > 0 && n <= MaxTreePickCards:
+                    return Picks(SearchActions.CardPicks(unselect.SelectableCards!, Math.Min(unselect.Minimum, 1), 1, unselect.Minimum == 0 || unselect.Cancelable));
+                case SelectChainData chain:
+                {
+                    var cards = chain.SelectableCards ?? Array.Empty<DynamicCard>();
+                    var descs = chain.Descriptions ?? Array.Empty<int>();
+                    var list = new List<Option>();
+                    if (!chain.Forced)
+                        list.Add(new Option("pass", "don't chain", BitConverter.GetBytes(-1)));
+                    for (int i = 0; i < cards.Length; i++)
+                    {
+                        // A once-per-turn effect of ours already used this turn (the rebuilt card forgot): as at main decisions.
+                        if (ourTurn && prompt.Player == 0 && (UsedEffects != null ? EffectUsed(cards[i].ID, i < descs.Length ? descs[i] : 0) : _usedThisTurn.Contains(cards[i].ID)) &&
+                            cards[i].CurrentCoordinates.Location is (byte)CardLocation.MonsterZone or (byte)CardLocation.SpellZone)
+                            continue;
+                        list.Add(new Option($"chain:{SearchActions.CardKey(cards[i])}:{(i < descs.Length ? descs[i] : 0)}",
+                            $"chain {OmegaBotWrapper.Logging.CardNames.Get(cards[i].ID)}", BitConverter.GetBytes(i)));
+                    }
+                    return list.GroupBy(o => o.Key).Select(g => g.First()).ToList();
+                }
+                // "Attack directly?": Omega always attacks directly (and the simulator answers yes whatever is sent): one answer.
+                case SelectYesNoData { Description: 31 }:
+                    return new List<Option> { new("yes", "yes", new byte[] { 1 }) };
+                case SelectEffectYnData:
+                case SelectYesNoData:
+                    return new List<Option> { new("yes", "yes", new byte[] { 1 }), new("no", "no", new byte[] { 0 }) };
+                case SelectOptionData option:
+                    return Enumerable.Range(0, option.Options?.Length ?? 0)
+                        .Select(i => new Option($"option:{option.Options![i]}", $"option {i + 1}", BitConverter.GetBytes(i))).ToList();
+                default:
+                    return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A main / battle decision of ours as a key: the board (our side in full, theirs as far as it's public), and the answers
+    /// on offer, which carry what the board doesn't (Normal Summon used, once-per-turn effects spent, the Battle Phase still to
+    /// come). Zones and card-id variants are left out (SearchActions.LooseKey), so the real game and a line of the search
+    /// reaching the same decision give the same key, however the cards were placed.
+    /// </summary>
+    internal static class DecisionKey
+    {
+        private static int Canon(int code) => SearchHost.CanonicalId(code) is > 0 and var official ? official : code;
+        private static string Ids(IEnumerable<int> ids) => string.Join(",", ids.Select(Canon).OrderBy(x => x));
+
+        private static string Make(BotState state, int[] lp, IEnumerable<int> hand, IEnumerable<string> monsters, IEnumerable<string> spells,
+            IEnumerable<int> grave, IEnumerable<string> theirMonsters, int theirSetMonsters, IEnumerable<int> theirSpells, int theirSetSpells,
+            IEnumerable<int> theirGrave, IEnumerable<string> options) =>
+            $"{state}|{lp[0]}|{lp[1]}|{Ids(hand)}|{string.Join(",", monsters.OrderBy(x => x, StringComparer.Ordinal))}|" +
+            $"{string.Join(",", spells.OrderBy(x => x, StringComparer.Ordinal))}|{Ids(grave)}#" +
+            $"{string.Join(",", theirMonsters.OrderBy(x => x, StringComparer.Ordinal))}+{theirSetMonsters}|{Ids(theirSpells)}+{theirSetSpells}|{Ids(theirGrave)}#" +
+            string.Join(";", options.Select(SearchActions.DecisionOptionKey).OrderBy(x => x, StringComparer.Ordinal));
+
+        private static string Monster(int code, bool faceUp, bool attack) => faceUp ? $"{Canon(code)}:{(attack ? "a" : "d")}" : "set";
+
+        /// <summary>A decision reached in a line of the search.</summary>
+        public static string Of(BotState state, SideSummary ours, SideSummary theirs, IEnumerable<string> options) =>
+            Make(state, new[] { ours.LifePoints, theirs.LifePoints }, ours.HandCodes,
+                ours.Monsters.Select(m => m.FaceUp ? Monster(m.Code, true, m.AttackPosition) : $"{Canon(m.Code)}:s"),
+                ours.SpellCodes.Select(s => $"{Canon(s.Code)}:{(s.FaceUp ? "u" : "s")}"),
+                ours.GraveCodes,
+                theirs.Monsters.Where(m => m.FaceUp).Select(m => Monster(m.Code, true, m.AttackPosition)), theirs.Monsters.Count(m => !m.FaceUp),
+                theirs.SpellCodes.Where(s => s.FaceUp).Select(s => s.Code), theirs.SpellCodes.Count(s => !s.FaceUp),
+                theirs.GraveCodes, options);
+
+        /// <summary>
+        /// A decision of a line as a position for transpositions: the decision key plus what it leaves out (every monster's current
+        /// ATK/DEF, both sides' hand and deck sizes), so only truly identical positions are merged (user, 2026-11-15: cautious).
+        /// </summary>
+        public static string Strict(BotState state, SideSummary ours, SideSummary theirs, IEnumerable<string> options)
+        {
+            static string Stats(SideSummary s) => string.Join(",", s.Monsters.Select(m => $"{Canon(m.Code)}:{m.Attack}/{m.Defense}:{(m.FaceUp ? 1 : 0)}{(m.AttackPosition ? "a" : "d")}")
+                .OrderBy(x => x, StringComparer.Ordinal));
+            return Of(state, ours, theirs, options) + $"#{Stats(ours)}#{Stats(theirs)}#{ours.Hand}/{ours.Deck}/{theirs.Hand}/{theirs.Deck}";
+        }
+
+        /// <summary>The real decision, from what the bot sees.</summary>
+        public static string Of(BotState state, SearchView view, IEnumerable<string> options)
+        {
+            static bool FaceUp(uint position) => (position & 0x5) != 0;
+            static bool Attack(uint position) => (position & 0x3) != 0;
+            return Make(state, view.LifePoints, view.OwnHand,
+                view.OwnMonsters.Select(m => FaceUp(m.Position) ? Monster(m.Code, true, Attack(m.Position)) : $"{Canon(m.Code)}:s"),
+                view.OwnSpells.Select(s => $"{Canon(s.Code)}:{(FaceUp(s.Position) ? "u" : "s")}"),
+                view.OwnGrave,
+                view.EnemyMonsters.Where(m => m.Code > 0 && FaceUp(m.Position)).Select(m => Monster(m.Code, true, Attack(m.Position))),
+                view.EnemyMonsters.Count(m => m.Code <= 0 || !FaceUp(m.Position)),
+                view.EnemySpells.Where(s => s.Code > 0 && FaceUp(s.Position)).Select(s => s.Code),
+                view.EnemySpells.Count(s => s.Code <= 0 || !FaceUp(s.Position)),
+                view.EnemyGrave, options);
+        }
+    }
+}

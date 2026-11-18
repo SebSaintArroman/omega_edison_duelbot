@@ -1,0 +1,8 @@
+// Live 2026-11-10 09:08, Vayu turn 2 battle: our Goyo Guardian vs their Card Trooper and a Stardust Dragon that Starlight
+// Road brought out (not properly summoned: Goyo can't take it). Taking Card Trooper is the play.
+{
+  "deck": "Vayu", "opponent": "HeroFrog", "lp": [10000, 9000], "turn": 2, "phase": "main1", "decision": "battle",
+  "normalSummonUsed": true,
+  "ours": { "monsters": [ { "id": 7391468, "zone": 2 } ], "hand": [ 64697231, 6343408 ] },
+  "theirs": { "monsters": [ { "id": 85087012, "zone": 1 }, { "id": 44508094, "zone": 3, "improper": true } ], "handCount": 2 }
+}

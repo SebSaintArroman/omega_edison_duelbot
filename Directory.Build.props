@@ -1,0 +1,7 @@
+<Project>
+  <!-- Every project here builds Release unless told otherwise: a plain "dotnet build" makes the optimised build the launcher
+       (Launch-DuelBot.ps1) runs. Debug is still there with "dotnet build -c Debug". -->
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+  </PropertyGroup>
+</Project>

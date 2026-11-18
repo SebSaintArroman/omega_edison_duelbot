@@ -1,0 +1,14 @@
+// Live 2026-11-11 00:18, Gladiator Control turn 14 Main 1: Equeste (1600) against Archlord Kristya (2800). Raigeki Break on
+// Kristya (discarding the second Raigeki), or Skill Successor from the GY (+800) + Indomitable recycled (+500), gets through;
+// the old search kept "end the turn". Their deck (the user's Lightsworn) isn't a bot deck: Vayu stands in for hidden cards.
+{
+  "deck": "GladiatorControl", "opponent": "Vayu", "lp": [2100, 4100], "turn": 14, "phase": "main1", "decision": "idle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 57731460, "zone": 2 } ],
+    "spells": [ { "id": 73729209, "zone": 1, "set": true }, { "id": 4178474, "zone": 2, "set": true } ],
+    "hand": [ 4178474 ],
+    "grave": [ 44095762, 85087012, 21502796, 70368879, 94886282, 95360850, 73729209, 22624373, 97169186, 55136228, 4178474, 96216229, 78868776, 95360850 ]
+  },
+  "theirs": { "monsters": [ { "id": 59509952, "zone": 3 } ], "handCount": 3 }
+}

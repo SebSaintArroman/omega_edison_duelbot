@@ -1,0 +1,227 @@
+using System.Globalization;
+using System.Text;
+
+namespace BotTest.Game.AI.Search
+{
+    /// <summary>One card of a rebuilt position. Player 0 is always the searching bot.</summary>
+    internal sealed class PlacedCard
+    {
+        public int Code;
+        public int Owner;
+        public int Controller;
+        /// <summary>Engine location (LOCATION_*: 1 deck, 2 hand, 4 monster zone, 8 spell/trap zone, 0x10 GY, 0x20 banished, 0x40 extra).</summary>
+        public uint Location;
+        public int Sequence;
+        /// <summary>Engine position (POS_*: 1 face-up attack, 2 face-down attack, 4 face-up defence, 8 face-down defence).</summary>
+        public uint Position;
+        /// <summary>Already attacked this turn (it can't attack again in the rebuilt turn).</summary>
+        public bool Attacked;
+        /// <summary>Index (in SearchPosition.Cards) of the monster this card is equipped to, or -1.</summary>
+        public int EquippedTo = -1;
+        /// <summary>Indexes of the cards this card targets (continuous traps like Call of the Haunted).</summary>
+        public List<int> Targets { get; } = new();
+        public List<(int Type, int Count)> Counters { get; } = new();
+        /// <summary>False for an Extra Deck monster that wasn't properly summoned (it can't be revived or taken by Goyo).</summary>
+        public bool Proper = true;
+        /// <summary>Ours, arrived or changed this turn (ViewCard.ThisTurn): no position change; a set trap / quick-play can't be activated.</summary>
+        public bool ThisTurn;
+        /// <summary>Ours: can't attack in the rebuilt turn (its own effect used this turn said so).</summary>
+        public bool NoAttack;
+        /// <summary>Base ATK / DEF as the real board shows them (-1: unknown), see ViewCard.BaseAttack.</summary>
+        public int BaseAttack = -1, BaseDefense = -1;
+        /// <summary>Current ATK / DEF as the real board shows them (-1: unknown), see ViewCard.Attack.</summary>
+        public int Attack = -1, Defense = -1;
+        /// <summary>Theirs by ownership, ours until the End Phase (Brain Control): placed with its real owner and a control effect that
+        /// ends with the turn (without one the engine sends it straight home).</summary>
+        public bool BorrowedUntilEnd;
+        /// <summary>Controlled by a player who doesn't own it (Goyo Guardian's prize, Brain Control): held by a control effect, for
+        /// good unless BorrowedUntilEnd.</summary>
+        public bool TakenControl;
+        /// <summary>Theirs: battled one of ours this turn (ViewCard.Battled).</summary>
+        public bool Battled;
+    }
+
+    /// <summary>
+    /// A complete position (the bot's view plus sampled hidden cards) as a puzzle script for the rules engine. The engine
+    /// starts it at turn 1 of player 0 (us), Main Phase 1. What a puzzle can't carry is approximated: an already used
+    /// Normal Summon, monsters that already attacked and a Battle Phase already behind us are blocked by effects that
+    /// last until the End Phase.
+    /// </summary>
+    internal sealed class SearchPosition
+    {
+        public const uint LocDeck = 0x01, LocHand = 0x02, LocMZone = 0x04, LocSZone = 0x08, LocGrave = 0x10,
+            LocRemoved = 0x20, LocExtra = 0x40;
+        public const uint PosFaceUpAttack = 0x1, PosFaceDownAttack = 0x2, PosFaceUpDefense = 0x4, PosFaceDownDefense = 0x8,
+            PosFaceUp = 0x5, PosFaceDown = 0xa;
+
+        public int[] LifePoints { get; } = { 8000, 8000 };
+        public List<PlacedCard> Cards { get; } = new();
+        public bool NormalSummonUsed { get; set; }
+        /// <summary>The Battle Phase is behind us (deciding in Main Phase 2): no Battle Phase in the rebuilt turn.</summary>
+        public bool BattlePhaseDone { get; set; }
+
+        /// <summary>Cards a replay must draw, in order (DeckBotBrain.MidChain): each draw effect of ours in the rebuilt turn first moves the
+        /// next of these to the top of the deck, so a shuffle before the draw (Pot of Avarice) still draws what the real game drew.</summary>
+        public List<int> ForcedDraws { get; } = new();
+
+        public PlacedCard Add(int code, int controller, uint location, int sequence, uint position, int? owner = null)
+        {
+            var card = new PlacedCard
+            {
+                Code = code, Owner = owner ?? controller, Controller = controller, Location = location,
+                Sequence = sequence, Position = position,
+            };
+            Cards.Add(card);
+            return card;
+        }
+
+        public string ToLua(ulong flags)
+        {
+            var lua = new StringBuilder(8192);
+            string N(ulong v) => v.ToString(CultureInfo.InvariantCulture);
+            lua.Append("Debug.ReloadFieldBegin(").Append(N(flags)).Append(")\n");
+            for (int p = 0; p < 2; p++)
+                lua.Append("Debug.SetPlayerInfo(").Append(p).Append(',').Append(Math.Max(1, LifePoints[p])).Append(",0,1)\n");
+            lua.Append("local c={}\n");
+            for (int i = 0; i < Cards.Count; i++)
+            {
+                var card = Cards[i];
+                bool proc = card.Proper && card.Location is LocMZone or LocGrave or LocRemoved or LocSZone;
+                lua.Append("c[").Append(i + 1).Append("]=Debug.AddCard(").Append(card.Code).Append(',').Append(card.Owner).Append(',')
+                    .Append(card.Controller).Append(',').Append(card.Location).Append(',').Append(card.Sequence).Append(',')
+                    .Append(card.Position).Append(',').Append(proc ? "true" : "false").Append(")\n");
+            }
+            for (int i = 0; i < Cards.Count; i++)
+            {
+                var card = Cards[i];
+                if (card.EquippedTo >= 0)
+                    lua.Append("if c[").Append(i + 1).Append("] and c[").Append(card.EquippedTo + 1).Append("] then Debug.PreEquip(c[")
+                        .Append(i + 1).Append("],c[").Append(card.EquippedTo + 1).Append("]) ")
+                        // A union equipped by its own effect also gets its union state (equip limit + union status); a bare
+                        // PreEquip leaves an equip the engine destroys at once as illegal (round-robin entry 6: Gearframe
+                        // vanished from every rebuilt board). With the state, unequipping it is on offer too.
+                        .Append("if c[").Append(i + 1).Append("]:IsHasEffect(EFFECT_UNION_LIMIT) then aux.SetUnionState(c[")
+                        .Append(i + 1).Append("]) end end\n");
+                foreach (int target in card.Targets)
+                    lua.Append("if c[").Append(i + 1).Append("] and c[").Append(target + 1).Append("] then Debug.PreSetTarget(c[")
+                        .Append(i + 1).Append("],c[").Append(target + 1).Append("]) end\n");
+                foreach (var (type, count) in card.Counters)
+                    lua.Append("if c[").Append(i + 1).Append("] then Debug.PreAddCounter(c[").Append(i + 1).Append("],")
+                        .Append(type).Append(',').Append(count).Append(") end\n");
+            }
+            lua.Append("Debug.ReloadFieldEnd()\n");
+            // Monsters controlled by the player who doesn't own them: a control effect keeps them where they are (without one the
+            // engine sends a card home to its owner). Borrowed ones (C1, user 2026-11-16: Brain Control) go back at the End Phase, as
+            // the card's own effect does it; taken ones (Goyo Guardian) stay.
+            for (int i = 0; i < Cards.Count; i++)
+                if (Cards[i].TakenControl || Cards[i].BorrowedUntilEnd)
+                    lua.Append($"if c[{i + 1}] then local e=Effect.CreateEffect(c[{i + 1}]) e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_SET_CONTROL) ")
+                        .Append($"e:SetValue({Cards[i].Controller}) e:SetReset(RESET_EVENT+RESETS_STANDARD{(Cards[i].BorrowedUntilEnd ? "+RESET_PHASE+PHASE_END" : "")}) ")
+                        .Append($"c[{i + 1}]:RegisterEffect(e) end\n");
+            // Cards that got where they are this turn (summoned, set, sent to the graveyard, banished): a rebuilt card has no turn
+            // id, so "except the turn it was sent to the GY" (aux.exccon: Skill Successor) and "the turn it was summoned" checks
+            // read it as an old card (seen 2026-11-15: a mid-chain replay offered Skill Successor's GY effect the turn it was sent).
+            // GetTurnID answers the rebuilt turn (1) for them while the line is in that turn; the engine's own id once it moves on.
+            lua.Append("if not _st_orig then _st_orig=Card.GetTurnID Card.GetTurnID=function(c) if _st_cards and _st_cards[c] and Duel.GetTurnCount()==1 then return 1 end return _st_orig(c) end end\n");
+            lua.Append("_st_cards={}\n");
+            // A replay's draws: before each of our draw effects in the rebuilt turn, the card the real game drew goes to the top of the
+            // deck (a shuffle first, as Pot of Avarice does, would otherwise draw at random; user, 2026-11-15). Only these cards, once each.
+            lua.Append("_st_draws={").Append(string.Join(",", ForcedDraws)).Append("}\n");
+            lua.Append("if not _st_draw then _st_draw=Duel.Draw Duel.Draw=function(p,n,r) ")
+                .Append("if p==0 and _st_draws and #_st_draws>0 and Duel.GetTurnCount()==1 then ")
+                .Append("local k=math.min(n,#_st_draws) for i=k,1,-1 do local tc=Duel.GetMatchingGroup(Card.IsCode,0,LOCATION_DECK,0,nil,_st_draws[i]):GetFirst() ")
+                .Append("if tc then Duel.MoveSequence(tc,0) end end for i=1,k do table.remove(_st_draws,1) end end ")
+                .Append("return _st_draw(p,n,r) end end\n");
+            // Our monsters that attacked this turn battled: a Gladiator Beast's tag-out checks GetBattledGroupCount() > 0, which a
+            // rebuilt card reads as 0 (seen 2026-11-15: a mid-chain replay after Laquari's attack never got its tag-out window).
+            lua.Append("if not _st_bgc then _st_bgc=Card.GetBattledGroupCount Card.GetBattledGroupCount=function(c) local n=_st_bgc(c) ")
+                .Append("if n==0 and _st_battled and _st_battled[c] and Duel.GetTurnCount()==1 then return 1 end return n end end\n");
+            lua.Append("_st_battled={}\n");
+            // A Gladiator Beast summoned by a Gladiator's effect carries its own flag (Laquari: 2100 ATK); the rebuilt one doesn't,
+            // so its base stats come out wrong (seen 2026-11-15: Gorz into a 2100 Laquari dealt 600, the lines 900). Restored when
+            // the real base ATK / DEF differ from the rebuilt card's.
+            for (int i = 0; i < Cards.Count; i++)
+            {
+                var card = Cards[i];
+                if (card.Location != LocMZone || card.BaseAttack < 0 && card.BaseDefense < 0)
+                    continue;
+                string c = $"c[{i + 1}]";
+                string differs = (card.BaseAttack >= 0 ? $"{c}:GetBaseAttack()~={card.BaseAttack}" : "false") + " or " +
+                                 (card.BaseDefense >= 0 ? $"{c}:GetBaseDefense()~={card.BaseDefense}" : "false");
+                lua.Append($"if {c} and {c}:IsFaceup() and {c}:IsSetCard(SET_GLADIATOR) and ({differs}) then ")
+                    .Append($"{c}:RegisterFlagEffect({c}:GetOriginalCode(),RESET_EVENT+RESETS_STANDARD,0,1) end\n");
+                // A token's stats come from the effect that made it (Gorz's Emissary of Darkness Token: the damage taken); the rebuilt
+                // one is 0/0 (seen 2026-11-15: Ryko into an 1800-DEF token cost 1600 LP the lines never saw). Set them as they are.
+                foreach (var (value, code) in new[] { (card.BaseAttack, "EFFECT_SET_BASE_ATTACK"), (card.BaseDefense, "EFFECT_SET_BASE_DEFENSE") })
+                    if (value >= 0)
+                        lua.Append($"if {c} and {c}:IsType(TYPE_TOKEN) then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_SINGLE) ")
+                            .Append($"e:SetCode({code}) e:SetValue({value}) e:SetReset(RESET_EVENT+RESETS_STANDARD) {c}:RegisterEffect(e) end\n");
+            }
+            for (int i = 0; i < Cards.Count; i++)
+                if ((Cards[i].Attacked || Cards[i].Battled) && Cards[i].Location == LocMZone)
+                    lua.Append("if c[").Append(i + 1).Append("] then _st_battled[c[").Append(i + 1).Append("]]=true end\n");
+            for (int i = 0; i < Cards.Count; i++)
+                if (Cards[i].ThisTurn)
+                    lua.Append("if c[").Append(i + 1).Append("] then _st_cards[c[").Append(i + 1).Append("]]=true end\n");
+
+            // What the puzzle can't carry over from the real turn.
+            const string untilEnd = "RESET_PHASE+PHASE_END";
+            void PlayerBlock(string code) =>
+                lua.Append("do local e=Effect.GlobalEffect() e:SetType(EFFECT_TYPE_FIELD) e:SetProperty(EFFECT_FLAG_PLAYER_TARGET) ")
+                    .Append("e:SetCode(").Append(code).Append(") e:SetTargetRange(1,0) e:SetReset(").Append(untilEnd)
+                    .Append(") Duel.RegisterEffect(e,0) end\n");
+            if (NormalSummonUsed)
+            {
+                PlayerBlock("EFFECT_CANNOT_SUMMON");
+                PlayerBlock("EFFECT_CANNOT_MSET");
+            }
+            if (BattlePhaseDone)
+                PlayerBlock("EFFECT_CANNOT_BP");
+            // Ours, this turn (CSV S1 follow-up, 2026-11-15: the rebuilt turn offered moves the real one didn't): a monster summoned,
+            // flipped, repositioned or that attacked can't change position again; a trap or quick-play spell set this turn can't be
+            // activated until next turn. Effects, not card statuses: the engine clears statuses at the rebuilt turn's Draw Phase.
+            for (int i = 0; i < Cards.Count; i++)
+            {
+                var card = Cards[i];
+                if (!(card.ThisTurn || card.Attacked) || card.Controller != 0)
+                    continue;
+                string c = $"c[{i + 1}]";
+                if (card.Location == LocMZone)
+                    lua.Append("if ").Append(c).Append(" then local e=Effect.CreateEffect(").Append(c)
+                        .Append(") e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_CANNOT_CHANGE_POSITION) e:SetReset(RESET_EVENT+RESETS_STANDARD+")
+                        .Append(untilEnd).Append(") ").Append(c).Append(":RegisterEffect(e) end\n");
+                else if (card.Location == LocSZone && card.ThisTurn)
+                    lua.Append("if ").Append(c).Append(" and ").Append(c).Append(":IsFacedown() and (").Append(c).Append(":IsType(TYPE_TRAP) or ")
+                        .Append(c).Append(":IsType(TYPE_QUICKPLAY)) then local e=Effect.CreateEffect(").Append(c)
+                        .Append(") e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_CANNOT_TRIGGER) e:SetReset(RESET_EVENT+RESETS_STANDARD+")
+                        .Append(untilEnd).Append(") ").Append(c).Append(":RegisterEffect(e) end\n");
+            }
+            for (int i = 0; i < Cards.Count; i++)
+            {
+                if (!Cards[i].Attacked && !Cards[i].NoAttack)
+                    continue;
+                lua.Append("if c[").Append(i + 1).Append("] then local e=Effect.CreateEffect(c[").Append(i + 1)
+                    .Append("]) e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_CANNOT_ATTACK) e:SetReset(RESET_EVENT+RESETS_STANDARD+")
+                    .Append(untilEnd).Append(") c[").Append(i + 1).Append("]:RegisterEffect(e) end\n");
+            }
+            // Current ATK / DEF changed by effects that resolved before the rebuild (manual game 2026-11-16: Card Trooper was 1900 for
+            // real and 400 in the lines, Kristya 1400 after Gale's halving and 2800 in the lines). The difference to what the rebuilt
+            // card shows now (its equips and continuous effects are already in that) is added back: a boost ends with the turn, a
+            // drop stays.
+            for (int i = 0; i < Cards.Count; i++)
+            {
+                var card = Cards[i];
+                if (card.Location != LocMZone || card.Attack < 0 && card.Defense < 0)
+                    continue;
+                string c = $"c[{i + 1}]";
+                foreach (var (value, get, code) in new[] { (card.Attack, "GetAttack", "EFFECT_UPDATE_ATTACK"), (card.Defense, "GetDefense", "EFFECT_UPDATE_DEFENSE") })
+                    if (value >= 0)
+                        lua.Append($"if {c} and {c}:IsFaceup() and {c}:IsType(TYPE_MONSTER) then local d={value}-{c}:{get}() if d~=0 then ")
+                            .Append($"local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_SINGLE) e:SetCode({code}) e:SetValue(d) ")
+                            .Append($"if d>0 then e:SetReset(RESET_EVENT+RESETS_STANDARD+{untilEnd}) else e:SetReset(RESET_EVENT+RESETS_STANDARD) end ")
+                            .Append($"{c}:RegisterEffect(e) end end\n");
+            }
+            return lua.ToString();
+        }
+    }
+}

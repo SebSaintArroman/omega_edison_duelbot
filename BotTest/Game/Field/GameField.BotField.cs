@@ -1,0 +1,410 @@
+﻿using OmegaBotWrapper.Enum;
+using OmegaBotWrapper.Struct;
+using OmegaBotWrapper;
+using BotTest.Utils;
+using OmegaBotWrapper.States;
+using BotTest.Game.AI.Enums;
+
+namespace BotTest.Game.Field
+{
+    /// <summary>
+    /// Class to manage and check the state of the Bot and Player fields using FieldInfo.
+    /// </summary>
+    public partial class GameField
+    {
+        /// <summary>
+        /// Gets detailed information about the Bot field.
+        /// </summary>
+        /// <returns>FieldInfo structure with the Bot field data.</returns>
+        public async Task<FieldInfo> GetBotField()
+        {
+            return await RefreshFieldAsync(FieldPerspective.Bot);
+        }
+
+        /// <summary>
+        /// Gets information about a specific card in the Bot field.
+        /// </summary>
+        /// <param name="controller">Card controller (0 = Player, 1 = Bot).</param>
+        /// <param name="location">Location of the card (e.g. MonsterZone, SpellZone).</param>
+        /// <param name="sequence">Sequence of the card in the specified zone.</param>
+        /// <returns>DynamicCard structure with the card data.</returns>
+        public async Task<DynamicCard> GetBotFieldCard(int controller, int location, int sequence)
+        {
+            return await GetFieldCardAsync(FieldPerspective.Bot, controller, (CardLocation)location, sequence);
+        }
+
+        /// <summary>
+        /// Checks for cards in a specific zone on the Bot's field.
+        /// </summary>
+        /// <param name="location">Location to check (e.g. MonsterZone, SpellZone).</param>
+        /// <param name="isOwnSide">If true, checks the Bot's side; if false, checks the opponent's side.</param>
+        /// <returns>True if there are cards in the specified zone, false otherwise.</returns>
+        public async Task<bool> HasCardsInBotZone(CardLocation location, bool isOwnSide = true)
+        {
+            var field = await GetBotField();
+            var side = isOwnSide ? field.OwnSide : field.EnemySide;
+            return location switch
+            {
+                CardLocation.MonsterZone => side.MonsterZones.Any(zone => zone.Cards.Any()),
+                CardLocation.SpellZone => side.SpellZones.Any(zone => zone.Cards.Any()),
+                CardLocation.Hand => side.Hand.Any(),
+                CardLocation.Grave => side.Grave.Any(),
+                CardLocation.Removed => side.Banish.Any(),
+                CardLocation.Deck => side.Main.Any(),
+                CardLocation.Extra => side.Extra.Any(),
+                _ => false
+            };
+        }
+
+        /// <summary>
+        /// Gets all cards in a specific zone in the Bot's field.
+        /// </summary>
+        /// <param name="location">Location to check (e.g. MonsterZone, SpellZone).</param>
+        /// <param name="isOwnSide">If true, checks the Bot's side; if false, checks the opponent's side.</param>
+        /// <returns>List of DynamicCards in the specified zone.</returns>
+        public async Task<List<DynamicCard>> GetBotCardsInZone(CardLocation location, bool isOwnSide = true)
+        {
+            return await GetCardsInZoneAsync(FieldPerspective.Bot, location, isOwnSide);
+        }
+
+        /// <summary>
+        /// Checks for face-up cards in a specific zone on the Bot's field.
+        /// </summary>
+        /// <param name="location">Location to check (e.g. MonsterZone, SpellZone).</param>
+        /// <param name="isOwnSide">If true, checks the Bot's side; if false, checks the opponent's side.</param>
+        /// <returns>True if there are FaceUp cards in the zone, false otherwise.</returns>
+        public async Task<bool> HasFaceUpCardsInBotZone(CardLocation location, bool isOwnSide = true)
+        {
+            var cards = await GetBotCardsInZone(location, isOwnSide);
+            return cards.Any(card => card.IsFaceup());
+        }
+
+        /// <summary>
+        /// Gets the card with the highest attack power in a specific zone on the Bot's field.
+        /// </summary>
+        /// <param name="location">Location to check (e.g. MonsterZone).</param>
+        /// <param name="isOwnSide">If true, checks the Bot's side; if false, checks the opponent's side.</param>
+        /// <returns>DynamicCard with the highest attack power or default if there are no cards.</returns>
+        public async Task<DynamicCard> GetStrongestBotCardInZone(CardLocation location, bool isOwnSide = true)
+        {
+            var cards = await GetBotCardsInZone(location, isOwnSide);
+            return cards.OrderByDescending(card => card.GetRealPower()).FirstOrDefault();
+        }
+
+        /// <summary>
+        /// Checks if a specific card (by ID) is present in a zone on the Bot's field.
+        /// </summary>
+        /// <param name="cardId">ID of the card to check.</param>
+        /// <param name="location">Location to check (e.g. MonsterZone, SpellZone).</param>
+        /// <param name="isOwnSide">If true, checks the Bot's side; if false, checks the opponent's side.</param>
+        /// <returns>True if the card is present, false otherwise.</returns>
+        public async Task<bool> IsCardInBotZone(int cardId, CardLocation location, bool isOwnSide = true)
+        {
+            var cards = await GetBotCardsInZone(location, isOwnSide);
+            return cards.Any(card => card.IsCode(cardId));
+        }
+
+        /// <summary>
+        /// Checks if a specific card (by ID) is present in a zone in the Bot's field.
+        /// </summary>
+        /// <param name="cardId">ID of the card to check.</param>
+        /// <param name="location">Location to check (e.g. MonsterZone, SpellZone).</param>
+        /// <param name="isOwnSide">If true, checks the Bot's side; if false, checks the opponent's side.</param>
+        /// <returns>True if the card is present, false otherwise.</returns>
+        public async Task<bool> IsCardInPlayerZone(int cardId, CardLocation location, bool isOwnSide = true)
+        {
+            var cards = await GetPlayerCardsInZone(location, isOwnSide);
+            return cards.Any(card => card.IsCode(cardId));
+        }
+
+        /// <summary>
+        /// Gets the number of cards in a specific zone in the Bot's field.
+        /// </summary>
+        /// <param name="location">Location to check (e.g. MonsterZone, SpellZone).</param>
+        /// <param name="isOwnSide">If true, checks the Bot's side; if false, checks the opponent's side.</param>
+        /// <returns>Number of cards in the specified zone.</returns>
+        public async Task<int> GetBotZoneCardCount(CardLocation location, bool isOwnSide = true)
+        {
+            var field = await GetBotField();
+            return GetZoneCardCount(GetSide(field, isOwnSide), location);
+        }
+
+        /// <summary>
+        /// Gets the Bot's LifePoints.
+        /// </summary>
+        /// <param name="isOwnSide">If true, returns the Bot's lifepoints; if false, the opponent's.</param>
+        /// <returns>Lifepoints of the specified side.</returns>
+        public async Task<int> GetBotLifePoints(bool isOwnSide = true)
+        {
+            return await GetLifePointsAsync(FieldPerspective.Bot, isOwnSide);
+        }
+
+        /// <summary>
+        /// Gets the Bot's LifePoints.
+        /// </summary>
+        /// <param name="isOwnSide">If true, returns the Bot's lifepoints; if false, the opponent's.</param>
+        /// <returns>Lifepoints of the specified side.</returns>
+        public async Task<int> GetPlayerLifePoints(bool isOwnSide = true)
+        {
+            return await GetLifePointsAsync(FieldPerspective.Player, isOwnSide);
+        }
+
+        /// <summary>
+        /// Checks if the Bot is under attack.
+        /// </summary>
+        /// <param name="isOwnSide">If true, checks the Bot's side; if false, checks the opponent's side.</param>
+        /// <returns>True if the specified side is under attack, false otherwise.</returns>
+        public async Task<bool> IsBotUnderAttack(bool isOwnSide = true)
+        {
+            return await IsUnderAttackAsync(FieldPerspective.Bot, isOwnSide);
+        }
+
+        /// <summary>
+        /// Checks if the Player is under attack.
+        /// </summary>
+        /// <param name="isOwnSide">If true, checks the Bot's side; if false, checks the opponent's side.</param>
+        /// <returns>True if the specified side is under attack, false otherwise.</returns>
+        public async Task<bool> IsPlayerUnderAttack(bool isOwnSide = true)
+        {
+            return await IsUnderAttackAsync(FieldPerspective.Player, isOwnSide);
+        }
+
+        /// <summary>
+        /// Gets the monster in battle on the Bot's field, if any.
+        /// </summary>
+        /// <param name="isOwnSide">If true, checks the Bot's side; if false, checks the opponent's side.</param>
+        /// <returns>DynamicCard of the monster in battle, or default if none.</returns>
+        public async Task<DynamicCard> GetBotBattlingMonster(bool isOwnSide = true)
+        {
+            return await GetBattlingMonsterAsync(FieldPerspective.Bot, isOwnSide);
+        }
+
+        /// <summary>
+        /// Gets all cards in a specific location on the bot's or opponent's side
+        /// </summary>
+        /// <param name="location">Location to check (e.g., CardLocation.Hand, CardLocation.MonsterZone)</param>
+        /// <param name="controller">Controller of the cards (0 for player, 1 for opponent [BOT])</param>
+        /// <returns>List of DynamicCard in the specified location</returns>
+        public async Task<List<DynamicCard>> GetCardsInLocation(CardLocation location, int controller = 0)
+        {
+            return await GetCardsInLocationAsync(FieldPerspective.Bot, location, controller);
+        }
+
+        /// <summary>
+        /// Gets all cards in a specific location with a specific type
+        /// </summary>
+        /// <param name="location">Location to check (e.g., CardLocation.Hand, CardLocation.MonsterZone)</param>
+        /// <param name="type">Card type to filter by (e.g., CardType.Monster)</param>
+        /// <param name="controller">Controller of the cards (0 for player, 1 for opponent)</param>
+        /// <returns>List of DynamicCard with the specified type in the specified location</returns>
+        public async Task<List<DynamicCard>> GetCardsWithTypeInLocation(CardLocation location, CardType type, int controller = 0)
+        {
+            var cards = await GetCardsInLocation(location, controller);
+            return cards.Where(card => card.HasType(type)).ToList();
+        }
+
+        /// <summary>
+        /// Gets the strongest monster card in a specific location (based on attack or defense)
+        /// </summary>
+        /// <param name="location">Location to check (e.g., CardLocation.MonsterZone)</param>
+        /// <param name="controller">Controller of the cards (0 for player, 1 for opponent)</param>
+        /// <param name="useDefense">If true, compares defense instead of attack</param>
+        /// <returns>DynamicCard with the highest attack or defense in the specified location</returns>
+        public async Task<IEnumerable<DynamicCard>> GetMonsterInLocation(CardLocation location, int controller = 0)
+        {
+            await GetBotField();
+            var monsters = await GetCardsWithTypeInLocation(location, CardType.Monster, controller);
+            return monsters
+                .Where(card => card.IsFaceup())
+                .OrderByDescending(card => card.ID)
+                .ToList();
+        }
+
+        public async Task<IEnumerable<DynamicCard>> GetCardsInSpellTrapZone()
+        {
+            await GetBotField();
+            var spellTrapsCards = await GetCardsInLocation(CardLocation.SpellZone);
+            var filteredCards = spellTrapsCards.Where(card => (card.HasType(CardType.Spell) || card.HasType(CardType.Trap)) && card.Cover == 0);
+            return filteredCards;
+        }
+
+        /// <summary>
+        /// Checks if the strongest face-up monster on the field belongs to the opponent
+        /// </summary>
+        /// <param name="location">Location to check (default is CardLocation.MonsterZone)</param>
+        /// <returns>True if the opponent's face-up monster has the highest attack or if the opponent has monsters and the bot has none</returns>
+        public async Task<bool> IsFaceUpAttackStrongestMonsterPlayer(CardLocation location = CardLocation.MonsterZone)
+        {
+            // Step 1: Check monster counts
+            IEnumerable<DynamicCard> botMonster = await GetMonsterInLocation(location: CardLocation.MonsterZone, controller: 0);
+            IEnumerable<DynamicCard> playerMonster = await GetMonsterInLocation(location: CardLocation.MonsterZone, controller: 1);
+            int botMonsterCount = botMonster.Count();
+            int playerMonsterCount = playerMonster.Count();
+
+            if (playerMonsterCount > 0 && botMonsterCount == 0)
+                return true;
+
+            // Step 2: Get lists of face-up + attack face-up monsters
+            var botMonsters = await GetCardsWithTypeInLocation(location, CardType.Monster, controller: 0);
+            var opponentMonsters = await GetCardsWithTypeInLocation(location, CardType.Monster, controller: 1);
+
+            var opponentFaceUpMonsters = opponentMonsters.Where(card => card.IsFaceup() && card.IsAttack()).ToList();
+            var botFaceUpMonsters = botMonsters.Where(card => card.IsFaceup() && card.IsAttack()).ToList();
+
+            // Step 3: Calculate maximum attack values
+            int opponentMaxAttack = opponentFaceUpMonsters.Any() ? opponentFaceUpMonsters.Max(card => card.Attack) : 0;
+            int botMaxAttack = botFaceUpMonsters.Any() ? botFaceUpMonsters.Max(card => card.Attack) : 0;
+
+            // Step 4: Compare max attack values
+            return opponentMaxAttack >= botMaxAttack;
+        }
+
+        /// <summary>
+        /// Checks if there is a card with the specified attribute in the bot's hand
+        /// </summary>
+        /// <param name="attribute">Attribute to check (e.g., CardAttribute.Dark)</param>
+        /// <returns>True if a card with the specified attribute is found in the bot's hand</returns>
+        public async Task<bool> HasCardWithAttributeInHand(CardAttribute attribute)
+        {
+            var handCards = await GetCardsInLocation(CardLocation.Hand);
+            return handCards.Any(card => (card.Attribute & (byte)attribute) != 0);
+        }
+
+        /// <summary>
+        /// Gets all cards in the bot's hand with a specific attribute
+        /// </summary>
+        /// <param name="attribute">Attribute to filter by (e.g., CardAttribute.Dark)</param>
+        /// <returns>List of DynamicCard with the specified attribute in the bot's hand</returns>
+        public async Task<List<DynamicCard>> GetCardsWithAttributeInHand(CardAttribute attribute)
+        {
+            var handCards = await GetCardsInLocation(CardLocation.Hand);
+            return handCards.Where(card => (card.Attribute & (byte)attribute) != 0).ToList();
+        }
+
+        public async Task<IEnumerable<DynamicCard>> GetCardsInHand()
+        {
+            await GetBotField();
+            var handCards = await GetCardsInLocation(CardLocation.Hand);
+            return handCards;
+        }
+
+        public async Task<IEnumerable<DynamicCard>> GetCardsInGrave()
+        {
+            await GetBotField();
+            var graveCards = await GetCardsInLocation(CardLocation.Grave);
+            return graveCards;
+        }
+
+        public async Task<IEnumerable<DynamicCard>> GetCardsInMonsterZone()
+        {
+            await GetBotField();
+            var monstersCards = await GetCardsInLocation(CardLocation.MonsterZone);
+            return monstersCards;
+        }
+
+        public async Task<IEnumerable<DynamicCard>> GetCardsInSpellZone()
+        {
+            await GetBotField();
+            var spellCards = await GetCardsInLocation(CardLocation.SpellZone);
+            return spellCards;
+        }
+
+        /// <summary>
+        /// Checks if there is a card with the specified type in a given location
+        /// </summary>
+        /// <param name="location">Location to check (e.g., CardLocation.Hand, CardLocation.MonsterZone)</param>
+        /// <param name="type">Card type to check (e.g., CardType.Monster)</param>
+        /// <param name="controller">Controller of the cards (0 for player, 1 for opponent)</param>
+        /// <returns>True if a card with the specified type is found in the location</returns>
+        public async Task<bool> HasCardWithTypeInLocation(CardLocation location, CardType type, int controller = 0)
+        {
+            var cards = await GetCardsInLocation(location, controller);
+            return cards.Any(card => card.HasType(type));
+        }
+
+        public async Task<int> GetMonstersCount()
+        {
+            var monstersCards = await GetCardsInLocation(CardLocation.MonsterZone);
+            return monstersCards.Where(card => (card.ID != 0)).Count();
+        }
+
+        /// <summary>
+        /// Checks if there is a card with the specified id in the bot's hand
+        /// </summary>
+        /// <param name="attribute">Card ID to check (e.g., card.ID.IsCode(id))</param>
+        /// <returns>True if a card with the specified card id is found in the bot's hand</returns>
+        public async Task<bool> HasCardInHand(int cardId)
+        {
+            var handCards = await GetCardsInLocation(CardLocation.Hand);
+            return handCards.Any(card => card.ID == cardId);
+        }
+
+        /// <summary>
+        /// Checks if there is a card with the specified id in the bot's monster zone
+        /// </summary>
+        /// <param name="attribute">Card ID to check (e.g., card.ID.IsCode(id))</param>
+        /// <returns>True if a card with the specified card id is found in the bot's monster zone</returns>
+        public async Task<bool> HasCardInBotMonsterZone(int cardId)
+        {
+            var monsterCards = await GetCardsInLocation(CardLocation.MonsterZone);
+            return monsterCards.Any(card => card.IsCode(cardId));
+        }
+
+        public async Task<bool> HasCardInBotSpellZone(int cardId)
+        {
+            var spellTrapCards = await GetCardsInLocation(CardLocation.SpellZone);
+            return spellTrapCards.Any(card => card.IsCode(cardId));
+        }
+
+        public byte[] FilterSelectableCardsById(SelectCardData selectCardData, int cardId)
+        {
+            ConsoleUtils.PrintColored("[override][OnSelectCard] - FilterSelectableCardsById");
+
+            // Create a list of cards with their original indices
+            var cardsWithIndices = selectCardData.SelectableCards
+                .Select((card, index) => new { Card = card, OriginalIndex = index })
+                .ToArray();
+
+            // Apply filters while preserving original indices
+            var filteredCards = cardsWithIndices
+                .Where(x => x.Card.IsCode(cardId))
+                .ToArray();
+
+            // Select the first 'state.Minimum' cards, using original indices
+            var botCards = filteredCards
+                .Take(selectCardData.Minimum)
+                .Select(x => (byte)x.OriginalIndex)
+                .ToArray();
+
+            // Respect Minimum (or Maximum if needed)
+            if(botCards.Any())
+                return botCards;
+
+            byte[] selection = new byte[selectCardData.Minimum];
+            for (int i = 0; i < selection.Length; i++)
+                selection[i] = (byte)i;
+            return selection;
+        }
+
+        public async Task<bool> IsUniqueTrapChain(int trap)
+        {
+            var trapCards = await GetCardsInLocation(CardLocation.SpellZone);
+            return trapCards.Any(card => card.IsCode(trap) && card.IsFaceup()); ;
+        }
+
+        public async Task<bool> PlayerDestroyAllSpellAndTraps()
+        {
+            IEnumerable<DynamicCard> spellsTrapsCards = await GetPlayerSpellsCardsInSpellZone();
+            var cardsActivated = spellsTrapsCards.Where(card => card.IsFaceup());
+            return cardsActivated.Any(card => Enum.IsDefined(typeof(DestroyAllSpellsTraps), card.ID));
+        }
+
+        public async Task<bool> PlayerDestroyAllCards()
+        {
+            IEnumerable<DynamicCard> spellsTrapsCards = await GetPlayerSpellsCardsInSpellZone();
+            var cardsActivated = spellsTrapsCards.Where(card => card.IsFaceup());
+            return cardsActivated.Any(card => Enum.IsDefined(typeof(DestroyAllCards), card.ID));
+        }
+    }
+
+}

@@ -1,0 +1,92 @@
+# One deck's own tuning: its numbers and its rules' hold costs (card units; each rule its own number).
+# The shared numbers are in bot-tuning.txt. Edit a value and restart the bot (or a DuelSim run).
+
+# --- BlackwingBotBrain
+BlackwingBotBrain.BurialBaitAt = 2   # Burial-worthy banished monsters needed to set it as bait (chained when they try to remove it).
+BlackwingBotBrain.BurialRankNecro = 2   # Burial / Miracle Dig pick rank: Necro Gardna with none in the graveyard.
+BlackwingBotBrain.BurialRankNecroSecond = 0.5   # Burial / Miracle Dig pick rank: a second Necro Gardna.
+BlackwingBotBrain.BurialRankPartnerEven = 1.5   # Burial / Miracle Dig pick rank: a partner with as many Vayus as partners.
+BlackwingBotBrain.BurialRankPartnerShort = 10   # Burial / Miracle Dig pick rank: a partner while we have more Vayus than partners.
+BlackwingBotBrain.BurialRankPartnerSpare = 0.3   # Burial / Miracle Dig pick rank: a partner beyond the Vayus (below Necro Gardna).
+BlackwingBotBrain.BurialRankPlague = 6   # Burial / Miracle Dig pick rank: Plaguespreader with none in the graveyard.
+BlackwingBotBrain.BurialRankPlagueSecond = 1   # Burial / Miracle Dig pick rank: a second Plaguespreader.
+BlackwingBotBrain.BurialRankVayuEven = 7.5   # Burial / Miracle Dig pick rank: a Vayu with as many partners as Vayus.
+BlackwingBotBrain.BurialRankVayuShort = 10   # Burial / Miracle Dig pick rank (high first): a Vayu while we have more partners than Vayus.
+BlackwingBotBrain.BurialRankVayuSpare = 4   # Burial / Miracle Dig pick rank: a Vayu beyond the partners.
+BlackwingBotBrain.DadDeadHandValue = 0.5   # Dark Armed Dragon in hand that can't be made live, in rough card points.
+BlackwingBotBrain.DadLiveHandValue = 7   # Dark Armed Dragon in hand that is live (or can be made live), in rough card points (discard / Allure choices).
+BlackwingBotBrain.DadLiveSetupValue = 1.2   # The search's setup value for Dark Armed Dragon in hand with exactly 3 DARKs in the graveyard (card units).
+BlackwingBotBrain.DadNearSetupValue = 0.4   # The search's setup value for Dark Armed Dragon in hand with 2 DARKs in the graveyard (card units).
+BlackwingBotBrain.HandToGraveChance = 0.35   # Chance a Vayu / partner in hand reaches the graveyard soon (set and destroyed, a cost...). Tune from logs.
+BlackwingBotBrain.HandToGraveWithOutletChance = 0.8   # The same with a discard outlet (Dark Grepher in hand or on the field). Tune from logs.
+BlackwingBotBrain.HoldWhenClockAtMost = 2   # If the opponent is already on a clock of this many turns or fewer, hold resources unless they win now or answer a threat. 2 = only hold on a quick clock, 5 = also hold on a long clock (default), larger = hold on very long clocks too.
+BlackwingBotBrain.IcarusDoomedChance = 0.5   # Icarus Attack chained to save our Blackwing as its free tribute: from this chance that it's doomed anyway.
+BlackwingBotBrain.KalutHandValue = 0.6   # The search's value for Kalut in hand (its +1400 in battle), card units.
+BlackwingBotBrain.NormalSummonPlayCost = 0.5   # The turn planner's cost for using the Normal Summon in a play.
+BlackwingBotBrain.PushOpenBoost = 2
+BlackwingBotBrain.PushSetTrapFactor = 0.85
+BlackwingBotBrain.RecursionPlayCost = 2.5   # The turn planner's cost for a recursion play (Return from the Different Dimension / Burial) that brings Vayus back.
+BlackwingBotBrain.TributeSmallBlackwing = 1.5   # Tribute order: Blizzard, Kalut or Gale (small Blackwings, done once used).
+BlackwingBotBrain.TributeVayu = 1   # Tribute order: a Vayu of ours.
+BlackwingBotBrain.TrooperSetupValue = 1   # The search's setup value for a face-up Card Trooper of ours (a mill engine for Vayu and Dark Armed Dragon), card units.
+BlackwingBotBrain.UnpairedSendGain = 0.4   # Which DARK to send from the deck (Armageddon Knight / Dark Grepher), best first: - Plaguespreader if the opponent has a face-up 2300-2800 ATK monster a level 6 synchro can beat, - Vayu (graveyard-only effect), then its partner Sirocco (unless a partner is already in or headed for the GY), - a second / third Vayu, - Plaguespreader (a synchro play of its own), - Necro Gardna (a nice to have), - e...
+BlackwingBotBrain.WhirlwindFieldValue = 0.8   # The search's value for a face-up Black Whirlwind (a search per Blackwing summon), card units.
+BlackwingBotBrain.HoldCost.blackwing.aggro-summon = 1.5
+BlackwingBotBrain.HoldCost.blackwing.allure-draw = 1.5
+BlackwingBotBrain.HoldCost.blackwing.allure-needs-dark = 6
+BlackwingBotBrain.HoldCost.blackwing.armed-wing-stepping-stone = 1.5
+BlackwingBotBrain.HoldCost.blackwing.black-rose-wipe = 1.5
+BlackwingBotBrain.HoldCost.blackwing.black-whirlwind = 1.5
+BlackwingBotBrain.HoldCost.blackwing.blizzard-needs-target = 1.5
+BlackwingBotBrain.HoldCost.blackwing.blizzard-revive = 1.5
+BlackwingBotBrain.HoldCost.blackwing.body-needs-purpose = 1.5
+BlackwingBotBrain.HoldCost.blackwing.chaos-effect = 1.5
+BlackwingBotBrain.HoldCost.blackwing.chaos-summon = 1.5
+BlackwingBotBrain.HoldCost.blackwing.combo-lethal = 1.5
+BlackwingBotBrain.HoldCost.blackwing.dad-effect = 1.5
+BlackwingBotBrain.HoldCost.blackwing.dad-summon = 1.5
+BlackwingBotBrain.HoldCost.blackwing.dad-trim = 1.5
+BlackwingBotBrain.HoldCost.blackwing.effect-synchro = 1.5
+BlackwingBotBrain.HoldCost.blackwing.extra-deck-synchro = 1.5
+BlackwingBotBrain.HoldCost.blackwing.free-body = 1.5
+BlackwingBotBrain.HoldCost.blackwing.gale-halve = 1.5
+BlackwingBotBrain.HoldCost.blackwing.gale-is-removal = 1.5
+BlackwingBotBrain.HoldCost.blackwing.grepher-effect = 1.5
+BlackwingBotBrain.HoldCost.blackwing.grepher-special-for-lethal = 1.5
+BlackwingBotBrain.HoldCost.blackwing.hold-ascendant = 1.5
+BlackwingBotBrain.HoldCost.blackwing.hold-dad-effect-for-vayu-pieces = 1.5
+BlackwingBotBrain.HoldCost.blackwing.hold-grepher-for-dad = 1.5
+BlackwingBotBrain.HoldCost.blackwing.hold-knight-for-dad = 1.5
+BlackwingBotBrain.HoldCost.blackwing.hybrid-setup-first = 1.5
+BlackwingBotBrain.HoldCost.blackwing.icarus-end-phase = 1.5
+BlackwingBotBrain.HoldCost.blackwing.icarus-free-tribute = 1.5
+BlackwingBotBrain.HoldCost.blackwing.icarus-push = 1.5
+BlackwingBotBrain.HoldCost.blackwing.icarus-set-needs-wing = 1.5
+BlackwingBotBrain.HoldCost.blackwing.icarus-waits-for-their-turn = 1.5
+BlackwingBotBrain.HoldCost.blackwing.kalut-boost = 1.5
+BlackwingBotBrain.HoldCost.blackwing.kalut-stays-in-hand = 1.5
+BlackwingBotBrain.HoldCost.blackwing.necro-for-last-moment = 1.5
+BlackwingBotBrain.HoldCost.blackwing.necro-gardna = 1.5
+BlackwingBotBrain.HoldCost.blackwing.necro-not-on-own-monster = 1.5
+BlackwingBotBrain.HoldCost.blackwing.necro-protects-only-clock = 1.5
+BlackwingBotBrain.HoldCost.blackwing.no-pointless-summon = 1.5
+BlackwingBotBrain.HoldCost.blackwing.plague-synchro = 1.5
+BlackwingBotBrain.HoldCost.blackwing.recursion-for-vayu = 1.5
+BlackwingBotBrain.HoldCost.blackwing.shura-attacks-first = 1.5
+BlackwingBotBrain.HoldCost.blackwing.shura-takes-vayu = 1.5
+BlackwingBotBrain.HoldCost.blackwing.sirocco-boost = 1.5
+BlackwingBotBrain.HoldCost.blackwing.sirocco-free = 1.5
+BlackwingBotBrain.HoldCost.blackwing.summon-armageddon = 1.5
+BlackwingBotBrain.HoldCost.blackwing.summon-before-sirocco-boost = 1.5
+BlackwingBotBrain.HoldCost.blackwing.summon-grepher = 1.5
+BlackwingBotBrain.HoldCost.blackwing.vayu-plague-level8 = 1.5
+BlackwingBotBrain.HoldCost.blackwing.vayu-synchro = 1.5
+
+# added 2026-11-17 15:47 (new in the code since the file was written)
+# --- BlackwingBotBrain
+BlackwingBotBrain.HoldCost.blackwing.sirocco-boost-pointless = 3
+BlackwingBotBrain.HoldCost.blackwing.whirlwind-waits-for-summon = 1.5
+
+# added 2026-11-17 16:11 (new in the code since the file was written)
+# --- BlackwingBotBrain
+BlackwingBotBrain.HoldCost.blackwing.sirocco-boost-into-honest = 1.5

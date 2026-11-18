@@ -1,0 +1,13 @@
+// DuelSim 2026-11-12 (consistency-test-1, duel 2) MachinaJinzo turn 16 Main 2, 300 LP: Machina Fortress and Plaguespreader
+// (400, attacked, stuck in ATK) against an empty field, no hand. Any monster they draw over 700 ATK kills through Plaguespreader;
+// XX-Saber Gottoms (Fortress + Plaguespreader) removes the exposed body. The search kept "end the turn"; they drew Card Trooper.
+{
+  "deck": "MachinaJinzo", "opponent": "Vayu", "lp": [300, 1500], "turn": 16, "phase": "main2", "decision": "idle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 5556499, "zone": 1, "attacked": true }, { "id": 33420078, "zone": 2, "attacked": true } ],
+    "spells": [ { "id": 64697231, "zone": 1, "set": true } ],
+    "hand": [ 19613556, 44330098 ]
+  },
+  "theirs": { "handCount": 0 }
+}

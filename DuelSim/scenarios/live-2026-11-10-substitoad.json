@@ -1,0 +1,12 @@
+// Live 2026-11-10 09:43, HeroFrog turn 2 Main 1 (log #004): Substitoad was just Normal Summoned; the brain wanted to
+// activate it (tribute it for Swap Frog, Treeborn to the graveyard), and the search overrode that with "end the turn".
+// Their deck (the user's X-Sabers) isn't a bot deck: Vayu stands in for their hidden cards.
+{
+  "deck": "HeroFrog", "opponent": "Vayu", "lp": [10000, 8000], "turn": 2, "phase": "main1", "decision": "idle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 20663556, "zone": 2 } ],
+    "hand": [ 12538374, 98045062, 4178474, 50304345, 2295440 ]
+  },
+  "theirs": { "monsters": [ { "zone": 0, "pos": "set" } ], "handCount": 5 }
+}

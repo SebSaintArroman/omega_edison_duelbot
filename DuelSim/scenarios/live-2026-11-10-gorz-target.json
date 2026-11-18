@@ -1,0 +1,9 @@
+// Live 2026-11-10 12:44, Blackwing turn 13 battle: the search aimed Bora at "the face-down monster in zone 1" (card:0@1.4.1),
+// where their face-up Gorz sits; the brain aimed at the token.
+{
+  "deck": "Blackwing", "opponent": "Vayu", "lp": [2800, 2400], "turn": 13, "phase": "main1", "decision": "battle",
+  "normalSummonUsed": true,
+  "ours": { "monsters": [ { "id": 49003716, "zone": 2 } ], "spells": [ { "id": 5318639, "zone": 2, "set": true } ], "hand": [] },
+  "theirs": { "monsters": [ { "id": 44330098, "zone": 1 }, { "id": 44330099, "zone": 2 }, { "id": 67757079, "zone": 4 } ],
+              "spells": [ { "zone": 0, "set": true }, { "zone": 4, "set": true } ], "handCount": 1 }
+}
