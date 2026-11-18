@@ -61,7 +61,7 @@ DeckBotBrain.GorzHoldWithSolemn = 0.3   # Added to the hold-for-Gorz chance when
 DeckBotBrain.GorzLongClockFactor = 0.8   # Gorz in their hand: its chance shrinks to this share on a Long clock.
 DeckBotBrain.GorzOrderChance = 0.3   # Gorz chance from which Main Phase 1 sets up the attack order for it (see GorzAttackOrderAsync). Tune from logs.
 DeckBotBrain.GorzPassBoost = 3   # Per-card Gorz chance multiplier after such a pass (until they put a card on the field). Tune from logs.
-DeckBotBrain.GorzPassBonus = 1.3   # After a complete pass (empty field, nothing played), the chance they hold Gorz is multiplied by this (1.3 = 30% more). User, 2026-11-18.
+DeckBotBrain.GorzPassBonus = 1.5   # After a complete pass (empty field, nothing played), the chance they hold Gorz is multiplied by this (1.5 = 50% more). User, 2026-11-18.
 DeckBotBrain.GorzPassHand = 4   # Hand size from which passing with an empty field and nothing played reads as holding Gorz. Tune from logs.
 DeckBotBrain.GorzQuickClockFactor = 0.5   # Gorz in their hand: its chance shrinks to this share on a Quick clock (they've had to use it already).
 DeckBotBrain.GorzSetResidual = 0.3   # Cards held while setting keep this share of their Gorz chance per spell/trap of theirs on the field (0.3 for one, 0.09 for two). Tune from logs.
@@ -220,7 +220,7 @@ DeckBotBrain.HoldCost.deck.hold-dad-effect-for-pieces = 1.5
 DeckBotBrain.HoldCost.deck.hold-for-bigger-attacker = 1.5
 DeckBotBrain.HoldCost.deck.hold-for-gorz = 1.5
 DeckBotBrain.HoldCost.deck.hold-for-threat-or-win = 1.5
-DeckBotBrain.HoldCost.deck.hold-monster-sets-for-battle = 1.5
+DeckBotBrain.HoldCost.deck.hold-monster-sets-for-battle = 0.5
 DeckBotBrain.HoldCost.deck.hold-set-for-storm = 1.5
 DeckBotBrain.HoldCost.deck.hold-sets-for-battle = 0.5
 DeckBotBrain.HoldCost.deck.hold-sets-for-storm = 1.5
@@ -379,7 +379,6 @@ LineTally.FusionWithoutBattleCost = 1.5
 LineTally.IdleSummonCost = 1.5
 LineTally.LylaBeforeBattleCost = 0.5
 LineTally.PriorityWindowBonus = 0.3   # Bonus (card units) for a monster's effect used in a chain window of our turn (its priority window) rather than later.
-LineTally.SetBeforeBattleCost = 1.5
 
 # --- MctsEvaluator
 MctsEvaluator.AliveFloor = 0.05   # The least a position still alive at the horizon scores (and 1 minus the most): survival over a loss.
@@ -424,10 +423,9 @@ MctsEvaluator.Scale = 3   # How many card units of difference move the score fro
 MctsEvaluator.SetFlipBase = 0.9   # A face-down monster that gains from being set (a flip, a floater, a graveyard effect): its base worth.
 MctsEvaluator.SetFlipEffectWeight = 0.25   # Weight of a set flip / floater monster's effect points (its effect still to be used), like FieldEffectWeight: using it costs that much. User, 2026-11-18.
 MctsEvaluator.SetQuickPlayBase = 0.9   # A set quick-play spell's base worth, before what it will do.
-MctsEvaluator.SetSpellBase = 0.8   # A set normal / continuous / field / equip spell's base worth, before what it will do (also an unknown set card).
+MctsEvaluator.SetSpellBase = 0.3   # A set normal / continuous / field / equip spell's base worth, before what it will do: 0.5 below a hand card, so setting one costs that. User, 2026-11-18.
 MctsEvaluator.SetTrapBase = 1.05   # A set trap's base worth, before what it will do.
 MctsEvaluator.SittingDuckWeight = 0.5   # The sitting-duck loss counts this share of the threatened monster's value (user, 2026-11-18: 0.5 so monsters still get used).
-MctsEvaluator.SpellInHandBonus0 = 0.5   # A normal / continuous / field / equip spell is worth this much more in hand than set (CSV S3: setting Miracle Dig was a bad play).
 MctsEvaluator.TaperScale = 1   # How slowly the taper bends: 1 puts Absolute Zero (5.25 points with the "all" factor) at 3.45, Stardust (9) at 4.1, Shura (10) at 4.2.
 MctsEvaluator.TaperStart = 2   # Effect points are linear up to this, then taper (see Taper).
 MctsEvaluator.ThreatFirstShare = 0.6   # Their unknown cards' threat: the share of our best face-up monster at risk.
@@ -519,6 +517,8 @@ EffectEvaluator.SelfSummonValue = 0.25   # A monster effect that only Special Su
 # --- MctsEvaluator
 MctsEvaluator.WinBonus = 10   # A line that wins: this many card units on top of its position, times the chance the win really works (WinChance). Large.
 MctsEvaluator.WinCardCost = 1   # A won line: each card of ours it used up costs this much (card units) in the win's part of its score; the board it leaves doesn't count there. User, 2026-11-18.
+MctsEvaluator.RiskyWinBonus = 5   # A won line's bonus when the win carries any risk (WinBonus is only for a sure win). User, 2026-11-18: risk is risky, an overspent win that fails loses.
+MctsEvaluator.DustshootBonus = 1   # A line that activates our Trap Dustshoot gains this (card units): it removes a card from their hand almost always, but the lines' unseen hand cards are blanks. User, 2026-11-18.
 # --- SearchCardValues
 SearchCardValues.GraveFloor = 0   # A card that works from the graveyard is worth at least this there (card points), whatever its graveyard effects score.
 

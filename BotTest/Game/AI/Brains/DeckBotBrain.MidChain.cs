@@ -196,15 +196,6 @@ namespace BotTest.Game.AI.Brains
                     return stunAnswer == brainIndex ? null : stunAnswer;
             }
             catch { /* the brain's answer stands */ }
-            // Trap Dustshoot fires at the earliest chance (user, 2026-11-18: "dustshoot should be fired at the earliest opportunity ... it's an
-            // outlier in that regard": it needs their 4+ cards in hand, which only shrinks). The search's lines can't value it (their unseen
-            // hand cards are blanks there, so it hits nothing), so it doesn't overrule the brain here.
-            var brainCards = context.StateData.SelectableCards ?? Array.Empty<DynamicCard>();
-            if (brainIndex >= 0 && brainIndex < brainCards.Length && brainCards[brainIndex].IsCode(TrapDustshootId))
-            {
-                context.Bot.LogNote("search: Trap Dustshoot fires at the earliest chance (no search)");
-                return null;
-            }
             // Their turn, or ours before any searched decision (our Draw and Standby Phases): the search from the turn's start
             // (DeckBotBrain.TurnLog; plan steps 3 and 4).
             if (!IsSearchTwin && _ownTurnParity >= 0 && SearchWanted(context.Bot) &&

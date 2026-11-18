@@ -1,0 +1,23 @@
+// DuelSim 2026-11-18 review-test, MachinaControl turn 9 (#083): D.D. Crow left face-up in attack position, Machina Fortress held,
+// HeroFrog's field empty at 6200 LP. The search ended the turn (31.3) over Crow to defence (30.5); Fortress 28.1, Cyber Dragon 29.0.
+// User: "no reason to leave crow in attack at all"; "a free 2100-2500 hit immediately puts the opponent on a 4-turn clock".
+{
+  "deck": "MachinaControl",
+  "opponent": "HeroFrog",
+  "lp": [4500, 6200],
+  "turn": 9,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": false,
+  "ours": {
+    "monsters": [ { "id": 24508238, "zone": 1 }, { "id": 21502796, "zone": 2, "pos": "set" } ],
+    "spells": [ { "id": 64697231, "zone": 0, "set": true } ],
+    "hand": [ 5556499, 70095154, 24508238, 21502796, 29401950 ],
+    "grave": [ 41420027, 70342110, 42940404 ]
+  },
+  "theirs": {
+    "handCount": 4,
+    "grave": [ 70368879, 50304345, 73125233, 19665973, 4178474 ],
+    "banished": [ 44330098 ]
+  }
+}

@@ -94,11 +94,9 @@ namespace BotTest.Game.AI.Brains
         /// value tuning set on this brain (Rules.SetCost).
         /// </summary>
         protected virtual double HoldCost(string rule) =>
-            // Monster sets held for Main Phase 2 cost nothing as holds: the search charges the actual sequence instead (a set in
-            // Main Phase 1, then the Battle Phase: LineTally). Spell/trap sets held for the battle cost their own tier on top
-            // (user, 2026-11-18: "'hold sets for battle' rule costs 0 in the scoring... what?! why?! yes give it a cost. give it
-            // 0.5": a Main Phase 1 set that then skipped the battle tied with attacking).
-            rule is DeckRules.HoldMonsterSetsForBattle ? 0 : Rules.Cost(rule);
+            // Sets held for Main Phase 2 (spell/trap and monster) cost their own tier: the only charge for a Main Phase 1 set (user, 2026-11-18:
+            // "give it a cost. give it 0.5"; "we should only have one": LineTally's set-then-battle charge is gone).
+            Rules.Cost(rule);
 
         // Rules whose summon holds the search now checks on the actual line (LineTally, user 2026-11-13): a monster summoned
         // that never attacks, uses an effect or leaves the field; Lyla's effect, a union equip, or a set in Main Phase 1 before

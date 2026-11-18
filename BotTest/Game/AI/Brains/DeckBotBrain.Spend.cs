@@ -32,6 +32,9 @@ namespace BotTest.Game.AI.Brains
         ///  2. it answers a threat the current board can't handle,
         ///  3. the opponent isn't on a clock yet and it creates or speeds one up.
         /// </summary>
+        /// <summary>The rule a held spend of this card goes under (its cost in the search): a deck can give a card its own, cheaper or dearer.</summary>
+        protected virtual string HoldSpendRule(int cardId) => DeckRules.HoldSpend;
+
         protected async Task<string?> JustifySpendAsync<T>(
             DecisionContext<T> context,
             string what,
@@ -50,11 +53,11 @@ namespace BotTest.Game.AI.Brains
             // Held: a search line that makes the play anyway pays for going against the spend rules (any action with the card:
             // Vayu's activation, a synchro's summon, Plaguespreader's revive). From the push chance (a former roll): in proportion.
             if (why == null)
-                Hold(cardId, null, DeckRules.HoldSpend);
+                Hold(cardId, null, HoldSpendRule(cardId));
             else if (_rollChance is double holdChance)
             {
                 _rollChance = null;
-                HoldScaled(cardId, null, DeckRules.HoldSpend, holdChance);
+                HoldScaled(cardId, null, HoldSpendRule(cardId), holdChance);
             }
             // Justified as lethal: the battle that follows is a lethal push, which later rules don't hold back (Gorz fear,
             // chip into backrow): see DeckBotBrain.Commitments (user, 2026-11-12: Fortress summoned "lethal this turn", then

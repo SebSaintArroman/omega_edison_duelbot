@@ -127,18 +127,21 @@ namespace BotTest.Game.AI.Search
         /// against the other side's monsters and life points, as ClockByTurns by its length. Attacking lowers their life points, more monsters and
         /// monsters kept alive add ATK: all of them shorten it.
         /// </summary>
-        internal static double ClockValue(SideSummary attacker, SideSummary defender)
+        internal static double ClockValue(SideSummary attacker, SideSummary defender, int extraAttack = 0)
         {
-            int turns = ClockTurns(attacker, defender);
+            int turns = ClockTurns(attacker, defender, extraAttack);
             if (turns == BoardAssessment.NoClock || ClockByTurns.Length == 0)
                 return 0;
             return ClockByTurns[Math.Clamp(turns, 1, ClockByTurns.Length) - 1];
         }
 
-        /// <summary>The brain's clock (turns to win) of this side on the other, from a search position.</summary>
-        internal static int ClockTurns(SideSummary attacker, SideSummary defender) =>
+        /// <summary>
+        /// The brain's clock (turns to win) of this side on the other, from a search position: every face-up monster of the attacker (one in
+        /// defence can switch to attack next turn; user, 2026-11-18), plus <paramref name="extraAttack"/> (their next summon, TheirNextAttack).
+        /// </summary>
+        internal static int ClockTurns(SideSummary attacker, SideSummary defender, int extraAttack = 0) =>
             BoardAssessment.TurnsToWin(
-                attacker.Monsters.Where(m => m.FaceUp && m.AttackPosition).Select(m => m.Attack),
+                attacker.Monsters.Where(m => m.FaceUp).Select(m => m.Attack).Concat(extraAttack > 0 ? new[] { extraAttack } : Array.Empty<int>()),
                 defender.Monsters.Select(m => new BoardAssessment.Defender(
                     m.FaceUp ? (m.AttackPosition ? m.Attack : m.Defense) : m.Defense, m.FaceUp && m.AttackPosition, !m.FaceUp, m.Code)),
                 defender.LifePoints);
@@ -152,6 +155,10 @@ namespace BotTest.Game.AI.Search
         public static double WinBonus = 10;
         [Tunable("A won line: each card of ours it used up costs this much (card units) in the win's part of its score; the board it leaves doesn't count there (user, 2026-11-18).")]
         public static double WinCardCost = 1.0;
+        [Tunable("A won line's bonus when the win carries any risk (WinBonus is only for a sure win). User, 2026-11-18: risk is risky, an overspent win that fails loses.")]
+        public static double RiskyWinBonus = 5;
+        [Tunable("A line that activates our Trap Dustshoot gains this (card units): it removes a card from their hand almost always, but the lines' unseen hand cards are blanks (user, 2026-11-18: \"1 point if it's activated\").")]
+        public static double DustshootBonus = 1.0;
 
         /// <summary>
         /// The chance a win found in a line really happens: none of their unknown set cards is a stopper that would have fired (the lines never
@@ -214,7 +221,7 @@ namespace BotTest.Game.AI.Search
                 diff -= OwnDamageShare * DamageBonusPer1000 * (OurStartLp - ours.LifePoints) / 1000.0;
             // Each side's clock on the other at the end of the line, as part of the board: ours on them counts for us, theirs on us against.
             if (!won)
-                diff += ClockValue(ours, theirs) - TheirClockShare * ClockValue(theirs, ours);
+                diff += ClockValue(ours, theirs) - TheirClockShare * ClockValue(theirs, ours, TheirNextAttack(theirs));
             // Gorz in our hand with our field empty: it can come out when they hit us directly (user, 2026-11-17: "if you have a gorz in hand,
             // you should get a small bonus for ending on an empty field because it'll let you use gorz").
             if (!won && ours.Monsters.Count == 0 && ours.SpellCodes.Count == 0 && ours.HandCodes.Any(c => SearchHost.Is(c, GorzCode)))
@@ -226,7 +233,11 @@ namespace BotTest.Game.AI.Search
             if (won)
             {
                 double chance = WinChance(ourTurnEnd?.Attacked ?? true, theirs);
-                diff = chance * (center + WinBonus - WinCardCost * Math.Max(0, cardsSpent) - penalty) + (1 - chance) * diff; // the rules it broke cost in both
+                // The win's bonus by its risk (user, 2026-11-18: "non-risk wins are worth 10, other wins just get a +5"; "a sliver of risk halving the
+                // bonus doesn't feel wrong to me - it's like a black swan effect - lots of those winning lines will cause you to lose if they go
+                // wrong because you overspend"): WinBonus only for a sure win, RiskyWinBonus for any other.
+                double bonus = chance >= 1 ? WinBonus : RiskyWinBonus;
+                diff = chance * (center + bonus - WinCardCost * Math.Max(0, cardsSpent) - penalty) + (1 - chance) * diff; // the rules it broke cost in both
             }
             // A position still alive sits clearly between a loss and a win: far behind, the squashed score is ~0 and a line that
             // survives (the Dupe lock at 300 LP) looked no better than one that dies (seen 2026-11-11: every option scored 0-2
@@ -252,7 +263,7 @@ namespace BotTest.Game.AI.Search
             var ours = host.Summary(0);
             var theirs = host.Summary(1);
             return SideScore(ours, 0, theirs) - SideScore(theirs, 1, ours) + Dominance(ours, theirs, 0) - Dominance(theirs, ours, 1) - Threat(ours) +
-                   ClockValue(ours, theirs) - TheirClockShare * ClockValue(theirs, ours);
+                   ClockValue(ours, theirs) - TheirClockShare * ClockValue(theirs, ours, TheirNextAttack(theirs));
         }
 
         /// <summary>ATK steps of <see cref="AttackerOdds"/>: index i is "an attacker of at least i × 100 ATK".</summary>
@@ -468,6 +479,17 @@ namespace BotTest.Game.AI.Search
             return SittingDuckWeight * worst;
         }
 
+        /// <summary>
+        /// The attacker they're assumed to summon next (as for the sitting duck): the biggest Level 4-or-lower left in their deck, or with a monster
+        /// of theirs to tribute the biggest Level 5-6, plus a known hand boost (Kalut). Part of their clock on us (user, 2026-11-18: "assume they'll
+        /// attack our weakest one for damage purposes"): a 100-ATK D.D. Crow left in attack position makes their clock faster.
+        /// </summary>
+        public int TheirNextAttack(SideSummary theirs)
+        {
+            int attack = Math.Max(TheirNormalAttack, theirs.Monsters.Count > 0 ? TheirTributeAttack : 0);
+            return attack > 0 ? attack + TheirKnownBoost : 0;
+        }
+
         /// <summary>Their next summon's ATK (biggest Level 4-or-lower left in their deck) and, with a monster to tribute, the biggest Level 5-6.</summary>
         public int TheirNormalAttack { get; init; }
         public int TheirTributeAttack { get; init; }
@@ -504,8 +526,8 @@ namespace BotTest.Game.AI.Search
         // Set cards by kind (user, 2026-11-18: "shouldn't there be separate ones for spells and traps (and a third for quick-play spells)?
         // happy with raising it a bit in line with the new hand scores"): each 0.3 up with a hand card (0.5 -> 0.8), the old set-trap /
         // set-quick-play bonuses (0.25 / 0.1) folded in, so setting a trap still beats holding it by 0.25.
-        [Tunable("A set normal / continuous / field / equip spell's base worth, before what it will do (also an unknown set card).")]
-        public static double SetSpellBase = 0.8;
+        [Tunable("A set normal / continuous / field / equip spell's base worth, before what it will do: 0.5 below a hand card, so setting one costs that.")]
+        public static double SetSpellBase = 0.3; // user, 2026-11-18: 0.3, "cleaner": a set normal spell is worth 0.5 less than in hand (the old SpellInHandBonus0)
         [Tunable("A set quick-play spell's base worth, before what it will do.")]
         public static double SetQuickPlayBase = 0.9;
         [Tunable("A set trap's base worth, before what it will do.")]
@@ -700,9 +722,6 @@ namespace BotTest.Game.AI.Search
             return HeavyStormChance * set.Sum() * Math.Max(1, set.Count * OversetCurve);
         }
 
-        /// <summary>A normal / continuous / field / equip spell is worth this much more in hand than set (CSV S3: setting Miracle Dig was a bad play).</summary>
-        [Tunable("A normal / continuous / field / equip spell is worth this much more in hand than set (CSV S3: setting Miracle Dig was a bad play).")]
-        public static double SpellInHandBonus0 = 0.5; // user, 2026-11-17: Brain Control set again: "increase the penalty for setting a non-chainable card" (was 0.1)
         /// <summary>The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).</summary>
         [Tunable("The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).")]
         public static double OversetCurve = 0.5;
@@ -742,7 +761,7 @@ namespace BotTest.Game.AI.Search
         {
             double extra = 0;
             // Only a card that can act on their turn earns these: a trap or a quick-play spell. A set normal spell (Brain Control) can't
-            // protect or remove anything until our next turn, so it only pays SpellInHandBonus0 for being set (user, 2026-11-17: "there
+            // protect or remove anything until our next turn, so it only pays for being set (SetSpellBase is 0.5 below a hand card) (user, 2026-11-17: "there
             // should've been a penalty for setting a normal spell"; it was earning removal credit instead).
             if (SearchHost.Cards.Get(code) is not { } setCard || !((setCard.Type & 0x4) != 0 || (setCard.Type & 0x2) != 0 && (setCard.Type & 0x10000) != 0))
                 return 0;
@@ -799,10 +818,9 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>A set card's base worth by its kind: trap, quick-play spell, other spell (and an unknown card).</summary>
         internal static double SetBase(int code) =>
-            SearchHost.Cards.Get(code) is not { } r ? SetSpellBase : (r.Type & 0x4) != 0 ? SetTrapBase : (r.Type & 0x2) != 0 && (r.Type & 0x10000) != 0 ? SetQuickPlayBase : SetSpellBase;
+            // (An unknown set card, the stand-in: UnknownSetWorth, as before the split; not the set-spell base.)
+            code == SearchView.InertCard || SearchHost.Cards.Get(code) is not { } r ? UnknownSetWorth : (r.Type & 0x4) != 0 ? SetTrapBase : (r.Type & 0x2) != 0 && (r.Type & 0x10000) != 0 ? SetQuickPlayBase : SetSpellBase;
 
-        private static double SpellInHandBonus(int code) =>
-            SearchHost.Cards.Get(code) is { } r && (r.Type & 0x2) != 0 && (r.Type & 0x10000) == 0 ? SpellInHandBonus0 : 0;
 
         /// <summary>
         /// What their unknown cards might do, since the lines don't guess at them (user, 2026-11-11: "a simple score for the
@@ -898,7 +916,7 @@ namespace BotTest.Game.AI.Search
             {
                 var card = _values.Get(code, side);
                 int atk = SearchHost.Cards.Get(code) is { } r && (r.Type & 0x1) != 0 ? r.Attack : 0;
-                value += HandCardBase + Effect(card.Held + atk / HandAtkScale, HeldEffectWeight) + Bonus(code, CardPlace.Hand, side) + (side == 0 ? SpellInHandBonus(code) : 0);
+                value += HandCardBase + Effect(card.Held + atk / HandAtkScale, HeldEffectWeight) + Bonus(code, CardPlace.Hand, side);
             }
             // Graveyard: setups (cards that work from there: Vayu, Plaguespreader, Treeborn, Necro Gardna).
             // Graveyard: the grave scorer's value as it is (user, 2026-11-18: "graveyard weights should be their weight according to the grave

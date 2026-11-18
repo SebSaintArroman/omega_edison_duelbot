@@ -786,6 +786,8 @@ namespace BotTest.Game.AI.Search
             int ourMonsters = -1, ourSpells = -1, ourDeck = -1, ourHand = -1, drawn = 0;
             int OurCards() => host.CountIn(0, SearchPosition.LocHand) + host.CountIn(0, SearchPosition.LocMZone) + host.CountIn(0, SearchPosition.LocSZone);
             int ourCardsAtRoot = -1; // CSV S15: a won line's cards spent
+            int DustshootsGone() => host.Summary(0).GraveCodes.Count(c => SearchHost.Is(c, TrapDustshootId));
+            int dustshootsAtRoot = -1; // our Trap Dustshoots in the graveyard at the decision
             int? rootAdvantage = null; // our cards minus theirs at the decision (the +1 bonus)
             void NoteMirror()
             {
@@ -898,6 +900,7 @@ namespace BotTest.Game.AI.Search
                         ourSpells = host.CountIn(0, SearchPosition.LocSZone);
                         (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
                         ourCardsAtRoot = OurCards();
+                        dustshootsAtRoot = DustshootsGone();
                         rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
                         if (double.IsNaN(_tree.Center)) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                         long at = Stopwatch.GetTimestamp();
@@ -975,6 +978,7 @@ namespace BotTest.Game.AI.Search
                                 ourSpells = host.CountIn(0, SearchPosition.LocSZone);
                                 (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
                                 ourCardsAtRoot = OurCards();
+                                dustshootsAtRoot = DustshootsGone();
                                 rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
                                 if (double.IsNaN(_tree.Center)) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                                 long reachedAt = Stopwatch.GetTimestamp();
@@ -989,6 +993,7 @@ namespace BotTest.Game.AI.Search
                             ourSpells = host.CountIn(0, SearchPosition.LocSZone);
                             (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
                             ourCardsAtRoot = OurCards();
+                            dustshootsAtRoot = DustshootsGone();
                             rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
                             if (double.IsNaN(_tree.Center)) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                             CheckPosition(host);
@@ -1259,6 +1264,14 @@ namespace BotTest.Game.AI.Search
                 if (gained != 0)
                     trace?.Add($"  (card advantage {gained:+0;-0} in our turn: {advantage:+0.0;-0.0})");
             }
+            // Trap Dustshoot activated in the line: its hit counts (user, 2026-11-18: "add a rule to trap dustshoot's effect that gets 1 point if
+            // it's activated (because it will remove a card almost always)"): the lines' unseen hand cards of theirs are blanks, so it finds
+            // nothing there. Counted by the copies of ours that resolved into our graveyard.
+            if (dustshootsAtRoot >= 0 && DustshootsGone() - dustshootsAtRoot is > 0 and var fired)
+            {
+                penalty -= fired * MctsEvaluator.DustshootBonus;
+                trace?.Add($"  (Trap Dustshoot activated: +{fired * MctsEvaluator.DustshootBonus:0.#})");
+            }
             double value = _evaluator.Evaluate(host, penalty - advantage + exposure * _evaluator.RiskDiscount - drawn * MctsEvaluator.DrawBonus, turnEnd,
                 winRisk: exposure, cardsSpent: ourCardsAtRoot >= 0 ? Math.Max(0, ourCardsAtRoot - OurCards()) : 0, length: prompts,
                 center: double.IsNaN(_tree.Center) ? 0 : _tree.Center);
@@ -1427,6 +1440,8 @@ namespace BotTest.Game.AI.Search
             key.LastIndexOf('#') is int hash and >= 0
                 ? key[..(hash + 1)] + string.Join(";", key[(hash + 1)..].Split(';').Where(o => o != "cancel"))
                 : key;
+
+        private const int TrapDustshootId = 64697231;
 
         /// <summary>A real answer, not a sub-node for another kind of prompt ("@" key).</summary>
         private static bool IsMove(string key) => !key.StartsWith('@');

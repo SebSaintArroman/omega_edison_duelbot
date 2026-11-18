@@ -98,13 +98,13 @@ namespace BotTest.Game.AI.Brains
                 // search's body value: 0.6 + the ATK table), face-up spells/traps 0.3. Same curve; the larger of the two counts (one
                 // deficit, not two).
                 static double MonsterValue(DynamicCard m) =>
-                    !m.IsFaceup() ? Search.MctsEvaluator.SetSpellBase : Search.MctsEvaluator.MonsterBase + Search.MctsEvaluator.AtkValue(m.IsAttack() ? m.Attack : Search.MctsEvaluator.DefenceShare * m.Defense);
+                    !m.IsFaceup() ? Search.MctsEvaluator.UnknownSetWorth : Search.MctsEvaluator.MonsterBase + Search.MctsEvaluator.AtkValue(m.IsAttack() ? m.Attack : Search.MctsEvaluator.DefenceShare * m.Defense);
                 double ourValue = (await GetBotHandCardsAsync()).Count +
                                   (await GetBotMonsterCardsAsync()).Where(card => card.ID > 0).Sum(MonsterValue) +
-                                  (await CurrentField.GetCardsInSpellZone()).Where(card => card.ID > 0).Sum(card => card.IsFaceup() ? Search.MctsEvaluator.FaceUpSpellBase : Search.MctsEvaluator.SetSpellBase);
+                                  (await CurrentField.GetCardsInSpellZone()).Where(card => card.ID > 0).Sum(card => card.IsFaceup() ? Search.MctsEvaluator.FaceUpSpellBase : Search.MctsEvaluator.UnknownSetWorth);
                 double theirValue = (field.EnemySide.Hand?.Length ?? 0) +
                                     (await GetEnemyMonsterCardsAsync()).Sum(MonsterValue) +
-                                    (await GetEnemySpellCardsAsync()).Sum(card => card.IsFaceup() ? Search.MctsEvaluator.FaceUpSpellBase : Search.MctsEvaluator.SetSpellBase);
+                                    (await GetEnemySpellCardsAsync()).Sum(card => card.IsFaceup() ? Search.MctsEvaluator.FaceUpSpellBase : Search.MctsEvaluator.UnknownSetWorth);
                 double Curve(double d) => Math.Min(RiskBehindMax, RiskBehindStart * (Math.Pow(RiskBehindGrowth, d) - 1));
                 double countPart = theirs > ours ? Curve(theirs - ours) : 0;
                 double valuePart = theirValue > ourValue ? Curve(theirValue - ourValue) : 0;

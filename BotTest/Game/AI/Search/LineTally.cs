@@ -10,7 +10,6 @@ namespace BotTest.Game.AI.Search
     /// guessed what would happen later are checked against what the line actually does). Each line starts from the real
     /// turn's TurnRecord, so lines started later in the turn count the same history as the reused tree's older lines.
     /// <list type="number">
-    /// <item>A set in Main Phase 1, then the Battle Phase: SetBeforeBattleCost per set.</item>
     /// <item>Lyla's effect in Main Phase 1, then the Battle Phase: LylaBeforeBattleCost (weak: Lyla clearing the way for a push is
     /// better than her post-battle gamble).</item>
     /// <item>A union equip (Machina Gearframe / Peacekeeper) in Main Phase 1, then the Battle Phase: EquipBeforeBattleCost.</item>
@@ -21,8 +20,6 @@ namespace BotTest.Game.AI.Search
     /// </summary>
     internal sealed class LineTally
     {
-        [Tunable("")]
-        public static double SetBeforeBattleCost = 1.5;
         [Tunable("")]
         public static double LylaBeforeBattleCost = 0.5;
         [Tunable("")]
@@ -201,11 +198,8 @@ namespace BotTest.Game.AI.Search
                     _battle = true;
                     _battleInLine = true;
                     _fusion = false;
-                    if (_sets > 0)
-                    {
-                        cost += SetBeforeBattleCost * _sets;
-                        note?.Invoke($"  ({_sets} set(s) in Main Phase 1, then the Battle Phase: -{SetBeforeBattleCost * _sets:0.#})");
-                    }
+                    // (Sets in Main Phase 1 aren't charged here any more: the brain's hold-sets-for-battle holds charge them, one rule for one
+                    // circumstance; user, 2026-11-18: "why do we have two holds of set for battle phase? we should only have one".)
                     if (_lyla)
                     {
                         cost += LylaBeforeBattleCost;

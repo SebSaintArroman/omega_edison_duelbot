@@ -1930,8 +1930,8 @@ namespace BotTest.Game.AI.Brains
         public double GorzPassBoost { get; set; } = 3;
 
         /// <summary>After such a pass, the chance they hold Gorz is multiplied by this (1.3 = 30% more). User, 2026-11-18.</summary>
-        [Tunable("After a complete pass (empty field, nothing played), the chance they hold Gorz is multiplied by this (1.3 = 30% more). User, 2026-11-18.")]
-        public double GorzPassBonus { get; set; } = 1.3;
+        [Tunable("After a complete pass (empty field, nothing played), the chance they hold Gorz is multiplied by this (1.5 = 50% more). User, 2026-11-18.")]
+        public double GorzPassBonus { get; set; } = 1.5; // user, 2026-11-18: "lets up it to x1.5" (was 1.3)
 
         /// <summary>They passed their turn with an empty field and a big hand that didn't shrink: their cards are likelier Gorz.</summary>
         protected void NoteOpponentPassedForGorz() => _gorzPassFactor = GorzPassBoost;
