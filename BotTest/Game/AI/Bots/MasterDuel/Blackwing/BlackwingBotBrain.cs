@@ -3053,13 +3053,17 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 // so it's weighed: likely doomed (at least an even chance), and two of their cards to hit.
                 if (context.Header.LastChainPlayer == 1 && enemyCards >= 2)
                 {
+                    // Any Winged Beast of ours, face-up or set (user, 2026-11-18: "the cheapest winged beast to tribute is a doomed winged-beast,
+                    // which should trigger this doomed logic even if icarus itself isn't doomed"), weighed like a doomed Icarus: the two cards it
+                    // destroys against the tribute, which costs its worth times the chance it survives (DoomedRemovalWorthAsync plans it).
                     var doomed = (await DoomedMonstersAsync(context.Header))
-                        .Where(d => d.Card.IsFaceup() && IsBlackwing(d.Card) && d.Chance >= IcarusDoomedChance)
+                        .Where(d => d.Card.ID > 0 && (d.Card.Race & (int)CardRace.WingedBeast) != 0 && d.Chance >= IcarusDoomedChance)
                         .OrderByDescending(d => d.Chance).FirstOrDefault();
                     if (doomed.Card.ID > 0 && Rule(BlackwingRules.IcarusFreeTribute))
                     {
-                        PlanTributes(context.Header.CurrentTurn, new[] { doomed.Card }, "Icarus Attack");
-                        Note(context, $"Icarus Attack: {CardNames.Get(doomed.Card.ID)} is about to go ({doomed.How}, {doomed.Chance:P0}), so tribute it and destroy two of their cards");
+                        var (use, why) = await DoomedRemovalWorthAsync(context, options[icarus]);
+                        Note(context, $"Icarus Attack: {CardNames.Get(doomed.Card.ID)} is about to go ({doomed.How}, {doomed.Chance:P0}): {why}");
+                        if (use)
                         { await MarkAttackAnsweredAsync(context); return icarus; }
                     }
                 }

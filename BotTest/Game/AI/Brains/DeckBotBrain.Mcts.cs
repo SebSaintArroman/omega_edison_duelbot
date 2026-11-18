@@ -209,7 +209,7 @@ namespace BotTest.Game.AI.Brains
         private double _heavyChance;
         // Their unknown set cards' chance of Icarus Attack (Blackwing lists only: no list data, no Icarus), for the exposure.
         private double _unknownIcarus;
-        private const int IcarusAttackId = 53567095;
+        protected const int IcarusAttackId = 53567095;
 
         /// <summary>Reads their unknown backrow's stopper odds for the MCTS's scoring (call before building an evaluator).</summary>
         private async Task RefreshStopOddsAsync()

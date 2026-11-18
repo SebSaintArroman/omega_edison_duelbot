@@ -165,6 +165,9 @@ namespace BotTest.Game.AI.Brains
         public const string SummonTrooper = "deck.summon-trooper";
         public const string TorrentialTribute = "deck.torrential-tribute";
         public const string TrapDustshoot = "deck.trap-dustshoot";
+        /// <summary>Trap Dustshoot is set when their hand has 3+ cards: ending the turn with it in hand is held (user, 2026-11-18).</summary>
+        [HoldCost(HoldCosts.Strong)]
+        public const string SetTrapDustshoot = "deck.set-trap-dustshoot";
         public const string TrooperDeckGuard = "deck.trooper-deck-guard";
         public const string TrooperDefenceWhenThin = "deck.trooper-defence-when-thin";
         public const string TrooperIntoFaceDown = "deck.trooper-into-face-down";

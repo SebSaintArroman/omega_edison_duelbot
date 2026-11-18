@@ -548,3 +548,22 @@ SearchCardValues.VayuGraveReading = 0.8   # Vayu's own graveyard worth (card poi
 # added 2026-11-18 10:58 (new in the code since the file was written)
 # --- MctsEvaluator
 MctsEvaluator.TheirClockShare = 0.5   # Their clock on us counts this share of ClockBonus against a line (ours on them counts in full). User, 2026-11-18: "tone down the penalty for being on a clock ... leave the bonus for the bot putting me on a clock as is".
+
+# added 2026-11-18 11:29 (new in the code since the file was written)
+# --- DeckBotBrain
+DeckBotBrain.HoldCost.deck.no-hand-trap-set = 6
+
+# added 2026-11-18 11:42 (new in the code since the file was written)
+# --- DeckBotBrain
+DeckBotBrain.DustshootSetAtHand = 3   # Trap Dustshoot is set (ending the turn without it is held) when their hand has this many cards or more.
+DeckBotBrain.UnknownCardTargetWorth = 1.5   # A face-down card of theirs as a target for a doomed Raigeki Break / Icarus Attack (effect points).
+# --- LineTally
+LineTally.AllureBonus = 0.3   # Allure of Darkness activated with a DARK in hand to banish: this small bonus (card units).
+# --- MctsEvaluator
+MctsEvaluator.SolemnGuardCap = 2   # The most a hand card's worth counts for in the Solemn bonus (card units).
+MctsEvaluator.SolemnGuardMinWorth = 2   # A hand card counts as strong for the Solemn bonus from this worth (effect points plus ATK value).
+MctsEvaluator.SolemnGuardWeight = 0.3   # A set Solemn Judgment gains this times the worth of our strongest card still in hand (capped at SolemnGuardCap): it protects that play next turn.
+
+# added 2026-11-18 11:42 (new in the code since the file was written)
+# --- DeckBotBrain
+DeckBotBrain.HoldCost.deck.set-trap-dustshoot = 3

@@ -58,6 +58,15 @@ namespace BotTest.Game.AI.Search
         private static bool LocksOtherAttacks(int code) => code > 0 && AttackLockCards.GetOrAdd(code, id =>
             SearchHost.Available && SearchHost.Cards.Get(id) is { } info && AttackLockText.IsMatch(info.Text ?? ""));
 
+        /// <summary>Whether a DARK monster is in our hand right now (set by the search, which sees the board).</summary>
+        public Func<bool>? DarkInHand { get; set; }
+
+        /// <summary>Allure of Darkness activated with a DARK in hand to banish: this small bonus (user, 2026-11-18: "give allure a small activation
+        /// bonus"). Without a DARK it takes the whole hand: no bonus (the brain holds it then).</summary>
+        [Tunable("Allure of Darkness activated with a DARK in hand to banish: this small bonus (card units).")]
+        public static double AllureBonus = 0.3;
+        internal static readonly int[] Allure = { 1475311 };
+
         /// <summary>How many of our monsters other than this card could still attack this turn (set by the search, which sees the board).</summary>
         public Func<int, int>? OtherAttackers { get; set; }
 
@@ -174,6 +183,11 @@ namespace BotTest.Game.AI.Search
                     break;
                 case MainAction.Activate:
                     _idleSummons.Remove(code);
+                    if (Is(code, Allure) && DarkInHand?.Invoke() == true)
+                    {
+                        cost -= AllureBonus;
+                        note?.Invoke($"  (Allure of Darkness with a DARK to banish: +{AllureBonus:0.#})");
+                    }
                     cost += AttackLock(code, note);
                     if (!_battle && Is(code, Lyla))
                         _lyla = true;

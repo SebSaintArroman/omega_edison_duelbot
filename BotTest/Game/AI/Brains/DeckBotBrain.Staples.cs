@@ -947,6 +947,11 @@ namespace BotTest.Game.AI.Brains
         protected virtual async Task<(bool Use, string Why)> DoomedCostlyWorthAsync(DecisionContext<SelectChainData> context, DynamicCard ours,
             DynamicCard? threat, int reach)
         {
+            // Raigeki Break and Icarus Attack (user, 2026-11-18: "it should have seen raigeki break was doomed and weighed discarding one card in
+            // hand against killing krystia"; "why didn't doomed logic kick in for icarus atk?"): the card itself is free, so the trade is what
+            // it destroys against what it costs (a discard / a Winged Beast tribute).
+            if (ours.IsCode(RaigekiBreakId) || ours.IsCode(IcarusAttackId))
+                return await DoomedRemovalWorthAsync(context, ours);
             if (!ours.IsCode(SolemnJudgmentId))
                 return (false, $"{CardNames.Get(ours.ID)} has a cost of its own; its own logic decides");
             if (threat is not DynamicCard link || link.ID <= 0 || !(link.HasType(CardType.Spell) || link.HasType(CardType.Trap)))
@@ -974,6 +979,79 @@ namespace BotTest.Game.AI.Brains
                                       : $"{lp / 2} LP ({cost:0.#} card(s) at {LifePointsPerCard} LP a card)");
             return benefit > cost ? (true, $"chain Solemn Judgment (pay {lp / 2} LP): {sums}") : (false, sums);
         }
+
+        protected const int RaigekiBreakId = 4178474;
+
+        /// <summary>
+        /// A doomed Raigeki Break / Icarus Attack, weighed with itself free: the best card(s) of theirs it destroys (Raigeki 1, Icarus 2: a face-up
+        /// monster by its effect score, a face-down card at UnknownCardTargetWorth) against what it costs (Raigeki: our cheapest card in hand to
+        /// discard, by its effect score in hand; Icarus: our cheapest Winged Beast to tribute, by its effect score on the field). Used when the
+        /// gain is bigger; Raigeki's target and Icarus's tribute are planned.
+        /// </summary>
+        protected async Task<(bool Use, string Why)> DoomedRemovalWorthAsync(DecisionContext<SelectChainData> context, DynamicCard ours)
+        {
+            bool icarus = ours.IsCode(IcarusAttackId);
+            var field = await CurrentField.GetBotField();
+            var theirGrave = field.EnemySide.Grave ?? Array.Empty<int>();
+            var ourGrave = field.OwnSide.Grave ?? Array.Empty<int>();
+            var theirs = (await GetEnemyMonsterCardsAsync()).Concat(await GetEnemySpellCardsAsync())
+                .Where(card => card.ID > 0 || card.Position != 0).ToList();
+            var worths = new List<(DynamicCard Card, double Worth)>();
+            foreach (var card in theirs)
+            {
+                // A face-up Normal / Quick-Play spell or Normal trap is resolving (the one removing ours): nothing to destroy.
+                if (card.IsFaceup() && !card.HasType(CardType.Monster) && !WorthRemovingSpellTrap(card))
+                    continue;
+                double worth = card.IsFaceup() && card.ID > 0
+                    ? (await EffectEvaluator.ScoreOnFieldAsync(card.ID, theirGrave)).Score
+                    : UnknownCardTargetWorth;
+                worths.Add((card, worth));
+            }
+            var targets = worths.OrderByDescending(w => w.Worth).Take(icarus ? 2 : 1).ToList();
+            if (targets.Count == 0)
+                return (false, $"{CardNames.Get(ours.ID)}: nothing of theirs worth destroying");
+            double gain = targets.Sum(t => t.Worth);
+            string targetsText = string.Join(" + ", targets.Select(t => $"{(t.Card.ID > 0 && t.Card.IsFaceup() ? CardNames.Get(t.Card.ID) : "a face-down card")} ({t.Worth:0.#})"));
+            if (icarus)
+            {
+                var wings = (await GetBotMonsterCardsAsync()).Where(card => card.ID > 0 && (card.Race & (int)CardRace.WingedBeast) != 0).ToList();
+                if (wings.Count == 0)
+                    return (false, "Icarus Attack: no Winged Beast of ours to tribute");
+                // A Winged Beast that's about to be destroyed anyway costs nothing to tribute (user, 2026-11-18: "the cheapest winged beast to
+                // tribute is a doomed winged-beast"): its worth times the chance it survives.
+                var doomed = await DoomedMonstersAsync(context.Header);
+                var costs = new List<(DynamicCard Card, double Worth)>();
+                foreach (var wing in wings)
+                {
+                    double worth = (await EffectEvaluator.ScoreOnFieldAsync(wing.ID, ourGrave)).Score;
+                    var fate = doomed.FirstOrDefault(d => d.Card.ID == wing.ID && d.Card.CurrentCoordinates.Sequence == wing.CurrentCoordinates.Sequence);
+                    costs.Add((wing, fate.Card.ID > 0 ? worth * (1 - Math.Clamp(fate.Chance, 0, 1)) : worth));
+                }
+                var tribute = costs.OrderBy(c => c.Worth).First();
+                string sums = $"Icarus Attack is free (it's being removed): destroying {targetsText} = {gain:0.#} against tributing {CardNames.Get(tribute.Card.ID)} ({tribute.Worth:0.#})";
+                if (gain <= tribute.Worth)
+                    return (false, sums);
+                PlanTributes(context.Header.CurrentTurn, new[] { tribute.Card }, "Icarus Attack");
+                return (true, sums);
+            }
+            var hand = await GetBotHandCardsAsync();
+            if (hand.Count == 0)
+                return (false, "Raigeki Break: no card in hand to discard");
+            var discards = new List<(DynamicCard Card, double Worth)>();
+            foreach (var card in hand)
+                // A card that works from the graveyard costs less to discard (user, 2026-11-18: "prefer discarding cards with graveyard effects"):
+                // its worth in hand less its worth in the graveyard.
+                discards.Add((card, (await EffectEvaluator.ScoreAsync(card.ID, ourGrave)).Score - (await EffectEvaluator.ScoreInGraveAsync(card.ID, ourGrave)).Score));
+            var discard = discards.OrderBy(d => d.Worth).First();
+            string raigekiSums = $"Raigeki Break is free (it's being removed): destroying {targetsText} against discarding {CardNames.Get(discard.Card.ID)} ({discard.Worth:0.#})";
+            if (gain <= discard.Worth)
+                return (false, raigekiSums);
+            PlanTarget(context.Header.CurrentTurn, targets[0].Card, theirs: true);
+            return (true, raigekiSums);
+        }
+
+        [Tunable("A face-down card of theirs as a target for a doomed Raigeki Break / Icarus Attack (effect points).")]
+        public static double UnknownCardTargetWorth = 1.5;
 
         /// <summary>Chance a set bait card is hit (untargeted-looking removal) from which it's chained. Tune from logs.</summary>
         [Tunable("Chance a set bait card is hit (untargeted-looking removal) from which it's chained. Tune from logs.")]

@@ -10,7 +10,7 @@ HeroFrogBotBrain.MonarchHoldTributeCost = 4.5   # A Monarch is held when our che
 HeroFrogBotBrain.RaizaComesBackFactor = 0.5   # Raiza's value on a face-up Level 5+ main-deck monster (comes straight back): its threat x this.
 HeroFrogBotBrain.RaizaGoneForGoodFactor = 1.5   # Raiza's value on an Extra Deck monster or token (gone for good): its threat x this.
 HeroFrogBotBrain.TreebornBlockedValue = -2   # The search's setup value for Treeborn Frog in our graveyard while a spell/trap of ours blocks it (negative: a cost).
-HeroFrogBotBrain.TreebornLiveValue = 0   # The search's setup value for Treeborn Frog in our graveyard with no spell/trap of ours out (it comes back).
+HeroFrogBotBrain.TreebornLiveValue = 0.6   # The search's setup value for Treeborn Frog in our graveyard with no spell/trap of ours out (it comes back).
 HeroFrogBotBrain.TributeAbsoluteZero = 5   # Tribute order: Absolute Zero otherwise.
 HeroFrogBotBrain.TributeAbsoluteZeroLive = 0.5   # Tribute order: Absolute Zero while they have 2+ monsters (its wipe is live).
 HeroFrogBotBrain.TributeBattleFader = 1.7   # Tribute order: Battle Fader.
@@ -68,3 +68,10 @@ HeroFrogBotBrain.HoldCost.herofrog.treeborn-holds-sets = 1.5
 # added 2026-11-17 15:47 (new in the code since the file was written)
 # --- HeroFrogBotBrain
 HeroFrogBotBrain.HoldCost.herofrog.swap-bounce-after-battle = 0.75
+
+# added 2026-11-18 11:29 (new in the code since the file was written)
+# --- HeroFrogBotBrain
+HeroFrogBotBrain.HoldCost.herofrog.aoi-set-needs-water = 3
+HeroFrogBotBrain.HoldCost.herofrog.swap-send-order = 0.75
+HeroFrogBotBrain.HoldCost.herofrog.swap-sends-treeborn = 3
+HeroFrogBotBrain.HoldCost.herofrog.treeborn-setup-first = 1.5

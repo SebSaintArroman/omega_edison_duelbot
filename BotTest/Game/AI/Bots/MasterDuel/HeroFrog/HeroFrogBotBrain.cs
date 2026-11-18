@@ -29,7 +29,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         // ------------------------------------------------------------------ tunable numbers (bot-tuning-HeroFrog.txt, user 2026-11-16)
 
         [Tunable("The search's setup value for Treeborn Frog in our graveyard with no spell/trap of ours out (it comes back).")]
-        public static double TreebornLiveValue = 0; // user, 2026-11-17: its own GY reading (it revives itself, 1.0) is the value; was 0.6
+        public static double TreebornLiveValue = 0.6; // an exception to "no deck graveyard values", like Jinzo (user, 2026-11-18: "what happened to this deck getting a bonus for setting treeborn frog up?")
         [Tunable("The search's setup value for Treeborn Frog in our graveyard while a spell/trap of ours blocks it (negative: a cost).")]
         public static double TreebornBlockedValue = -2; // blocked by our spell/trap it can't come back: cancels its GY reading (1.0) and costs 1.0 more, above the set-card bonuses (user, 2026-11-18)
         [Tunable("The search's setup value for the Dupe Frog lock (two face-up Dupe Frogs).")]
@@ -1801,12 +1801,22 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             if (hint == DHint.SPSUMMON && In(CardLocation.Extra) && indexed.Any(x => IsId(x.Card, HeroFrogCardId.ElementalHeroAbsoluteZero)))
                 return Pick(indexed.OrderBy(x => IsId(x.Card, HeroFrogCardId.ElementalHeroAbsoluteZero) ? 0 : 1), "fusion summon");
 
-            // A monster from the deck (Substitoad, One for One): the one we planned, else Dupe Frog > Treeborn > Swap Frog.
+            // A monster from the deck (Substitoad, One for One): the one we planned. Unplanned (the search activated it), Treeborn first while
+            // it isn't set up: Swap Frog (its trigger sends Treeborn to the graveyard), else Dupe Frog > Treeborn > Swap Frog (user, 2026-11-18:
+            // "what happened to ... the routine about going into swap frog, sending treeborn and then bouncing swap?"). Without a plan, the
+            // other picks are held while the setup is on offer, so a line that skips it pays for it.
             if (hint == DHint.SPSUMMON && allOurs && indexed.Any(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck))
             {
                 int planned = _deckSummonPick;
                 _deckSummonPick = 0;
-                var order = new[] { planned, HeroFrogCardId.DupeFrog, HeroFrogCardId.TreebornFrog, HeroFrogCardId.SwapFrog, HeroFrogCardId.Substitoad, HeroFrogCardId.BattleFader };
+                bool setUpTreeborn = planned == 0 && !_treebornInGrave && !_treebornOnField && await InDeckAsync(HeroFrogCardId.TreebornFrog) > 0 &&
+                                     indexed.Any(x => IsId(x.Card, HeroFrogCardId.SwapFrog));
+                var order = setUpTreeborn
+                    ? new[] { HeroFrogCardId.SwapFrog, HeroFrogCardId.DupeFrog, HeroFrogCardId.TreebornFrog, HeroFrogCardId.Substitoad, HeroFrogCardId.BattleFader }
+                    : new[] { planned, HeroFrogCardId.DupeFrog, HeroFrogCardId.TreebornFrog, HeroFrogCardId.SwapFrog, HeroFrogCardId.Substitoad, HeroFrogCardId.BattleFader };
+                if (setUpTreeborn && Rule(HeroFrogRules.TreebornSetupFirst))
+                    foreach (int other in indexed.Where(x => !IsId(x.Card, HeroFrogCardId.SwapFrog)).Select(x => x.Card.ID).Distinct())
+                        HoldPick(other, HeroFrogRules.TreebornSetupFirst);
                 return Pick(indexed.OrderBy(x => Array.FindIndex(order, id => id > 0 && IsId(x.Card, id)) is int i and >= 0 ? i : order.Length), "special summon from the deck");
             }
 

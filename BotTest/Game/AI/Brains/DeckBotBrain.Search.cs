@@ -242,6 +242,23 @@ namespace BotTest.Game.AI.Brains
         /// Monsters whose effect works from the hand (Battle Fader, Honest, Kalut) aren't set: set, they lose it (user, 2026-11-18: "NEVER set
         /// battle fader - its effect in hand stops more attacks than it would while set").
         /// </summary>
+        /// <summary>
+        /// Trap Dustshoot is set whenever they hold 3 or more cards (user, 2026-11-18: "it should always do this if my hand has 3 or more cards
+        /// (all decks should), and then use it as soon as I draw"; the chain rule fires at 4+). Ending the turn with it still in hand is held,
+        /// so a line that doesn't set it pays for it (in the lines their hand is blank cards, so Dustshoot itself never shows its worth there).
+        /// </summary>
+        private async Task HoldTrapDustshootUnsetAsync(DecisionContext<IdleCmdData> context)
+        {
+            if (!(context.StateData.SpellSetableCards ?? Array.Empty<DynamicCard>()).Any(card => card.IsCode(TrapDustshootId)) || !context.StateData.CanEndPhase)
+                return;
+            int theirHand = ((await CurrentField.GetBotField()).EnemySide.Hand ?? Array.Empty<int>()).Length;
+            if (theirHand >= DustshootSetAtHand && Rule(DeckRules.SetTrapDustshoot))
+                HoldPhaseMove("end", DeckRules.SetTrapDustshoot);
+        }
+
+        [Tunable("Trap Dustshoot is set (ending the turn without it is held) when their hand has this many cards or more.")]
+        public static int DustshootSetAtHand = 3;
+
         private void HoldHandTrapSets(DecisionContext<IdleCmdData> context)
         {
             foreach (var card in context.StateData.MonsterSetableCards ?? Array.Empty<DynamicCard>())
@@ -658,6 +675,7 @@ namespace BotTest.Game.AI.Brains
                 await HoldEmptyBurialSetAsync(context);
                 await HoldForTorrentialTestAsync(context);
                 HoldHandTrapSets(context);
+                await HoldTrapDustshootUnsetAsync(context);
                 await DeckHoldsAsync(context);
                 return await SearchIdleAsync(context, brainChoice, ct);
             }

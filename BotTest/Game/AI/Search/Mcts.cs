@@ -714,6 +714,8 @@ namespace BotTest.Game.AI.Search
             // The sequence penalties of our turn (LineTally), starting from what the real turn has already done (TurnRecord).
             var tally = new LineTally(_view.Record, _view.InBattlePhase || _view.BattlePhaseDone, _view.FirstTurnOfDuel)
             {
+                // A DARK monster in our hand (Allure of Darkness banishes one instead of the whole hand).
+                DarkInHand = () => host.Summary(0).HandCodes.Any(c => (SearchHost.Type(c) & 0x1) != 0 && (SearchHost.Attribute(c) & 0x20) != 0),
                 // Our other face-up attack-position monsters, while the Battle Phase is still to come or under way (#135).
                 OtherAttackers = code =>
                 {

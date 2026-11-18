@@ -749,6 +749,32 @@ namespace BotTest.Game.AI.Search
             catch { return 0; }
         }
 
+        private const int SolemnJudgmentCode = 41420027;
+
+        [Tunable("A set Solemn Judgment gains this times the worth of our strongest card still in hand (capped at SolemnGuardCap): it protects that play next turn.")]
+        public static double SolemnGuardWeight = 0.3;
+        [Tunable("The most a hand card's worth counts for in the Solemn bonus (card units).")]
+        public static double SolemnGuardCap = 2;
+        [Tunable("A hand card counts as strong for the Solemn bonus from this worth (effect points plus ATK value).")]
+        public static double SolemnGuardMinWorth = 2;
+
+        /// <summary>
+        /// A set Solemn Judgment protects the strong cards we still hold for next turn (user, 2026-11-18: "solemn should get a bonus if we have
+        /// any strong cards in hand that we aren't using that turn, that we may be able to use next turn, as well as its other bonuses"):
+        /// SolemnGuardWeight times our strongest hand card's worth (its effect points in hand plus its ATK value), if it's strong enough.
+        /// </summary>
+        private double SolemnGuardsHand(SideSummary ours)
+        {
+            double best = 0;
+            foreach (int code in ours.HandCodes)
+            {
+                var card = _values.Get(code, 0);
+                double atk = SearchHost.Available && SearchHost.Cards.Get(code) is { } r && (r.Type & 0x1) != 0 ? AtkValue(r.Attack) : 0;
+                best = Math.Max(best, card.Held + atk);
+            }
+            return best >= SolemnGuardMinWorth ? SolemnGuardWeight * Math.Min(SolemnGuardCap, best) : 0;
+        }
+
         public double SideScore(SideSummary s, int side, SideSummary? other = null)
         {
             double Effect(double points, double weight) => weight * Taper(points);
@@ -781,7 +807,7 @@ namespace BotTest.Game.AI.Search
                 var card = _values.Get(code, side);
                 value += faceUp ? FaceUpSpellBase + Effect(card.Field, FieldEffectWeight) : SetSpellBase + Effect(card.Held, HeldEffectWeight) + (side == 0 ? SetBonus(code) : 0);
                 if (!faceUp && side == 0)
-                    value += SetCardSituational(code, card, protectNeed, lpNeed, ourSets, other);
+                    value += SetCardSituational(code, card, protectNeed, lpNeed, ourSets, other) + (SearchHost.Is(code, SolemnJudgmentCode) ? SolemnGuardsHand(s) : 0);
                 value += Bonus(code, faceUp ? CardPlace.Field : CardPlace.Set, side);
             }
             // Hand: every card is an option; strong effects and big bodies more so.
