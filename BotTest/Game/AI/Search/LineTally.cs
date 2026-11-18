@@ -46,7 +46,7 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>A line that enters the Battle Phase and makes no attack (user, 2026-11-16: "maybe there should be a very small penalty for moving to battle phase if not planning to attack").</summary>
         [Tunable("A line that enters the Battle Phase and makes no attack: this small cost (card units).")]
-        public static double EmptyBattleCost = 1; // user, 2026-11-17: "it should outweigh the doing stuff in mp2 bonuses" (was 0.1)
+        public static double EmptyBattleCost = 2; // user, 2026-11-18: "make that bigger" (was 1); 2026-11-17: "it should outweigh the doing stuff in mp2 bonuses" (was 0.1)
 
         // "Other monsters you control cannot attack", "you cannot attack with other monsters", "only this card can attack".
         private static readonly System.Text.RegularExpressions.Regex AttackLockText = new(

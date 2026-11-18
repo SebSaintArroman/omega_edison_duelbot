@@ -45,6 +45,7 @@ namespace BotTest.Game.AI.Brains
         /// <summary>Every answer the real bot sent: in our turn, after the anchor, it's a step of the replay.</summary>
         public void ResponseSent(BotState state, object? data, byte[] response)
         {
+            RecordCheckpointAnswer(state, data, response); // every turn, ours or theirs (DeckBotBrain.TurnLog)
             if (IsSearchTwin || !IsOwnTurn(_currentHeader))
                 return;
             // Our picks out of our own deck count for the turn record whatever the anchor (a known card, not a mill).
@@ -195,6 +196,18 @@ namespace BotTest.Game.AI.Brains
                     return stunAnswer == brainIndex ? null : stunAnswer;
             }
             catch { /* the brain's answer stands */ }
+            // Their turn, or ours before any searched decision (our Draw and Standby Phases): the search from the turn's start
+            // (DeckBotBrain.TurnLog; plan steps 3 and 4).
+            if (!IsSearchTwin && _ownTurnParity >= 0 && SearchWanted(context.Bot) &&
+                (!IsOwnTurn(context.Header) || _anchor is not { } searched || searched.Turn != context.Header.CurrentTurn))
+            {
+                try { return await TurnStartChainAsync(context, brainIndex, ct); }
+                catch (Exception ex)
+                {
+                    context.Bot.LogNote($"search: chain search from the turn's start failed, keeping the brain's answer: {ex.Message}");
+                    return null;
+                }
+            }
             if (IsSearchTwin || !IsOwnTurn(context.Header) || !SearchWanted(context.Bot) ||
                 _anchor is not { } anchor || anchor.Turn != context.Header.CurrentTurn)
                 return null;
@@ -260,8 +273,12 @@ namespace BotTest.Game.AI.Brains
                 _revealsSearched = _revealsSinceAnchor.Count;
                 _deckSearched = deckNow;
                 _deckPickedSinceSearch = 0;
+                // No line reached the window from the last searched decision (a REPLAY MISS): from the turn's start instead (plan step 4).
                 if (outcome == null)
-                    return null;
+                {
+                    context.Bot.LogNote("search: no verdict from the last searched decision; searching from the turn's start");
+                    return await TurnStartChainAsync(context, brainIndex, ct);
+                }
                 var legal = options.ToHashSet();
                 var better = Better(context.Bot, outcome, brainKey, legal, "chain", context.Header.CurrentTurn);
                 string chosen = better?.Key ?? brainKey;
@@ -340,7 +357,7 @@ namespace BotTest.Game.AI.Brains
                 _trackedBot?.LogNote($"search: {what}: something new was revealed since the plan; keeping to the original plan's choice");
             if (PlannedNode(state) is not { } planned || PlanNodeStep(planned.Node, offered) is not { } step)
             {
-                _trackedBot?.LogNote($"search: {what}: the plan's lines never reached this choice (PLAN GAP); the brain picks");
+                _trackedBot?.LogNote($"search: {what}: the plan's lines never reached this choice (PLAN GAP)");
                 return null;
             }
             _trackedBot?.LogNote($"search: {what}: the plan's choice (score {step.Mean * 100:0.0} over {step.Visits} lines)");
@@ -397,6 +414,17 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         public async Task<IList<byte>?> RefinePickAsync(BotState state, object data, CancellationToken ct = default)
         {
+            // Their turn, or ours before any searched decision: the search from the turn's start (DeckBotBrain.TurnLog).
+            if (!IsSearchTwin && _trackedBot != null && _ownTurnParity >= 0 && SearchWanted(_trackedBot) &&
+                (!IsOwnTurn(_currentHeader) || _anchor is not { } searched || searched.Turn != _currentHeader.CurrentTurn))
+            {
+                try { return await TurnStartPickAsync(_trackedBot, state, data, ct); }
+                catch (Exception ex)
+                {
+                    _trackedBot.LogNote($"search: their-turn pick search failed, the brain picks: {ex.Message}");
+                    return null;
+                }
+            }
             if (IsSearchTwin || _trackedBot == null || !IsOwnTurn(_currentHeader) || !SearchWanted(_trackedBot) || _anchor is not { } anchor ||
                 anchor.Turn != _currentHeader.CurrentTurn)
                 return null;
@@ -446,8 +474,9 @@ namespace BotTest.Game.AI.Brains
                 string? chosen = best?.Key ?? original;
                 if (chosen == null || chosen == "cancel")
                 {
-                    bot.LogNote("search: no verdict at the pick and no plan for it; the brain picks");
-                    return null;
+                    // No verdict and no plan (a REPLAY MISS or a PLAN GAP): from the turn's start instead (plan step 4).
+                    bot.LogNote("search: no verdict at the pick and no plan for it; searching from the turn's start");
+                    return await TurnStartPickAsync(bot, state, data, ct);
                 }
                 var pick = picks.First(p => p.Key == chosen);
                 bot.LogNote($"search: {pick.Label} " + (best != null
@@ -576,7 +605,7 @@ namespace BotTest.Game.AI.Brains
             if (extra > 0)
                 bot.LogNote($"search: unsure, thought {extra / 1000.0:0.#} s longer");
             if (misses > 0)
-                bot.LogNote($"search: REPLAY MISS: {misses} line(s) didn't reach this chain window from the last searched decision " +
+                FlagReplayIssue(bot, $"search: REPLAY MISS: {misses} line(s) didn't reach this chain window from the last searched decision " +
                             $"(first: {firstMiss}){(outcome?.Root.Count == 0 ? "; no line reached it, the brain answers" : "")}");
             return outcome is { Root.Count: > 0 } ? outcome : null;
         }

@@ -755,6 +755,31 @@ namespace BotTest.Game.AI.Brains
         /// draws) is a main-deck monster they can normal summon (Level 4 or lower) with at least that ATK: what they can
         /// attack with next turn. Per list they're likely on, hypergeometric over the cards not yet seen. Null without list data.
         /// </summary>
+        /// <summary>
+        /// Their next attacker as the sitting-duck check assumes it (user, 2026-11-18): the biggest Level 4-or-lower monster still in the
+        /// deck they're most likely on (they summon it and attack), and the biggest Level 5-6 one (summoned instead when they have a monster
+        /// to tribute). 0 when none; null without list data.
+        /// </summary>
+        public (int Normal, int Tribute)? BiggestAttackers(Func<int, (int Attack, int Level)?> stats)
+        {
+            if (!HasListData)
+                return null;
+            var top = Weights().OrderByDescending(kv => kv.Value).FirstOrDefault();
+            if (top.Key == null)
+                return null;
+            int normal = 0, tribute = 0;
+            foreach (var id in top.Key.Main.Keys)
+            {
+                if (!Data.Value.Kinds.TryGetValue(id, out char k) || k is not ('M' or 'F' or 'f') || Remaining(top.Key, id) <= 0 || stats(id) is not { } s)
+                    continue;
+                if (s.Level <= 4)
+                    normal = Math.Max(normal, s.Attack);
+                else if (s.Level <= 6)
+                    tribute = Math.Max(tribute, s.Attack);
+            }
+            return (normal, tribute);
+        }
+
         public double[]? AttackerChances(int[] thresholds, int unknownCards, Func<int, (int Attack, int Level)?> stats, int maxLevel = 4) =>
             // A frozen read (a search copy's) asks the same question at every decision of every line (2026-11-17 profile: a sixth of
             // the brain's time in the lines). The thresholds are a fixed array, so its identity is part of the key.

@@ -114,7 +114,7 @@ namespace BotTest.Game.AI.Brains
         [Tunable("A monster that brings itself back from the graveyard (Plaguespreader, Treeborn, Machina Fortress): this many points there (one card regained).")]
         public static double GraveSelfReviveValue = 1.0;
         [Tunable("A graveyard effect that boosts ATK / DEF for a battle (Skill Successor): this many points there.")]
-        public static double GraveStatBoostValue = 0.5;
+        public static double GraveStatBoostValue = 0.75; // user, 2026-11-18 (was 0.5)
 
         // "Banish this card (and ...) from your GY" as a cost: not a revive from the GY (Vayu's synchro comes from the Extra Deck).
         // What a summon sentence summons from: the part from "Special Summon" on (Vayu targets and banishes cards in the GY as its cost,

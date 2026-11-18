@@ -18,7 +18,11 @@ namespace BotTest.Game.AI.Search
     {
         /// <summary>Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.</summary>
         [Tunable("Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.")]
-        private static double FieldEffectWeight = 0.25, HeldEffectWeight = 0.1, GraveEffectWeight = 0.15;
+        private static double FieldEffectWeight = 0.25, HeldEffectWeight = 0.1;
+
+        /// <summary>A monster in the graveyard without a graveyard effect: this share of its field worth (user, 2026-11-18: 5%).</summary>
+        [Tunable("A monster in the graveyard without a graveyard effect (or an override): this share of its field worth (face-up, printed ATK, field effects). Spells/traps without one: 0. User, 2026-11-18.")]
+        public static double GraveMonsterShare = 0.025; // user, 2026-11-18: 2.5% (5% "feels a little high")
 
         /// <summary>Effect points are linear up to this, then taper (see Taper).</summary>
         [Tunable("Effect points are linear up to this, then taper (see Taper).")]
@@ -62,6 +66,9 @@ namespace BotTest.Game.AI.Search
         /// <summary>Each unknown card's share of the risk to our board (the explosiveness scales it). Tune from logs.</summary>
         [Tunable("Each unknown card's share of the risk to our board (the explosiveness scales it). Tune from logs.")]
         public static double UnknownCardRisk = 0.08;
+
+        [Tunable("Their unknown cards' risk scales with this plus their deck's explosiveness (0.5 + explosiveness).")]
+        public static double ExplosivenessBase = 0.5;
 
         /// <summary>How much we have to press: the risk tolerance above its base, 0-1 (DeckBotBrain.RiskPressNow, CSV S13). Fear of their
         /// cards drops by up to 60% (RiskDiscount) and damage to them counts up to double.</summary>
@@ -170,7 +177,7 @@ namespace BotTest.Game.AI.Search
         /// <param name="cardsSpent">For a won line: our cards it used up, ranked second.</param>
         /// <param name="length">For a won line: its length (prompts), ranked last.</param>
         public double Evaluate(DuelHost host, double penalty = 0, (SideSummary Ours, SideSummary Theirs, bool Attacked)? ourTurnEnd = null,
-            double winRisk = 0, int cardsSpent = 0, int length = 0)
+            double winRisk = 0, int cardsSpent = 0, int length = 0, double center = 0)
         {
             // A loss is 0. A win in the line is scored like any other line, plus a large bonus scaled down by the chance it really works: the
             // lines never fire their unknown cards, so a "win" through their set cards is only as sure as those cards being blanks (user,
@@ -203,7 +210,10 @@ namespace BotTest.Game.AI.Search
             // A position still alive sits clearly between a loss and a win: far behind, the squashed score is ~0 and a line that
             // survives (the Dupe lock at 300 LP) looked no better than one that dies (seen 2026-11-11: every option scored 0-2
             // and the bot summoned Thestalos into a lost board instead of locking).
-            double score = AliveFloor + (1 - 2 * AliveFloor) / (1 + Math.Exp(-diff / Scale));
+            // Centred on the decision's own position (center: PositionDiff at the root; user, 2026-11-18): a line scores by how much better or
+            // worse it ends than the position it started from, so one card counts the same when far behind or far ahead as when even (the
+            // uncentred curve flattened differences there: Heavy Storm set at 10%, "0.0 better").
+            double score = AliveFloor + (1 - 2 * AliveFloor) / (1 + Math.Exp(-(diff - center) / Scale));
             // The lines' unknown cards (their hand, their next draw) are inert, so a position that dies to any monster they
             // draw (300 LP, a 400-ATK Plaguespreader stuck in attack position: seen 2026-11-12, they drew Card Trooper) scored
             // as safe. Weigh the line by the chance they kill us from what we left as our turn ended.
@@ -212,10 +222,23 @@ namespace BotTest.Game.AI.Search
             return score;
         }
 
+        /// <summary>
+        /// The board difference of a position as Evaluate measures it (both sides' cards, dominance, their threat, both clocks), without a
+        /// line's own costs: the decision's position, the centre its lines are scored around (Evaluate's center).
+        /// </summary>
+        public double PositionDiff(DuelHost host)
+        {
+            var ours = host.Summary(0);
+            var theirs = host.Summary(1);
+            return SideScore(ours, 0, theirs) - SideScore(theirs, 1) + Dominance(ours, theirs, 0) - Dominance(theirs, ours, 1) - Threat(ours) +
+                   ClockValue(ours, theirs) - TheirClockShare * ClockValue(theirs, ours);
+        }
+
         /// <summary>ATK steps of <see cref="AttackerOdds"/>: index i is "an attacker of at least i × 100 ATK".</summary>
         [Tunable("ATK steps of AttackerOdds: index i is \"an attacker of at least i × 100 ATK\".")]
         public static int AttackerOddsStep = 100;
-        public static readonly int[] AttackerThresholds = Enumerable.Range(0, 41).Select(i => i * AttackerOddsStep).ToArray();
+        // A property, so it follows AttackerOddsStep as the tuning file sets it (a readonly field was built before the file loaded).
+        public static int[] AttackerThresholds => Enumerable.Range(0, 41).Select(i => i * AttackerOddsStep).ToArray();
 
         /// <summary>
         /// The chance their unknown cards (hand plus the next draw) hold a monster they can attack with of at least each
@@ -379,9 +402,16 @@ namespace BotTest.Game.AI.Search
         public static double[] GenericAttackerOdds(int unknownCards) =>
             AttackerThresholds.Select(atk =>
             {
-                double perCard = atk <= 1400 ? 0.35 : atk <= 1600 ? 0.28 : atk <= 1800 ? 0.2 : atk <= 1900 ? 0.14 : atk <= 2100 ? 0.05 : atk <= 2400 ? 0.02 : 0;
+                int band = Array.FindIndex(GenericAttackerAtk, cap => atk <= cap);
+                double perCard = band >= 0 && band < GenericAttackerChance.Length ? GenericAttackerChance[band] : 0;
                 return 1 - Math.Pow(1 - perCard, Math.Max(0, unknownCards));
             }).ToArray();
+
+        [Tunable("Without a deck read: the ATK bands of a typical deck's Level 4-or-lower attackers (paired with GenericAttackerChance; above the last band: 0).")]
+        public static int[] GenericAttackerAtk = { 1400, 1600, 1800, 1900, 2100, 2400 };
+
+        [Tunable("Without a deck read: the chance one unknown card is an attacker of at least that band's ATK (one per GenericAttackerAtk band).")]
+        public static double[] GenericAttackerChance = { 0.35, 0.28, 0.2, 0.14, 0.05, 0.02 };
 
         /// <summary>
         /// The chance their unknown cards (hand plus the next draw) kill us as our turn ended: an attacker through our weakest
@@ -389,28 +419,49 @@ namespace BotTest.Game.AI.Search
         /// more ATK than that monster, or our life points direct). 0 when nothing they're likely to draw is enough.
         /// </summary>
         /// <summary>
-        /// Sitting duck (C2, user 2026-11-16): the lines' unknown cards of theirs are inert, so a monster of ours a new attacker of theirs
-        /// would run over looked safe. As our turn ends: the worst single loss, the chance their unknown cards hold a monster bigger
-        /// than ours (ATK in attack position, DEF in defence) times that monster's body value, times SittingDuckWeight. Face-down
-        /// monsters are left out (they can't see what they'd hit). Small: adjust slowly.
+        /// Sitting duck (C2, user 2026-11-16; reworked 2026-11-18): the lines' unknown cards of theirs are inert, so a monster of ours their
+        /// next attacker would run over looked safe. Their next attacker as the user's rule assumes it: they summon and attack with the
+        /// biggest Level 4-or-lower monster left in their deck, or, with a monster of theirs on the field to tribute, the biggest Level 5-6
+        /// one (TheirNormalAttack, TheirTributeAttack); their face-up attack-position monsters attack too; known hand cards that boost an
+        /// attacker are used (TheirKnownBoost: Kalut), and a known Honest wins any battle. As our turn ends: the most valuable face-up
+        /// monster of ours that attacker would destroy (ATK in attack position, DEF in defence), at SittingDuckWeight.
         /// </summary>
-        public double SittingDuckExposure(SideSummary ours)
+        public double SittingDuckExposure(SideSummary ours, SideSummary theirs)
         {
-            if (AttackerOdds == null)
+            int attack = TheirNormalAttack;
+            if (theirs.Monsters.Count > 0)
+                attack = Math.Max(attack, TheirTributeAttack);
+            foreach (var m in theirs.Monsters.Where(m => m.FaceUp && m.AttackPosition))
+                attack = Math.Max(attack, m.Attack);
+            if (attack <= 0)
                 return 0;
+            attack += TheirKnownBoost;
             double worst = 0;
             foreach (var m in ours.Monsters.Where(m => m.FaceUp))
             {
                 int power = m.AttackPosition ? m.Attack : m.Defense;
-                int index = (power + AttackerOddsStep) / AttackerOddsStep; // an attacker above it
-                double chance = index >= AttackerOdds.Length ? 0 : AttackerOdds[index];
-                worst = Math.Max(worst, chance * (MonsterBase + AtkValue(Math.Max(0, m.Attack))));
+                bool destroyed = TheirHonestKnown || (m.AttackPosition ? power <= attack : power < attack);
+                if (destroyed)
+                    worst = Math.Max(worst, MonsterLoss(m, 0));
             }
             return SittingDuckWeight * worst;
         }
 
-        [Tunable("")]
-        public static double SittingDuckWeight = 0.3;
+        /// <summary>Their next summon's ATK (biggest Level 4-or-lower left in their deck) and, with a monster to tribute, the biggest Level 5-6.</summary>
+        public int TheirNormalAttack { get; init; }
+        public int TheirTributeAttack { get; init; }
+        /// <summary>ATK a known hand card of theirs adds to their attacker (Kalut: 1400), and whether they're known to hold Honest.</summary>
+        public int TheirKnownBoost { get; init; }
+        public bool TheirHonestKnown { get; init; }
+
+        [Tunable("Sitting duck without deck-list data: their assumed Level 4-or-lower attacker's ATK.")]
+        public static int NoListNormalAttack = 1800;
+
+        [Tunable("Sitting duck without deck-list data: their assumed tribute attacker's ATK (user, 2026-11-18: 2400).")]
+        public static int NoListTributeAttack = 2400;
+
+        [Tunable("The sitting-duck loss counts this share (the assumed attacker is taken as certain: 1 = the whole monster).")]
+        public static double SittingDuckWeight = 0.5; // 2026-11-18: assumed attacker taken as certain; half weight so monsters still get used (user)
 
         // ------------------------------------------------------------------ what each card is worth where it is (card units)
 
@@ -427,17 +478,17 @@ namespace BotTest.Game.AI.Search
         [Tunable("A set spell/trap's base worth, before what it will do.")]
         public static double SetSpellBase = 0.5;
         [Tunable("A card in hand: its base worth, before its effects and ATK.")]
-        public static double HandCardBase = 0.5;
+        public static double HandCardBase = 0.8; // user, 2026-11-18 (was 0.5)
         [Tunable("A monster in hand: its ATK counts as effect points at ATK / this.")]
         public static double HandAtkScale = 2000;
         [Tunable("A Level 5+ monster in hand with the tributes for it on the field: its base worth as a setup.")]
         public static double TributeSetupBase = 0.3;
         [Tunable("Life points: the first LpLowBand of them are worth this many card units in all (each point matters more when low).")]
-        public static double LpLowWorth = 2.5;
+        public static double LpLowWorth = 0; // user, 2026-11-18: "we should just use the clock" (was 2.5)
         [Tunable("Life points: the band that counts at LpLowWorth.")]
         public static int LpLowBand = 2000;
         [Tunable("Life points: everything from LpLowBand to 8000 is worth this many card units in all.")]
-        public static double LpHighWorth = 1.0;
+        public static double LpHighWorth = 0; // user, 2026-11-18: the clock instead (was 1.0)
         [Tunable("With our deck under this many cards, each missing card costs LowDeckCostPerCard (deck-out risk).")]
         public static int LowDeckFrom = 5;
         [Tunable("The deck-out cost per card under LowDeckFrom (card units).")]
@@ -527,7 +578,7 @@ namespace BotTest.Game.AI.Search
                 : card.LikesSet ? SetFlipBase + HeldEffectWeight * Taper(card.Held) : WallValue;
             field += Bonus(m.Code, m.FaceUp ? CardPlace.Field : CardPlace.Set, side);
             bool token = (m.Type & 0x4000) != 0;
-            double grave = token ? 0 : GraveEffectWeight * Taper(card.Grave) + Bonus(m.Code, CardPlace.Grave, side);
+            double grave = token ? 0 : (card.Grave > 0 ? card.Grave : GraveMonsterShare * (MonsterBase + AtkValue(Math.Max(0, SearchHost.Cards.Get(m.Code)?.Attack ?? 0)) + FieldEffectWeight * Taper(card.Field))) + Bonus(m.Code, CardPlace.Grave, side);
             return Math.Max(0, field - grave);
         }
 
@@ -733,7 +784,7 @@ namespace BotTest.Game.AI.Search
         {
             if (_unknownCards <= 0 && UnknownSets <= 0)
                 return 0;
-            double risk = Math.Min(ThreatRiskMax, UnknownCardRisk * _unknownCards * (0.5 + _explosiveness));
+            double risk = Math.Min(ThreatRiskMax, UnknownCardRisk * _unknownCards * (ExplosivenessBase + _explosiveness));
             var bodies = ours.Monsters.Where(m => m.FaceUp)
                 .Select(m => MonsterBase + AtkValue(Power(m)))
                 .OrderByDescending(v => v).ToList();
@@ -818,8 +869,17 @@ namespace BotTest.Game.AI.Search
                 value += HandCardBase + Effect(card.Held + atk / HandAtkScale, HeldEffectWeight) + Bonus(code, CardPlace.Hand, side) + (side == 0 ? SpellInHandBonus(code) : 0);
             }
             // Graveyard: setups (cards that work from there: Vayu, Plaguespreader, Treeborn, Necro Gardna).
+            // Graveyard: the grave scorer's value as it is (user, 2026-11-18: "graveyard weights should be their weight according to the grave
+            // scorer, not 15% of anything"). A card without a graveyard effect (or an override, Bonus): a spell/trap 0, a monster 5% of
+            // its field worth (face-up in attack, its printed ATK and field effects).
             foreach (int code in s.GraveCodes)
-                value += Effect(_values.Get(code, side).Grave, GraveEffectWeight) + Bonus(code, CardPlace.Grave, side);
+            {
+                var card = _values.Get(code, side);
+                double grave = card.Grave;
+                if (grave <= 0 && SearchHost.Cards.Get(code) is { } r && (r.Type & 0x1) != 0)
+                    grave = GraveMonsterShare * (MonsterBase + AtkValue(Math.Max(0, r.Attack)) + Effect(card.Field, FieldEffectWeight));
+                value += grave + Bonus(code, CardPlace.Grave, side);
+            }
             value += TributeSetup(s, side);
             if (side == 0 && _setup != null)
             {

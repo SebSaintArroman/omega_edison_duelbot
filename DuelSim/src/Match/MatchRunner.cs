@@ -180,7 +180,10 @@ public sealed class MatchRunner
         for (int seat = 0; seat < 2; seat++)
         {
             if (Tuning.BrainParams.FindBrain(bots[seat]) is BotTest.Game.AI.Brains.DeckBotBrain searcher)
+            {
                 searcher.SearchBudgetMs = ((seat == 0) == aFirst ? options.SearchMsA : options.SearchMsB) ?? searcher.SearchBudgetMs;
+                searcher.ReplayAudit = true; // each turn replayed from its start in the engine, hits and misses logged (TurnReplay)
+            }
             DuelSim.Bridge.OmegaEmulator.ThinkMs[seat] = (seat == 0) == aFirst ? 0 : options.ThinkMsB;
         }
         // Each seat's brain version (DeckBotBrain.BrainVersion; 0 = unversioned), recorded with the result.

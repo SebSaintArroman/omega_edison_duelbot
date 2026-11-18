@@ -179,6 +179,10 @@ namespace BotTest.Game.AI.Search
         private readonly ConcurrentDictionary<string, MctsNode> _decisions = new();
         private const int MaxDecisions = 200_000;
         public long Iterations;
+
+        /// <summary>The centre its lines are scored around (MctsEvaluator.PositionDiff of its first root), fixed once set, so a tree reused
+        /// across decisions keeps one yardstick (user, 2026-11-18: centre the curve). NaN until the first line reaches a root.</summary>
+        public double Center = double.NaN;
         public string Label { get; init; } = "";
 
         public void Register(string key, MctsNode node)
@@ -312,7 +316,27 @@ namespace BotTest.Game.AI.Search
     /// </summary>
     internal sealed class Mcts
     {
-        private const int SearchTurn = 1;
+        /// <summary>
+        /// The engine turn that is our turn in the lines: turn 1 (the rebuilt position is our decision's), or for a search from the turn's start
+        /// (FromTurnStart) our rebuilt turn, or our next turn after their rebuilt one.
+        /// </summary>
+        private int SearchTurn => FromTurnStart is not { } r ? 1 : r.Ours ? r.RebuiltTurn : r.RebuiltTurn + 1;
+
+        /// <summary>The engine turn the root's decision is in: our turn, or theirs for a root in their turn.</summary>
+        private int RootTurn => FromTurnStart?.RebuiltTurn ?? SearchTurn;
+
+        /// <summary>Lines stop when this turn begins: after their reply to our turn (Horizon), or, for a root in their turn, after our next
+        /// turn (user, 2026-11-18: "it should check until the end of its own turn").</summary>
+        private int StopTurn => FromTurnStart is { Ours: false } ? SearchTurn + 1 : SearchTurn + _settings.Horizon;
+
+        /// <summary>
+        /// The search from the start of the real turn (plan "the search makes every decision", step 3): each line rebuilds the turn's snapshot and
+        /// replays the turn as it really went (TurnReplay.Cursor) to the decision, the last checkpoint, which is the root (its key: RootKey).
+        /// </summary>
+        public TurnReplay? FromTurnStart { get; init; }
+
+        /// <summary>The root decision's key (DecisionKey with its options) for a search from the turn's start.</summary>
+        public string? RootKey { get; init; }
 
         private static void MarkOpen(MctsNode node, int choices)
         {
@@ -664,7 +688,7 @@ namespace BotTest.Game.AI.Search
                 return $"position: {error}";
             try
             {
-                brain?.Attach(host, Math.Max(0, _view.RealTurn - 1));
+                brain?.Attach(host, Math.Max(0, _view.RealTurn - (1 + _view.SkipTurns))); // engine turn -> the real turn the brain sees
                 var failure = Play(rng, host, position, brain);
                 if (failure != null)
                     engine.Discard(); // a line that went wrong: start the next one on a fresh duel
@@ -805,10 +829,15 @@ namespace BotTest.Game.AI.Search
                     }
             }
 
+            var cursor = FromTurnStart is { } fromStart ? new TurnReplay.Cursor(fromStart)
+            {
+                IsRoot = (p, h) => p.State == _rootState &&
+                                   DecisionKey.Of(p.State, h.Summary(0), h.Summary(1), OptionsFor(p, true, rng)?.Select(o => o.Key) ?? Enumerable.Empty<string>()) == RootKey,
+            } : null;
             Prompt? prompt;
             try
             {
-                while ((prompt = host.NextPrompt(SearchTurn + _settings.Horizon)) != null)
+                while ((prompt = host.NextPrompt(StopTurn)) != null)
                 {
                     prompts++;
                     _lineStatus[Environment.CurrentManagedThreadId] = $"turn {host.Turn}, phase 0x{host.Phase:x}, {prompt.State} for player {prompt.Player}, prompt {prompts} of the line";
@@ -851,7 +880,33 @@ namespace BotTest.Game.AI.Search
                         continue;
                     }
 
-                    bool ours = prompt.Player == 0 && host.Turn == SearchTurn;
+                    // From the turn's start: the real turn replayed (both sides) until the decision; a line that leaves the real game is dropped.
+                    if (cursor != null && !rootReached)
+                    {
+                        var (replayed, reachedRoot, miss) = cursor.Step(prompt, host, rng);
+                        if (miss != null)
+                        {
+                            Undo();
+                            return ReplayMiss($"from the turn's start, checkpoint {cursor.Next + 1}: {miss}");
+                        }
+                        if (!reachedRoot)
+                        {
+                            Answer(host, prompt, replayed!);
+                            continue;
+                        }
+                        rootReached = true;
+                        ourMonsters = host.CountIn(0, SearchPosition.LocMZone);
+                        ourSpells = host.CountIn(0, SearchPosition.LocSZone);
+                        (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
+                        ourCardsAtRoot = OurCards();
+                        rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
+                        if (double.IsNaN(_tree.Center)) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
+                        long at = Stopwatch.GetTimestamp();
+                        SearchTimings.Add(ref SearchTimings.ToRoot, at - phaseStart);
+                        phaseStart = at;
+                    }
+
+                    bool ours = prompt.Player == 0 && (host.Turn == SearchTurn || host.Turn == RootTurn);
                     if (ours && rootReached)
                         NoteSummons();
                     if (ours && !rootReached)
@@ -912,6 +967,7 @@ namespace BotTest.Game.AI.Search
                                 (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
                                 ourCardsAtRoot = OurCards();
                                 rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
+                                if (double.IsNaN(_tree.Center)) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                                 long reachedAt = Stopwatch.GetTimestamp();
                                 SearchTimings.Add(ref SearchTimings.ToRoot, reachedAt - phaseStart);
                                 phaseStart = reachedAt;
@@ -925,6 +981,7 @@ namespace BotTest.Game.AI.Search
                             (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
                             ourCardsAtRoot = OurCards();
                             rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
+                            if (double.IsNaN(_tree.Center)) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                             CheckPosition(host);
                             long now = Stopwatch.GetTimestamp();
                             SearchTimings.Add(ref SearchTimings.ToRoot, now - phaseStart);
@@ -1036,6 +1093,13 @@ namespace BotTest.Game.AI.Search
                                 _tree.Register(decision, node);
                                 _tree.RegisterPosition(strictPosition, node);
                             }
+                        }
+                        // From the turn's start, our other decisions (chain windows, picks, yes/no, positions) are filed too: the next real
+                        // prompt of the turn continues the search from its node (user, 2026-11-18: reuse the replayed turn across decisions).
+                        else if (ours && FromTurnStart != null)
+                        {
+                            node.Origin ??= _start;
+                            _tree.Register(DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), options.Select(o => o.Key)), node);
                         }
                         // Our brain's own answer here, once per node: the progressive bias toward the brain's play.
                         if (prompt.Player == 0 && brain != null && !node.PriorAsked)
@@ -1152,7 +1216,7 @@ namespace BotTest.Game.AI.Search
             // Monsters of theirs we controlled during the turn, all gone back (or gone) as it ended: borrowed, not ours to lose (C1).
             if (sawForeign && turnEnd is { } ended && ended.Ours.Foreign == 0)
                 (peakTorrential, peakMirror, peakSpot, peakIcarus) = (ownTorrential, ownMirror, ownSpot, ownIcarus);
-            double sittingDuck = turnEnd is { } atEnd ? _evaluator.SittingDuckExposure(atEnd.Ours) : 0;
+            double sittingDuck = turnEnd is { } atEnd ? _evaluator.SittingDuckExposure(atEnd.Ours, atEnd.Theirs) : 0;
             double exposure = peakTorrential + peakMirror + heavyExposure + peakSpot + peakIcarus + sittingDuck;
             if (exposure > 0.05)
                 trace?.Add($"  (overexposure: Torrential {peakTorrential:0.00}, Mirror Force {peakMirror:0.00}, Heavy Storm {heavyExposure:0.00}, " +
@@ -1169,7 +1233,8 @@ namespace BotTest.Game.AI.Search
                     trace?.Add($"  (card advantage {gained:+0;-0} in our turn: {advantage:+0.0;-0.0})");
             }
             double value = _evaluator.Evaluate(host, penalty - advantage + exposure * _evaluator.RiskDiscount - drawn * MctsEvaluator.DrawBonus, turnEnd,
-                winRisk: exposure, cardsSpent: ourCardsAtRoot >= 0 ? Math.Max(0, ourCardsAtRoot - OurCards()) : 0, length: prompts);
+                winRisk: exposure, cardsSpent: ourCardsAtRoot >= 0 ? Math.Max(0, ourCardsAtRoot - OurCards()) : 0, length: prompts,
+                center: double.IsNaN(_tree.Center) ? 0 : _tree.Center);
             if (rootKey != null)
             {
                 var ours = host.Summary(0);
@@ -1454,20 +1519,20 @@ namespace BotTest.Game.AI.Search
         /// The same kind of prompt for a replay: a card pick is one whichever pick prompt asks it (seen 2026-11-17: Substitoad's tribute was a
         /// SelectCard on Omega and a SelectUnselectCard in the search's engine, and every mid-chain replay after it missed).
         /// </summary>
-        private static bool SameKind(BotState a, BotState b) =>
+        internal static bool SameKind(BotState a, BotState b) =>
             a == b || IsPick(a) && IsPick(b);
 
-        private static bool IsPick(BotState state) =>
+        internal static bool IsPick(BotState state) =>
             state is BotState.SelectCard or BotState.SelectUnselectCard or BotState.SelectTribute or BotState.SelectSum;
 
-        private static byte[]? Passive(Prompt prompt) => prompt.Data switch
+        internal static byte[]? Passive(Prompt prompt) => prompt.Data switch
         {
             SelectChainData { Forced: false } => BitConverter.GetBytes(-1),
             SelectEffectYnData or SelectYesNoData => new byte[] { 0 },
             _ => null,
         };
 
-        private static void Answer(DuelHost host, Prompt prompt, byte[] packet)
+        internal static void Answer(DuelHost host, Prompt prompt, byte[] packet)
         {
             var response = DuelHost.TranslatePacket(prompt, packet) ?? prompt.Fallbacks.FirstOrDefault() ?? packet;
             host.Respond(prompt, response);
@@ -1505,7 +1570,7 @@ namespace BotTest.Game.AI.Search
                 tried++;
                 try
                 {
-                    brain?.Attach(host, Math.Max(0, _view.RealTurn - 1));
+                    brain?.Attach(host, Math.Max(0, _view.RealTurn - (1 + _view.SkipTurns))); // engine turn -> the real turn the brain sees
                     host.SetLifePoints(position.LifePoints[0], position.LifePoints[1]);
                     var line = new MctsPolicy.LineState();
                     bool rootReached = false, autoBattle = _view.InBattlePhase;
@@ -1661,6 +1726,14 @@ namespace BotTest.Game.AI.Search
                 case SelectEffectYnData:
                 case SelectYesNoData:
                     return new List<Option> { new("yes", "yes", new byte[] { 1 }), new("no", "no", new byte[] { 0 }) };
+                // A monster's position (plan step 5): a decision of the tree like any other. (Zones aren't: Omega places main monster zones
+                // itself whatever the bot answers, and spell/trap zones change nothing.)
+                case SelectPositionData position when (position.Positions?.Length ?? 0) > 1:
+                    return position.Positions!.Select(p => new Option($"pos:{p}", (CardPosition)p switch
+                    {
+                        CardPosition.FaceUpAttack => "attack position", CardPosition.FaceUpDefence => "defence position",
+                        CardPosition.FaceDownDefence => "set (face-down defence)", _ => "face-down attack position",
+                    }, new[] { p })).ToList();
                 case SelectOptionData option:
                     return Enumerable.Range(0, option.Options?.Length ?? 0)
                         .Select(i => new Option($"option:{option.Options![i]}", $"option {i + 1}", BitConverter.GetBytes(i))).ToList();

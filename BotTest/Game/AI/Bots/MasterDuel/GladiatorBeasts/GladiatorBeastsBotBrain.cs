@@ -174,6 +174,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             int theirPower = theirs.IsAttack() ? theirs.Attack : theirs.Defense;
             if (ours.Attack > theirPower)
                 return null; // it wins already
+            // Our own card on the chain already removes their battling monster (user, 2026-11-18: Raigeki Break on the attacking Gearframe,
+            // then Skill Successor on the same battle: "using two cards when one would have done"): no battle left to win.
+            foreach (var link in await GetPlayerCardsInZoneAsync(CardLocation.SpellZone))
+                if (link.IsFaceup() && (link.CurrentChainTargets ?? Array.Empty<CardCoordinate>()).Any(t =>
+                        t.Controller == 1 && t.Location == (byte)CardLocation.MonsterZone && t.Sequence == theirs.CurrentCoordinates.Sequence))
+                {
+                    Note(context, $"no boost: our {CardNames.Get(link.ID)} on the chain already removes {CardNames.Get(theirs.ID)}");
+                    return null;
+                }
             var boosts = new List<(int Index, int Gain)>();
             for (int i = 0; i < options.Length; i++)
                 if (options[i].CurrentCoordinates.Controller == 0 && await CardDatabase.GetAsync(options[i].ID) is DBCardInfo info &&
@@ -569,6 +578,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         /// an Extra Deck monster, an attacker-bouncer, beats our monsters, a strong effect), and not one that pays them for
         /// being destroyed (Sangan...). User, 2026-11-11: "dimensional alchemist is nowhere near strong enough to raigeki break".
         /// </summary>
+        /// <summary>Their monster has an effect when it's destroyed by battle (Machina Fortress): better removed another way than beaten.</summary>
+        private static async Task<bool> PaysOnBattleDestructionAsync(DynamicCard monster) =>
+            monster.ID > 0 && await CardDatabase.GetAsync(monster.ID) is DBCardInfo info &&
+            System.Text.RegularExpressions.Regex.IsMatch(info.CardText ?? "", @"destroyed by battle", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
         private async Task<string?> RaigekiWorthyAsync(DynamicCard monster) =>
             monster.ID <= 0 || !monster.IsFaceup() || RewardsDestruction(monster) || !await IsBigThreatAsync(monster)
                 ? null
@@ -624,6 +638,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 Note(context, "Heraklinos: discard 1 to negate their Spell/Trap");
                 return herak;
             }
+            // A boost that wins the battle comes before Raigeki Break (user, 2026-11-18: "if the boost would win the battle the boost is
+            // preferable. gladiator beasts should prefer winning battles when possible"): it costs one card, not two, and our Gladiator
+            // Beast survives and tags out. Not against a monster that pays them for being destroyed by battle (Machina Fortress).
+            var battling = await CurrentField.GetBotBattlingMonster(isOwnSide: false);
+            if (!await PaysOnBattleDestructionAsync(battling) && await BoostToWinBattleAsync(context, options) is int earlyBoost)
+                return earlyBoost;
             // Raigeki Break on their attacker when it's worth two cards (a big threat) and it would win the battle or hit us.
             if (!IsOwnTurn(context.Header) && Find(GladCardId.RaigekiBreak) is int raigeki and >= 0 && (await GetBotHandCardsAsync()).Count > 0)
             {

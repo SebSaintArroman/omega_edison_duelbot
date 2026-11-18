@@ -34,6 +34,15 @@ namespace OmegaBotWrapper
         /// Adds a reasoning note to the next decision written to the duel log. Safe to call at any time.
         /// </summary>
         public void LogNote(string note) => DuelLog?.AddNote(note);
+        /// <summary>
+        /// Called on the first poll that shows a new turn (CurrentTurn changed), before that poll's prompt is answered: the brain's turn-start
+        /// snapshot (the search replays the turn from it). Null: nobody listening.
+        /// </summary>
+        public Func<BotStateHeader, Task>? TurnStarted { get; set; }
+        /// <summary>Called at every prompt, before it is answered (whatever then answers it). Null: nobody listening.</summary>
+        public Func<BotStateHeader, BotState, Task>? PromptArrived { get; set; }
+        private int _lastTurnSeen;
+
         /// <summary>The cards the brain knows are in the opponent's hand (its deck read), for the log's "their hand" line. Null: none told.</summary>
         public Func<IReadOnlyList<int>>? KnownOpponentHand { get; set; }
         /// <summary>
@@ -255,6 +264,22 @@ namespace OmegaBotWrapper
                 _fieldGeneration++;
             CurrentStateHeader = await _api.GetBotStateHeader(BotID, ct);
             var state = (BotState)CurrentStateHeader.CurrentStateCode;
+            // A new turn seen (the header is read every poll, prompt or not): the brain takes its turn-start snapshot before anything else.
+            if (CurrentStateHeader.CurrentTurn > 0 && CurrentStateHeader.CurrentTurn != _lastTurnSeen)
+            {
+                _lastTurnSeen = CurrentStateHeader.CurrentTurn;
+                if (TurnStarted != null)
+                {
+                    try { await TurnStarted(CurrentStateHeader); }
+                    catch (Exception ex) { BotLogger.Error(BotID, "turn-start snapshot failed", ex); }
+                }
+            }
+            // Every prompt, before anything answers it (the brain's turn record: its checkpoints, whichever path then answers).
+            if (PromptArrived != null && state is not (BotState.None or BotState.WaitingForDeck or BotState.RockPaperScissors))
+            {
+                try { await PromptArrived(CurrentStateHeader, state); }
+                catch (Exception ex) { BotLogger.Error(BotID, "prompt record failed", ex); }
+            }
             var payload = await _dispatcher.DispatchAsync(state, ct);
             if (payload != null)
             {

@@ -112,6 +112,8 @@ internal sealed partial class DuelHost : IDisposable
                     messages = _duel.GetMessages();
                 }
                 var prompt = HandleMessages(messages);
+                if (_turnHold)
+                    await TurnHoldAsync(ct);
                 if (Result != null)
                     break;
                 if (Turn > MaxTurns)
@@ -253,8 +255,40 @@ internal sealed partial class DuelHost : IDisposable
     /// Waits until this player has a prompt pending (or <paramref name="max"/> passes). Lets a bot poll without sleeping:
     /// the poll returns the moment there is a decision to make.
     /// </summary>
+    // A new turn: the engine waits until each bot has polled twice since (the first poll sees the new turn and the bot snapshots the board
+    // before its next poll), so a bot's turn-start snapshot is the board as the turn began, as in a live game where it's polled every 50 ms
+    // while the human hasn't acted yet (plan "the search makes every decision", step 1).
+    private readonly object _turnHoldLock = new();
+    private bool _turnHold;
+    private readonly int[] _turnPolls = new int[2];
+    private static readonly TimeSpan TurnHoldMax = TimeSpan.FromSeconds(3);
+
+    private async Task TurnHoldAsync(CancellationToken ct)
+    {
+        var until = DateTime.UtcNow + TurnHoldMax;
+        while (DateTime.UtcNow < until)
+        {
+            lock (_turnHoldLock)
+                if (_turnPolls[0] >= 2 && _turnPolls[1] >= 2)
+                    break;
+            await Task.Delay(5, ct);
+        }
+        lock (_turnHoldLock)
+            _turnHold = false;
+    }
+
+    /// <summary>A bot asked for its state (the emulator's header route): counts toward releasing a new-turn hold.</summary>
+    public void NotePoll(int player)
+    {
+        lock (_turnHoldLock)
+            if (_turnHold)
+                _turnPolls[player]++;
+    }
+
     public async Task WaitForPromptAsync(int player, TimeSpan max, CancellationToken ct)
     {
+        if (_turnHold)
+            return; // answer at once while a new turn waits for the bots' snapshots
         if (Pending(player) != null)
             return;
         try { await _promptSignal[player].WaitAsync(max, ct); }
@@ -348,6 +382,14 @@ internal sealed partial class DuelHost : IDisposable
                 _sameActivations = 0;
                 Event?.Invoke($"--- Turn {Turn}: player {TurnPlayer} ({Decks[TurnPlayer].Name}) | LP {_lp[0]} / {_lp[1]}");
                 TurnStarted?.Invoke(Turn, TurnPlayer, _lp[0], _lp[1]);
+                // Hold the engine here until both bots have seen the new turn and taken their turn-start snapshots (see TurnHoldAsync).
+                lock (_turnHoldLock)
+                {
+                    _turnHold = true;
+                    _turnPolls[0] = _turnPolls[1] = 0;
+                }
+                _promptSignal[0].Release();
+                _promptSignal[1].Release();
                 return null;
             }
             case Msg.NewPhase:

@@ -75,6 +75,9 @@ namespace BotTest.Game.AI.Search
                         return new ReplayStep(state, SearchActions.LooseKey($"chain:{SearchActions.CardKey(cards[i])}:{(i < descs.Length ? descs[i] : 0)}"),
                             $"chain {OmegaBotWrapper.Logging.CardNames.Get(cards[i].ID)}");
                     }
+                    case SelectPositionData when response.Length >= 1:
+                        // As the search's tree keys a position (Mcts.OptionsFor).
+                        return new ReplayStep(state, $"pos:{response[0]}", $"position {(CardPosition)response[0]}");
                     case SelectOptionData option:
                     {
                         int i = BitConverter.ToInt32(response, 0);
@@ -141,6 +144,8 @@ namespace BotTest.Game.AI.Search
                             return BitConverter.GetBytes(i);
                     return null;
                 }
+                case SelectPositionData position when key.StartsWith("pos:") && byte.TryParse(key.AsSpan(4), out byte p):
+                    return (position.Positions ?? Array.Empty<byte>()).Contains(p) ? new[] { p } : null;
             }
             if (PickCards(data) is { } cardsToPick && key.StartsWith("pick:"))
             {

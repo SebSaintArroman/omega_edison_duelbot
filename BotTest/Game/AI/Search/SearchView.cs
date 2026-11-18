@@ -23,7 +23,9 @@ namespace BotTest.Game.AI.Search
         int Attack = -1, int Defense = -1,
         /// <summary>Ours but theirs by ownership, taken until the End Phase (Brain Control): rebuilt with its owner and a control effect
         /// that ends with the turn.</summary>
-        bool Borrowed = false);
+        bool Borrowed = false,
+        /// <summary>Ours, revived by Jinzo - Returner: destroyed in our next End Phase by Returner's effect (a temporary monster, user 2026-11-18).</summary>
+        bool DestroyAtOwnersEnd = false);
 
     /// <summary>
     /// Everything the bot knows at a decision (only what Omega shows it, plus its own deck list and the deck read), and
@@ -35,10 +37,11 @@ namespace BotTest.Game.AI.Search
         public const int UnknownSetMonster = 32452818;
 
         /// <summary>
-        /// A card that can never do anything (Jar Robber: it only answers Pot of Greed, which no list plays), standing in for their
+        /// A card that can never do anything (Bubble Blaster: an Equip Spell only for Elemental HERO Bubbleman, which our decks never play; was Jar
+        /// Robber until 2026-11-18, which answers Pot of Greed and every deck plays Pot of Greed now), standing in for their
         /// unknown set spells/traps and their draws: the search doesn't guess at what they are.
         /// </summary>
-        public const int InertCard = 33784505;
+        public const int InertCard = 53586134;
 
         /// <summary>Cards we know are in their hand (seen going back to it, revealed by Trap Dustshoot...): the search plays them.</summary>
         public List<int> EnemyKnownHand { get; } = new();
@@ -94,6 +97,40 @@ namespace BotTest.Game.AI.Search
         public Dictionary<int, int> ArrivedThisTurn { get; } = new();
         public Dictionary<int, int> EnemyArrivedThisTurn { get; } = new();
 
+        /// <summary>Turns skipped before the rebuilt turn (SearchPosition.SkipTurns): a replay from the start of a real turn.</summary>
+        public int SkipTurns { get; set; }
+
+        /// <summary>A blank (inert) card dealt as our next draw, after the deck cards we know are on top.</summary>
+        public bool BlankNextDraw { get; set; }
+
+        /// <summary>Their Extra Deck monsters we saw them use this turn (a replay from the turn's start summons them again).</summary>
+        public List<int> EnemyKnownExtra { get; } = new();
+
+        /// <summary>Cards on top of their deck, first = next draw (a replay: the card their turn's draw really gave them).</summary>
+        public List<int> EnemyDeckTop { get; } = new();
+
+        /// <summary>
+        /// This board as a turn starts (the turn-start snapshot, DeckBotBrain.TurnLog): nothing has happened in the new turn yet, so no
+        /// card is marked as attacked, battled or arrived this turn, and nothing of the turn's record carries over.
+        /// </summary>
+        public SearchView AtTurnStart()
+        {
+            var v = Clone();
+            for (int i = 0; i < v.OwnMonsters.Count; i++)
+                v.OwnMonsters[i] = v.OwnMonsters[i] with { Attacked = false, ThisTurn = false, NoAttack = false, Battled = false };
+            for (int i = 0; i < v.OwnSpells.Count; i++)
+                v.OwnSpells[i] = v.OwnSpells[i] with { ThisTurn = false };
+            for (int i = 0; i < v.EnemyMonsters.Count; i++)
+                v.EnemyMonsters[i] = v.EnemyMonsters[i] with { Attacked = false, ThisTurn = false, Battled = false };
+            v.NormalSummonUsed = v.BattlePhaseDone = v.InBattlePhase = false;
+            v.Record = TurnRecord.Empty;
+            v.DrawsAtStart = 0;
+            v.ForcedDraws.Clear();
+            v.ArrivedThisTurn.Clear();
+            v.EnemyArrivedThisTurn.Clear();
+            return v;
+        }
+
 
         /// <summary>A copy (the deck read is shared): for the turn planner's projections.</summary>
         public SearchView Clone()
@@ -102,8 +139,10 @@ namespace BotTest.Game.AI.Search
             {
                 EnemyHandCount = EnemyHandCount, EnemyExtraCount = EnemyExtraCount, NormalSummonUsed = NormalSummonUsed,
                 BattlePhaseDone = BattlePhaseDone, FirstTurnOfDuel = FirstTurnOfDuel, RealTurn = RealTurn, InBattlePhase = InBattlePhase,
-                DrawsAtStart = DrawsAtStart, Record = Record,
+                DrawsAtStart = DrawsAtStart, Record = Record, SkipTurns = SkipTurns, BlankNextDraw = BlankNextDraw,
             };
+            v.EnemyKnownExtra.AddRange(EnemyKnownExtra);
+            v.EnemyDeckTop.AddRange(EnemyDeckTop);
             v.KnownTop.AddRange(KnownTop);
             v.ForcedDraws.AddRange(ForcedDraws);
             v.LifePoints[0] = LifePoints[0];
@@ -230,7 +269,7 @@ namespace BotTest.Game.AI.Search
                 .Concat(OwnMonsters.Select(c => c.Code)).Concat(OwnSpells.Select(c => c.Code))
                 .Concat(EnemyGrave).Concat(EnemyBanished)
                 .Concat(EnemyMonsters.Select(c => c.Code)).Concat(EnemySpells.Select(c => c.Code))
-                .Concat(EnemyKnownHand).Concat(EnemySetMonsterOdds.Values.SelectMany(odds => odds.Select(o => o.Id)))
+                .Concat(EnemyKnownHand).Concat(EnemyKnownExtra).Concat(EnemyDeckTop).Concat(EnemySetMonsterOdds.Values.SelectMany(odds => odds.Select(o => o.Id)))
                 .Append(UnknownSetMonster).Append(InertCard);
 
         /// <summary>One complete position: our deck shuffled, their hidden cards dealt from the deck read.</summary>
@@ -244,6 +283,7 @@ namespace BotTest.Game.AI.Search
             position.NormalSummonUsed = NormalSummonUsed;
             position.BattlePhaseDone = BattlePhaseDone;
             position.ForcedDraws.AddRange(ForcedDraws);
+            position.SkipTurns = SkipTurns;
 
             var placed = new Dictionary<(int, int, int), int>();
             var links = new List<(int Index, ViewCard Card, int Controller)>();
@@ -268,6 +308,7 @@ namespace BotTest.Game.AI.Search
                 (p.BaseAttack, p.BaseDefense) = (card.BaseAttack, card.BaseDefense);
                 (p.Attack, p.Defense) = (card.Attack, card.Defense);
                 p.Battled = card.Battled && controller == 1;
+                p.DestroyAtOwnersEnd = card.DestroyAtOwnersEnd && controller == 0;
                 p.Proper = !card.Improper;
                 p.Counters.AddRange(card.Counters);
                 placed[(controller, (int)location, card.Sequence)] = position.Cards.Count - 1;
@@ -346,6 +387,9 @@ namespace BotTest.Game.AI.Search
                 if (rest.Remove(id))
                     top.Add(id);
             var deck = top.Concat(rest.OrderBy(_ => rng.Next())).ToList();
+            // Our next draw unknown and not to be counted on (a search from their turn, plan step 3: "with the bot's draw a blank card").
+            if (BlankNextDraw)
+                deck.Insert(top.Count, InertCard);
             int draws = Math.Min(DrawsAtStart, deck.Count);
             Pile(OwnHand.Concat(deck.Take(draws)), 0, SearchPosition.LocHand, SearchPosition.PosFaceDown);
             Pile(OwnGrave, 0, SearchPosition.LocGrave, SearchPosition.PosFaceUp, OwnGraveImproper, ArrivedThisTurn);
@@ -360,14 +404,20 @@ namespace BotTest.Game.AI.Search
             Pile(EnemyGrave, 1, SearchPosition.LocGrave, SearchPosition.PosFaceUp, EnemyGraveImproper, EnemyArrivedThisTurn);
             Pile(EnemyBanished, 1, SearchPosition.LocRemoved, SearchPosition.PosFaceUp, thisTurn: EnemyArrivedThisTurn);
             // No guessing at their unknown cards (user, 2026-11-11): only the cards we know are in their hand; their draws
-            // are inert (Jar Robber, which only answers Pot of Greed), so their turn plays out with what we know. What
+            // are inert (Bubble Blaster, an equip only for Bubbleman), so their turn plays out with what we know. What
             // their unknown cards might do is the evaluator's threat term instead (MctsEvaluator.Threat).
             var knownHand = EnemyKnownHand.Where(Known).ToList();
             Pile(knownHand, 1, SearchPosition.LocHand, SearchPosition.PosFaceDown);
             // Their other hand cards as inert stand-ins (still no guessing at what they are): effects that need cards in their hand see
             // the right count (seen 2026-11-15: XX-Saber Gottoms' discard was never on offer in the lines, their hand being empty there).
             Pile(Enumerable.Repeat(InertCard, Math.Max(0, EnemyHandCount - knownHand.Count)), 1, SearchPosition.LocHand, SearchPosition.PosFaceDown);
-            Pile(Enumerable.Repeat(InertCard, 20), 1, SearchPosition.LocDeck, SearchPosition.PosFaceDown);
+            // Their deck: inert, each at sequence 0 (on top, no shuffle), then the cards we know are on top (EnemyDeckTop), last = top.
+            for (int i = 0; i < 20; i++)
+                position.Add(InertCard, 1, SearchPosition.LocDeck, 0, SearchPosition.PosFaceDown);
+            foreach (int id in Enumerable.Reverse(EnemyDeckTop))
+                if (Known(id))
+                    position.Add(id, 1, SearchPosition.LocDeck, 0, SearchPosition.PosFaceDown);
+            Pile(EnemyKnownExtra, 1, SearchPosition.LocExtra, SearchPosition.PosFaceDown);
             return position;
         }
     }

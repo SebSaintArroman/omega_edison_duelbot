@@ -1,0 +1,20 @@
+// Live 2026-11-18 Machina Jinzo #72: Jinzo (2400) vs Soul of Purity and Light (2000, face-up ATK); the search ended the turn
+// instead of attacking ("why on earth not attack with the jinzo? it should've been considered expendable because it was going to die anyway").
+{
+  "deck": "MachinaJinzo",
+  "opponent": "Vayu",
+  "lp": [2100, 7800],
+  "turn": 12,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 77585513, "zone": 1 }, { "id": 21502796, "zone": 2, "pos": "set" } ],
+    "spells": [ { "id": 77565204, "zone": 2 } ],
+    "hand": []
+  },
+  "theirs": {
+    "monsters": [ { "id": 77527210, "zone": 3 } ],
+    "handCount": 1
+  }
+}

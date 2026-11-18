@@ -65,7 +65,10 @@ internal sealed class OmegaEmulator : HttpMessageHandler
         // "nothing" and sleeping before asking again.
         var path = request.RequestUri!.AbsolutePath.Trim('/').Split('/');
         if (path.Length > 1 && path[0] == "get-bot-state-header" && _host is { } host && int.TryParse(path[1], out int bot) && bot is 0 or 1)
+        {
+            host.NotePoll(bot);
             await host.WaitForPromptAsync(bot, LongPoll, cancellationToken);
+        }
         // A seat that answers like a human (--think-b): its answers arrive this much later, the other bot's dead time.
         if (path.Length > 1 && path[0] == "set-bot-response" && int.TryParse(path[1], out int answering) && answering is 0 or 1 && ThinkMs[answering] > 0)
             await Task.Delay(ThinkMs[answering], cancellationToken);

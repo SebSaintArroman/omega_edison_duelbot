@@ -1426,6 +1426,25 @@ namespace BotTest.Game.AI.Brains
             return BotActionUtilities.SelectRandomAnnouncedCard(cards, preferAlias: true);
         }
 
+        /// <summary>A new bot (a new duel) to follow: a fresh GameField, and the per-duel memory cleared. From the first prompt, or
+        /// earlier from the turn-start callback (DeckBotBrain.TurnLog), whichever comes first.</summary>
+        private void AttachToBot(DuelBotWrapper bot)
+        {
+            _trackedBot = bot;
+            _gameField = new GameField(bot);
+            if (!IsSearchTwin)
+                bot.KnownOpponentHand = () => KnownEnemyHand(); // the log's "their hand" line
+            _trackedTurn = -1;
+            _activatedThisTurn.Clear();
+            _usedEffects.Clear();
+            _chainDescriptions.Clear();
+            PendingAction = default;
+            OpponentMemory.Clear();
+            Summons.Clear();
+            ResetMatchup();
+            OpponentDeck.Clear();
+        }
+
         protected async Task<GameField> PrepareContextAsync<TState>(DecisionContext<TState> context, CancellationToken ct = default)
         {
             _rollChance = null; // a former roll's chance belongs to the decision that computed it
@@ -1438,21 +1457,7 @@ namespace BotTest.Game.AI.Brains
                     context.Bot.LogNote($"tuning: {Tuning.FilePath} ({Tuning.Overridden} number(s) differ from the built-in values)");
             }
             if (_trackedBot != context.Bot || _gameField == null)
-            {
-                _trackedBot = context.Bot;
-                _gameField = new GameField(context.Bot);
-                if (!IsSearchTwin)
-                    context.Bot.KnownOpponentHand = () => KnownEnemyHand(); // the log's "their hand" line
-                _trackedTurn = -1;
-                _activatedThisTurn.Clear();
-                _usedEffects.Clear();
-                _chainDescriptions.Clear();
-                PendingAction = default;
-                OpponentMemory.Clear();
-                Summons.Clear();
-                ResetMatchup();
-                OpponentDeck.Clear();
-            }
+                AttachToBot(context.Bot);
 
             var header = context.Header;
             _currentHeader = header;
@@ -2484,6 +2489,7 @@ namespace BotTest.Game.AI.Brains
         /// (Tokens like any other small monster: under StrongMonsterAttack. How expendable is tapered in TributeCost: user,
         /// 2026-11-13, "tokens aren't inherently expendable ... tapered".)
         protected virtual bool IsExpendable(DynamicCard card) =>
+            IsTemporaryMonster(card) || // leaves soon whatever we do (Returner's Jinzo, Darius' revived monster): never protected
             card.HasType(CardType.Token) && EffectiveAttack(card) < StrongMonsterAttack || IsSpentFlipMonster(card) || LylaToUseUp(card) ||
             (ReSummonCost(card) < 100 && card.Level <= 4 && card.Attack < StrongMonsterAttack);
 

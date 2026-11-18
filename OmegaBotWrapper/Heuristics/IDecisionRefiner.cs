@@ -50,6 +50,21 @@ namespace OmegaBotWrapper.Heuristics
         /// <summary>Any answer we sent (the prompt's state, its data, the bytes): the search replays our turn from these.</summary>
         void ResponseSent(BotState state, object? data, byte[] response) { }
 
+        /// <summary>A new turn seen (the first poll that shows it, before anything in it is answered): the brain's turn-start snapshot.</summary>
+        Task TurnStartedAsync(DuelBotWrapper bot, BotStateHeader header) => Task.CompletedTask;
+
+        /// <summary>
+        /// A yes/no or option prompt no plan answers: the search's choice among these keys ("yes"/"no", "option:&lt;value&gt;"), or null to
+        /// let the brain answer.
+        /// </summary>
+        /// <summary>The plan's choice at a prompt answered by keys (a position: "pos:&lt;value&gt;"), or null when no plan covers it.</summary>
+        string? PlannedChoice(BotState state, IReadOnlyList<string> options) => null;
+
+        Task<string?> SearchedChoiceAsync(BotState state, IReadOnlyList<string> options, CancellationToken ct = default) => Task.FromResult<string?>(null);
+
+        /// <summary>Any prompt, before it is answered (by the brain, a plan's step, or a replay): the brain's turn record.</summary>
+        Task PromptArrivedAsync(DuelBotWrapper bot, BotStateHeader header, BotState state) => Task.CompletedTask;
+
         /// <summary>Our answer to a chain prompt is being sent (index into the selectable cards, -1 for no chain).</summary>
         void ChainAnswered(DecisionContext<SelectChainData> context, int index) { }
 

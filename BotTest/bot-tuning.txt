@@ -388,11 +388,14 @@ MctsEvaluator.BaitWeight = 0.5   # A set bait card gains this times our other se
 MctsEvaluator.DefenceShare = 0.6   # A monster in defence position counts this share of its DEF as its battle size.
 MctsEvaluator.DominanceBonus = 0.1   # Bonus for the single largest face-up monster on the whole field, to its side (user, 2026-11-13: "move the dominance score down to just 0.1 for now, and only apply it if its the largest on both sides of the field ... nominal - a lever we can pull later"; the ATK table does most of the work).
 MctsEvaluator.DrawBonus = 0.01   # Per card we draw in our turn, on top of the card itself: a drawn card counts as 1.01 cards (CSV S6, so free draws aren't skipped for a tie).
+MctsEvaluator.ExplosivenessBase = 0.5   # Their unknown cards' risk scales with this plus their deck's explosiveness (0.5 + explosiveness).
 MctsEvaluator.FaceUpSpellBase = 0.3   # A face-up spell/trap's base worth, before its lasting effect.
 MctsEvaluator.FieldEffectWeight = 0.25   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
-MctsEvaluator.GraveEffectWeight = 0.15   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
+MctsEvaluator.GenericAttackerAtk = 1400, 1600, 1800, 1900, 2100, 2400   # Without a deck read: the ATK bands of a typical deck's Level 4-or-lower attackers (paired with GenericAttackerChance; above the last band: 0).
+MctsEvaluator.GenericAttackerChance = 0.35, 0.28, 0.2, 0.14, 0.05, 0.02   # Without a deck read: the chance one unknown card is an attacker of at least that band's ATK (one per GenericAttackerAtk band).
+MctsEvaluator.GraveMonsterShare = 0.025   # A monster in the graveyard without a graveyard effect: this share of its field worth (spells/traps: 0). User, 2026-11-18.
 MctsEvaluator.HandAtkScale = 2000   # A monster in hand: its ATK counts as effect points at ATK / this.
-MctsEvaluator.HandCardBase = 0.5   # A card in hand: its base worth, before its effects and ATK.
+MctsEvaluator.HandCardBase = 0.8   # A card in hand: its base worth, before its effects and ATK.
 MctsEvaluator.HeldEffectWeight = 0.1   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
 MctsEvaluator.KeptDominanceBonus = 0   # Extra when that monster is the one that dominated when the search started. 0 for now: a lever for later.
 MctsEvaluator.LesserExposureWeight = 0.25   # Single-card removal and Icarus Attack count at this share of what Mirror Force / Torrential count (user, 2026-11-15: "~25%").
@@ -401,10 +404,12 @@ MctsEvaluator.LowDeckFrom = 5   # With our deck under this many cards, each miss
 MctsEvaluator.LowLpFullAt = 100   # Our LP at or below which a stopping/removing set card gets the full LowLpRemovalWeight.
 MctsEvaluator.LowLpRemovalWeight = 0.6   # With our LP at 0 (scaled up from ProtectionLpFrom), a set card that stops or removes an attacker gains this much.
 MctsEvaluator.LowLpScale = 1500   # How fast that value falls as our LP rise above LowLpFullAt: exp(-(LP - LowLpFullAt) / this). 1500: about 55% at 1000 LP, 28% at 2000, 7% at 4000, 0.5% at 8000.
-MctsEvaluator.LpHighWorth = 1   # Life points: everything from LpLowBand to 8000 is worth this many card units in all.
+MctsEvaluator.LpHighWorth = 0   # Life points: everything from LpLowBand to 8000 is worth this many card units in all.
 MctsEvaluator.LpLowBand = 2000   # Life points: the band that counts at LpLowWorth.
-MctsEvaluator.LpLowWorth = 2.5   # Life points: the first LpLowBand of them are worth this many card units in all (each point matters more when low).
+MctsEvaluator.LpLowWorth = 0   # Life points: the first LpLowBand of them are worth this many card units in all (each point matters more when low).
 MctsEvaluator.MonsterBase = 0.6   # A face-up monster's base worth, before its ATK (the ATK table) and its effects.
+MctsEvaluator.NoListNormalAttack = 1800   # Sitting duck without deck-list data: their assumed Level 4-or-lower attacker's ATK.
+MctsEvaluator.NoListTributeAttack = 2400   # Sitting duck without deck-list data: their assumed tribute attacker's ATK (user, 2026-11-18: 2400).
 MctsEvaluator.OversetCurve = 0.5   # The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).
 MctsEvaluator.PlusOneBonus = 1   # Per card of advantage won in our turn (card units, on top of the cards' own worth): a +1 (a card gained without losing one: Black Whirlwind's search, Pot of Greed) or a card of theirs taken for nothing (DAD's effect). A 1-for-1 trade is 0; a card spent for nothing (Kalut into a battle that changes nothing) is -1. User, 2026-11-16: "a very large bonus (per card)".
 MctsEvaluator.ProtectBodyShare = 0.5   # How much of a monster's body counts toward "how good it is" for protection (its effects count in full).
@@ -419,7 +424,7 @@ MctsEvaluator.SetFlipBase = 0.9   # A face-down monster that gains from being se
 MctsEvaluator.SetQuickPlayBonus = 0.1   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
 MctsEvaluator.SetSpellBase = 0.5   # A set spell/trap's base worth, before what it will do.
 MctsEvaluator.SetTrapBonus = 0.25   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
-MctsEvaluator.SittingDuckWeight = 0.3
+MctsEvaluator.SittingDuckWeight = 0.5   # The sitting-duck loss counts this share of the threatened monster's value (user, 2026-11-18: 0.5 so monsters still get used).
 MctsEvaluator.SpellInHandBonus0 = 0.5   # A normal / continuous / field / equip spell is worth this much more in hand than set (CSV S3: setting Miracle Dig was a bad play).
 MctsEvaluator.TaperScale = 1   # How slowly the taper bends: 1 puts Absolute Zero (5.25 points with the "all" factor) at 3.45, Stardust (9) at 4.1, Shura (10) at 4.2.
 MctsEvaluator.TaperStart = 2   # Effect points are linear up to this, then taper (see Taper).
@@ -484,7 +489,7 @@ DeckBotBrain.HoldCost.deck.grave-banish-target = 0.75
 
 # added 2026-11-17 15:46 (new in the code since the file was written)
 # --- LineTally
-LineTally.EmptyBattleCost = 1   # A line that enters the Battle Phase and makes no attack (user, 2026-11-17: it should outweigh the Main Phase 2 gains).
+LineTally.EmptyBattleCost = 2   # A line that enters the Battle Phase and makes no attack (user, 2026-11-17: it should outweigh the Main Phase 2 gains).
 # --- MctsEvaluator
 MctsEvaluator.ClockBonus = 1.5   # A side's clock on the other, as part of the board: ClockBonus / turns (card units). The turns are the brain's own clock (BoardAssessment.TurnsToWin).
 
@@ -519,7 +524,7 @@ EffectEvaluator.GraveSelfReviveValue = 1   # A monster that brings itself back f
 
 # added 2026-11-17 16:45 (new in the code since the file was written)
 # --- EffectEvaluator
-EffectEvaluator.GraveStatBoostValue = 0.5   # A graveyard effect that boosts ATK / DEF for a battle (Skill Successor): this many points there.
+EffectEvaluator.GraveStatBoostValue = 0.75   # A graveyard effect that boosts ATK / DEF for a battle (Skill Successor): this many points there.
 
 # added 2026-11-17 17:03 (new in the code since the file was written)
 # --- MctsEvaluator

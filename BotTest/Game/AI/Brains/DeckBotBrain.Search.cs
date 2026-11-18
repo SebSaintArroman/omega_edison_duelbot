@@ -558,6 +558,18 @@ namespace BotTest.Game.AI.Brains
             return step.Key switch { "yes" => true, "no" => false, _ => null };
         }
 
+        /// <summary>The plan's choice at a keyed prompt (a position, plan step 5), or null when no plan covers it.</summary>
+        public string? PlannedChoice(BotState state, IReadOnlyList<string> options)
+        {
+            if (PlanAnswer(state, options, state == BotState.SelectPosition ? "position" : state.ToString()) is string planned)
+                return planned;
+            if (NextStep(state) is not { } step)
+                return null;
+            bool offered = options.Contains(step.Key);
+            StepDone(step, offered);
+            return offered ? step.Key : null;
+        }
+
         public int? PlannedOption(int[] options)
         {
             if (PlanAnswer(BotState.SelectOption, options.Select(o => $"option:{o}").ToList(), "option") is string planOption)
@@ -1259,7 +1271,7 @@ namespace BotTest.Game.AI.Brains
 
             // What the user reads (2026-11-12: "make them clearer, more relevant to me: what was the best line it didn't use"):
             // the verdict, the best move the brain didn't play with its line, and why it wasn't played. Scores are the
-            // search's 0-100 yardstick for the position the line ends in (50 = even), not a win chance.
+            // search's 0-100 yardstick for the position the line ends in, centred on the decision's own position (50 = no better or worse than now; since 2026-11-18), not a win chance.
             // The score is the move's line value (its best well-explored follow-ups); the plain average of its lines is shown when it differs.
             double Score(RootStat s) => Math.Round(s.Mean * 100, 1);
             string Avg(RootStat s) => !double.IsNaN(s.Average) && Math.Abs(s.Average - s.Mean) >= 0.005 ? $", lines average {s.Average * 100:0.0}" : "";
@@ -1275,6 +1287,15 @@ namespace BotTest.Game.AI.Brains
                 bot.LogNote($"search: its line: {Line(best)}");
                 bot.LogNote($"search: its lines: {Detail(best)}");
                 bot.LogNote($"search: the brain's {mine.Label}: {Detail(mine)}; its line: {Line(mine)}");
+                // Within the scores' uncertainty (two standard errors of the difference): played anyway, and flagged for the user's review
+                // (user, 2026-11-18: "whenever it happens, can we flag it and you raise it to me for review ... they might be a good source
+                // of finding issues with scoring").
+                double margin = 2 * Math.Sqrt(best.StdErr * best.StdErr + mine.StdErr * mine.StdErr);
+                if (best.Mean - mine.Mean <= margin)
+                    FlagForReview(bot, "close-calls.jsonl",
+                        $"search: CLOSE CALL: {best.Label} ({Score(best)} over {best.Visits} lines) replaced the brain's {mine.Label} ({Score(mine)} over {mine.Visits} lines): " +
+                        $"{Score(best) - Score(mine):0.0} better, inside the uncertainty (+/-{margin * 100:0.0}). Its lines: {Detail(best)} | the brain's: {Detail(mine)}; " +
+                        $"its line: {Line(best)} | the brain's: {Line(mine)}");
                 if (rules.Count > 0)
                     bot.LogNote($"search: the brain's rules it went past: {string.Join(", ", rules)}");
             }
@@ -1588,7 +1609,8 @@ namespace BotTest.Game.AI.Brains
                 view.OwnMonsters.Add(ToView(card, card.ID) with { Improper = Summons.ImproperOnField(0, card.CurrentCoordinates.Sequence), ThisTurn = OwnCardThisTurn(true, card), NoAttack = await CannotAttackAfterOwnEffectAsync(card),
                     // Theirs, taken until the End Phase (Brain Control / Mind Control / Change of Heart activated this turn): it goes back
                     // in the rebuilt turn too and doesn't count toward our exposure (C1, user 2026-11-16). Taken for good (Goyo): ours.
-                    Borrowed = card.Owner == 1 && _activatedThisTurn.Overlaps(TemporaryControlIds) });
+                    Borrowed = card.Owner == 1 && _activatedThisTurn.Overlaps(TemporaryControlIds),
+                    DestroyAtOwnersEnd = IsReturnerJinzo(card) });
             foreach (var card in await CurrentField.GetBotCardsInZone(CardLocation.SpellZone, true))
                 view.OwnSpells.Add(ToView(card, card.ID) with { ThisTurn = OwnCardThisTurn(false, card) });
 

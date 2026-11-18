@@ -27,10 +27,22 @@ namespace OmegaBotWrapper.Heuristics
             set
             {
                 if (_botWrapper != null)
+                {
                     _botWrapper.ResponseSent -= OnResponseSent;
+                    _botWrapper.TurnStarted = null;
+                    _botWrapper.PromptArrived = null;
+                }
                 _botWrapper = value;
                 if (value != null)
+                {
                     value.ResponseSent += OnResponseSent;
+                    // From the start, so turn 1 has its snapshot too (the brain's first prompt can come after turn 1 began).
+                    if (_brain is IDecisionRefiner refiner)
+                    {
+                        value.TurnStarted = header => refiner.TurnStartedAsync(value, header);
+                        value.PromptArrived = (header, state) => refiner.PromptArrivedAsync(value, header, state);
+                    }
+                }
             }
         }
 
@@ -126,26 +138,52 @@ namespace OmegaBotWrapper.Heuristics
         {
             bool used = (_brain as IDecisionRefiner)?.PlannedEffectYn(state) is bool planned
                 ? planned
-                : await _brain.OnSelectEffectYnAsync(CreateContext(BotState.SelectEffectYn, state));
+                : await SearchedYesNo(BotState.SelectEffectYn) ?? await _brain.OnSelectEffectYnAsync(CreateContext(BotState.SelectEffectYn, state));
             (_brain as IDecisionRefiner)?.EffectYnAnswered(state, used);
             return used;
         }
 
-        public Task<bool> OnSelectYesNo(SelectYesNoData state) =>
-            (_brain as IDecisionRefiner)?.PlannedYesNo(BotState.SelectYesNo) is bool planned
-                ? Task.FromResult(planned)
-                : _brain.OnSelectYesNoAsync(CreateContext(BotState.SelectYesNo, state));
+        private static readonly string[] YesNoKeys = { "yes", "no" };
 
-        public Task<int> OnSelectOption(SelectOptionData state) =>
-            (_brain as IDecisionRefiner)?.PlannedOption(state.Options ?? Array.Empty<int>()) is int planned
-                ? Task.FromResult(planned)
-                : _brain.OnSelectOptionAsync(CreateContext(BotState.SelectOption, state));
+        /// <summary>The search's yes/no where no plan answers (IDecisionRefiner.SearchedChoiceAsync), or null.</summary>
+        private async Task<bool?> SearchedYesNo(BotState state) =>
+            _brain is IDecisionRefiner refiner && await refiner.SearchedChoiceAsync(state, YesNoKeys) is string key ? key == "yes" : null;
+
+        public async Task<bool> OnSelectYesNo(SelectYesNoData state) =>
+            (_brain as IDecisionRefiner)?.PlannedYesNo(BotState.SelectYesNo) is bool planned
+                ? planned
+                : state.Description != 31 && await SearchedYesNo(BotState.SelectYesNo) is bool searched ? searched // (31: "attack directly?", always yes)
+                : await _brain.OnSelectYesNoAsync(CreateContext(BotState.SelectYesNo, state));
+
+        public async Task<int> OnSelectOption(SelectOptionData state)
+        {
+            var options = state.Options ?? Array.Empty<int>();
+            if ((_brain as IDecisionRefiner)?.PlannedOption(options) is int planned)
+                return planned;
+            if (_brain is IDecisionRefiner refiner && await refiner.SearchedChoiceAsync(BotState.SelectOption, options.Select(o => $"option:{o}").ToList()) is string key)
+            {
+                int index = Array.FindIndex(options, o => $"option:{o}" == key);
+                if (index >= 0)
+                    return index;
+            }
+            return await _brain.OnSelectOptionAsync(CreateContext(BotState.SelectOption, state));
+        }
 
         public Task<byte> OnSelectRockPaperScissors() =>
             _brain.OnSelectRockPaperScissorsAsync();
 
-        public Task<CardPosition> OnSelectPosition(SelectPositionData state) =>
-            _brain.OnSelectPositionAsync(CreateContext(BotState.SelectPosition, state));
+        public async Task<CardPosition> OnSelectPosition(SelectPositionData state)
+        {
+            // The plan's position, else the search's (positions are decisions of the search's tree), else the brain's.
+            var keys = (state.Positions ?? Array.Empty<byte>()).Select(p => $"pos:{p}").ToList();
+            if (keys.Count > 1 && _brain is IDecisionRefiner refiner)
+            {
+                string? key = refiner.PlannedChoice(BotState.SelectPosition, keys) ?? await refiner.SearchedChoiceAsync(BotState.SelectPosition, keys);
+                if (key != null && byte.TryParse(key.AsSpan(4), out byte position))
+                    return (CardPosition)position;
+            }
+            return await _brain.OnSelectPositionAsync(CreateContext(BotState.SelectPosition, state));
+        }
 
         public Task<IList<byte>> OnSortCard(SortCardData state) =>
             _brain.OnSortCardAsync(CreateContext(BotState.SortCard, state));

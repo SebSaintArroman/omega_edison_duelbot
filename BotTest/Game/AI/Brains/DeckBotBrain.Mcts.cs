@@ -161,9 +161,24 @@ namespace BotTest.Game.AI.Brains
             var theirAttackers = view.EnemyMonsters.Where(c => c.Code > 0 && (c.Position & 0x1) != 0).ToList();
             bool lightOut = theirAttackers.Any(c => (SearchHost.Attribute(c.Code) & 0x10) != 0);
             bool blackwingOut = theirAttackers.Any(c => SearchHost.Available && SearchHost.Cards.Get(c.Code)?.Name?.StartsWith("Blackwing") == true);
+            // Their next attacker for the sitting-duck check (user, 2026-11-18): the biggest Normal Summon (and tribute summon) left in their
+            // deck, plus what their known hand cards add (Kalut's +1400; Honest wins any battle). Without list data: NoListNormalAttack / NoListTributeAttack.
+            (int Normal, int Tribute)? biggest;
+            lock (OpponentDeck)
+                biggest = OpponentDeck.BiggestAttackers(AttackerStats);
+            int knownBoost = 0;
+            foreach (int code in knownHand)
+                if (SearchHost.Available && SearchHost.Cards.Get(code)?.Text is { } text &&
+                    System.Text.RegularExpressions.Regex.Match(text, @"gains? (\d+) ATK", System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } gain)
+                    knownBoost = Math.Max(knownBoost, int.Parse(gain.Groups[1].Value));
+            bool honestKnown = knownHand.Any(k => k == HonestId || SearchHost.CanonicalId(k) == HonestId);
             return new(new SearchCardValues(view.OwnGrave, view.EnemyGrave), SearchSetupValue, SearchCardBonus, unknownHand, explosiveness)
             {
                 AttackerOdds = attackerOdds,
+                TheirNormalAttack = biggest?.Normal ?? MctsEvaluator.NoListNormalAttack,
+                TheirTributeAttack = biggest?.Tribute ?? MctsEvaluator.NoListTributeAttack,
+                TheirKnownBoost = knownBoost,
+                TheirHonestKnown = honestKnown,
                 UnknownSets = view.EnemySpells.Count(c => c.Code <= 0),
                 MirrorForceChance = _unknownMirror,
                 TorrentialChance = _unknownTorrential,

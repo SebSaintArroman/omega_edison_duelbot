@@ -39,6 +39,8 @@ namespace BotTest.Game.AI.Search
         public bool TakenControl;
         /// <summary>Theirs: battled one of ours this turn (ViewCard.Battled).</summary>
         public bool Battled;
+        /// <summary>Ours: destroyed in our next End Phase (Jinzo revived by Jinzo - Returner), as the real card's effect does.</summary>
+        public bool DestroyAtOwnersEnd;
     }
 
     /// <summary>
@@ -54,6 +56,9 @@ namespace BotTest.Game.AI.Search
         public const uint PosFaceUpAttack = 0x1, PosFaceDownAttack = 0x2, PosFaceUpDefense = 0x4, PosFaceDownDefense = 0x8,
             PosFaceUp = 0x5, PosFaceDown = 0xa;
 
+        /// <summary>Gladiator Beast Darius: its revived monster goes back to the deck when it leaves (see ToLua).</summary>
+        public const int DariusId = 25924653;
+
         public int[] LifePoints { get; } = { 8000, 8000 };
         public List<PlacedCard> Cards { get; } = new();
         public bool NormalSummonUsed { get; set; }
@@ -63,6 +68,16 @@ namespace BotTest.Game.AI.Search
         /// <summary>Cards a replay must draw, in order (DeckBotBrain.MidChain): each draw effect of ours in the rebuilt turn first moves the
         /// next of these to the top of the deck, so a shuffle before the draw (Pot of Avarice) still draws what the real game drew.</summary>
         public List<int> ForcedDraws { get; } = new();
+
+        /// <summary>
+        /// Turns the engine skips before play starts (EFFECT_SKIP_TURN: a skipped turn only runs its resets), for a replay from the start
+        /// of a real turn (TurnReplay): 1 = their turn 2 is the rebuilt turn (with its draw), 2 = our turn 3 is (with its draw; turn 1
+        /// never draws). 0 = the rebuilt turn is turn 1, ours, as for every search from our own main / battle decisions.
+        /// </summary>
+        public int SkipTurns { get; set; }
+
+        /// <summary>The engine turn the line's real turn is played on.</summary>
+        public int RebuiltTurn => 1 + SkipTurns;
 
         public PlacedCard Add(int code, int controller, uint location, int sequence, uint position, int? owner = null)
         {
@@ -118,24 +133,51 @@ namespace BotTest.Game.AI.Search
                     lua.Append($"if c[{i + 1}] then local e=Effect.CreateEffect(c[{i + 1}]) e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_SET_CONTROL) ")
                         .Append($"e:SetValue({Cards[i].Controller}) e:SetReset(RESET_EVENT+RESETS_STANDARD{(Cards[i].BorrowedUntilEnd ? "+RESET_PHASE+PHASE_END" : "")}) ")
                         .Append($"c[{i + 1}]:RegisterEffect(e) end\n");
+            // Temporary monsters keep their fate (user, 2026-11-18: "the jinzo ... dies next turn ... by the effect of jinzo returner"): a Jinzo
+            // revived by Jinzo - Returner is destroyed in its controller's End Phase (Returner's own delayed effect, which a rebuilt card lacks),
+            // and our Darius shuffles the monster it revived (its card target) back into the deck when it leaves the field (Darius' own
+            // leave-field handler, registered when it revived and lost in a rebuild).
+            for (int i = 0; i < Cards.Count; i++)
+            {
+                string c = $"c[{i + 1}]";
+                if (Cards[i].DestroyAtOwnersEnd && Cards[i].Location == LocMZone)
+                    lua.Append($"if {c} then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS) e:SetRange(LOCATION_MZONE) ")
+                        .Append($"e:SetCode(EVENT_PHASE+PHASE_END) e:SetCountLimit(1) e:SetCondition(function(e) return Duel.IsTurnPlayer(e:GetHandler():GetControler()) end) ")
+                        .Append($"e:SetOperation(function(e) Duel.Destroy(e:GetHandler(),REASON_EFFECT) end) e:SetReset(RESET_EVENT+RESETS_STANDARD) {c}:RegisterEffect(e) end\n");
+                if (Cards[i].Location == LocMZone && Cards[i].Targets.Count > 0 && (Cards[i].Code == DariusId || SearchHost.CanonicalId(Cards[i].Code) == DariusId))
+                    lua.Append($"if {c} and c{DariusId} and c{DariusId}.regop then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS) ")
+                        .Append($"e:SetCode(EVENT_LEAVE_FIELD_P) e:SetOperation(c{DariusId}.regop) e:SetReset(RESET_EVENT+RESETS_STANDARD) {c}:RegisterEffect(e) end\n");
+            }
+            // The stand-in for unknown cards (SearchView.InertCard, Bubble Blaster) must never do anything: no copy can be activated (a safety
+            // net: one Zombie TeleDAD list plays Bubbleman; the old stand-in, Jar Robber, answered the Pot of Greed every deck plays now).
+            lua.Append("do local e=Effect.GlobalEffect() e:SetType(EFFECT_TYPE_FIELD) e:SetProperty(EFFECT_FLAG_PLAYER_TARGET) e:SetCode(EFFECT_CANNOT_ACTIVATE) ")
+                .Append("e:SetTargetRange(1,1) e:SetValue(function(e,re,tp) return re:GetHandler():IsCode(").Append(SearchView.InertCard).Append(") end) Duel.RegisterEffect(e,0) end\n");
+            // The rebuilt turn (1, or later after skipped turns: SkipTurns): the hacks below hold only while the line is in it.
+            lua.Append("_st_turn=").Append(RebuiltTurn).Append('\n');
+            // Skipped turns: player 0's turn 1, and with 2 also player 1's turn 2 (reset at each skipped turn's End: count 2 outlives turn 1).
+            for (int p = 0; p < Math.Min(2, SkipTurns); p++)
+                lua.Append("do local e=Effect.GlobalEffect() e:SetType(EFFECT_TYPE_FIELD) e:SetProperty(EFFECT_FLAG_PLAYER_TARGET) e:SetCode(EFFECT_SKIP_TURN) ")
+                    .Append("e:SetTargetRange(1,0) e:SetReset(RESET_PHASE+PHASE_END,").Append(p + 1).Append(") Duel.RegisterEffect(e,").Append(p).Append(") end\n");
             // Cards that got where they are this turn (summoned, set, sent to the graveyard, banished): a rebuilt card has no turn
             // id, so "except the turn it was sent to the GY" (aux.exccon: Skill Successor) and "the turn it was summoned" checks
             // read it as an old card (seen 2026-11-15: a mid-chain replay offered Skill Successor's GY effect the turn it was sent).
-            // GetTurnID answers the rebuilt turn (1) for them while the line is in that turn; the engine's own id once it moves on.
-            lua.Append("if not _st_orig then _st_orig=Card.GetTurnID Card.GetTurnID=function(c) if _st_cards and _st_cards[c] and Duel.GetTurnCount()==1 then return 1 end return _st_orig(c) end end\n");
+            // GetTurnID answers the rebuilt turn for them while the line is in that turn; the engine's own id once it moves on.
+            lua.Append("if not _st_orig then _st_orig=Card.GetTurnID Card.GetTurnID=function(c) if _st_cards and _st_cards[c] and Duel.GetTurnCount()==_st_turn then return _st_turn end return _st_orig(c) end end\n");
             lua.Append("_st_cards={}\n");
             // A replay's draws: before each of our draw effects in the rebuilt turn, the card the real game drew goes to the top of the
             // deck (a shuffle first, as Pot of Avarice does, would otherwise draw at random; user, 2026-11-15). Only these cards, once each.
             lua.Append("_st_draws={").Append(string.Join(",", ForcedDraws)).Append("}\n");
             lua.Append("if not _st_draw then _st_draw=Duel.Draw Duel.Draw=function(p,n,r) ")
-                .Append("if p==0 and _st_draws and #_st_draws>0 and Duel.GetTurnCount()==1 then ")
+                .Append("if p==0 and _st_draws and #_st_draws>0 and Duel.GetTurnCount()==_st_turn then ")
+                // Cards no longer in the deck (a search took them first) are dropped, so they don't hold up the cards behind them.
+                .Append("local keep={} for _,id in ipairs(_st_draws) do if Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_DECK,0,1,nil,id) then table.insert(keep,id) end end _st_draws=keep ")
                 .Append("local k=math.min(n,#_st_draws) for i=k,1,-1 do local tc=Duel.GetMatchingGroup(Card.IsCode,0,LOCATION_DECK,0,nil,_st_draws[i]):GetFirst() ")
                 .Append("if tc then Duel.MoveSequence(tc,0) end end for i=1,k do table.remove(_st_draws,1) end end ")
                 .Append("return _st_draw(p,n,r) end end\n");
             // Our monsters that attacked this turn battled: a Gladiator Beast's tag-out checks GetBattledGroupCount() > 0, which a
             // rebuilt card reads as 0 (seen 2026-11-15: a mid-chain replay after Laquari's attack never got its tag-out window).
             lua.Append("if not _st_bgc then _st_bgc=Card.GetBattledGroupCount Card.GetBattledGroupCount=function(c) local n=_st_bgc(c) ")
-                .Append("if n==0 and _st_battled and _st_battled[c] and Duel.GetTurnCount()==1 then return 1 end return n end end\n");
+                .Append("if n==0 and _st_battled and _st_battled[c] and Duel.GetTurnCount()==_st_turn then return 1 end return n end end\n");
             lua.Append("_st_battled={}\n");
             // A Gladiator Beast summoned by a Gladiator's effect carries its own flag (Laquari: 2100 ATK); the rebuilt one doesn't,
             // so its base stats come out wrong (seen 2026-11-15: Gorz into a 2100 Laquari dealt 600, the lines 900). Restored when
