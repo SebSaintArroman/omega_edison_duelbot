@@ -62,6 +62,18 @@ namespace BotTest.Game.AI.Search
             SearchHost.Available && SearchHost.Cards.Get(code)?.Text is { } text &&
             System.Text.RegularExpressions.Regex.IsMatch(text, @"Special Summon this card", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+        /// <summary>The unseen cards using this card adds to its owner's hand: a search from the Deck (Machina Gearframe) 1, a draw its count
+        /// (Pot of Greed 2). 0 for anything else.</summary>
+        private static int HandGain(int code)
+        {
+            if (!SearchHost.Available || SearchHost.Cards.Get(code)?.Text is not { } text)
+                return 0;
+            var draw = System.Text.RegularExpressions.Regex.Match(text, @"\bdraw (\d+|one|two|three) cards?", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (draw.Success)
+                return draw.Groups[1].Value.ToLowerInvariant() switch { "one" => 1, "two" => 2, "three" => 3, var d => int.TryParse(d, out int n) ? n : 1 };
+            return System.Text.RegularExpressions.Regex.IsMatch(text, @"from your Deck to your hand", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ? 1 : 0;
+        }
+
         /// <summary>
         /// The replay of a real turn from its snapshot (taken before the draw) and its checkpoints. Their cards we saw this turn are dealt
         /// where they came from: a set card of theirs from the start that turned face-up in its zone is that card; an Extra Deck monster
@@ -98,11 +110,18 @@ namespace BotTest.Game.AI.Search
                 var gone = Raw(snapshot.OwnGrave.Concat(snapshot.OwnBanished));
                 int turnDraw = v.KnownTop.Count > 0 && ours ? v.KnownTop[0] : 0; // the turn's draw, already on top
                 var mills = new List<int>();
+                ReplayStep? before = null; // our answer just before this checkpoint
                 foreach (var cp in checkpoints)
                 {
                     var deckNow = Raw(cp.View.OwnDeck);
                     var handNow = Raw(cp.View.OwnHand);
                     var goneNow = Raw(cp.View.OwnGrave.Concat(cp.View.OwnBanished));
+                    // A copy our last answer played from the hand left it: one drawn in its place keeps the count level (seen 2026-11-18: Pot of
+                    // Greed drew the second Pot of Greed, which was taken for a mill and the draws slid one card).
+                    if (before is { Key: var played } && played.Contains("@hand") && SearchActions.KeyCardId(played) is > 0 and var playedId)
+                        foreach (int id in hand.Keys.Where(id => Canon(id) == playedId).Take(1).ToList())
+                            hand[id]--;
+                    before = cp.Answer;
                     foreach (var (id, n) in deck)
                         for (int left = n - deckNow.GetValueOrDefault(id); left > 0; left--)
                         {
@@ -123,6 +142,22 @@ namespace BotTest.Game.AI.Search
                     v.KnownTop.RemoveAll(mills.Contains);
                     v.KnownTop.InsertRange(ours && v.KnownTop.Count > 0 ? 1 : 0, mills);
                 }
+            }
+
+            // Our hand cards that went to our graveyard / banished this turn (a discard, Thestalos's random one included): a random pick in the
+            // line takes them first (SearchView.RandomPicks), so the replay's random outcomes come out as the real game's did.
+            if (checkpoints.Count > 0)
+            {
+                var handLeft = Count(snapshot.OwnHand);
+                var last = checkpoints[^1].View;
+                foreach (int id in last.OwnHand)
+                    if (handLeft.TryGetValue(Canon(id), out int n) && n > 0)
+                        handLeft[Canon(id)] = n - 1;
+                var goneBefore = Count(snapshot.OwnGrave.Concat(snapshot.OwnBanished));
+                var goneNow = Count(last.OwnGrave.Concat(last.OwnBanished));
+                foreach (var (code, n) in handLeft)
+                    for (int i = 0; i < Math.Min(n, goneNow.GetValueOrDefault(code) - goneBefore.GetValueOrDefault(code)); i++)
+                        v.RandomPicks.Add(code);
             }
 
             // Their cards seen this turn, beyond what the snapshot already showed, in the order they turned up.
@@ -157,6 +192,12 @@ namespace BotTest.Game.AI.Search
                 // Cards on the field first: they took the cards that left the hand, so what else turned up came from the deck (seen 2026-11-18:
                 // Armageddon Knight from hand, Plaguespreader Zombie from the deck by its effect).
                 var onField = view.EnemyMonsters.Concat(view.EnemySpells).Where(c => c.Code > 0).Select(c => Canon(c.Code)).ToHashSet();
+                // A searcher or draw card that turned up added unseen cards to their hand, so more cards left it than the count shows (seen
+                // 2026-11-18: Machina Gearframe searched, and Cyber Dragon, discarded for Machina Fortress, was taken for a mill; Pot of Greed x2
+                // and Brain Control too).
+                foreach (var (code, n) in seen)
+                    if (n > known.GetValueOrDefault(code))
+                        handLeft += (n - known.GetValueOrDefault(code)) * HandGain(code);
                 foreach (var (code, n) in seen.OrderBy(kv => onField.Contains(kv.Key) ? 0 : 1))
                     for (int extra = n - known.GetValueOrDefault(code); extra > 0; extra--)
                     {
@@ -233,6 +274,11 @@ namespace BotTest.Game.AI.Search
                 later.InsertRange(afterDraw, milled);
             }
             v.EnemyDeckTop.InsertRange(0, later);
+            // Our picks of their unseen hand cards (Trap Dustshoot's): the stand-ins for their unknown hand are inert spells, so the pick had
+            // nothing to take and never came (seen 2026-11-18). A plain monster stands in for each card we picked.
+            int handPicks = checkpoints.Count(cp => cp.Answer is { Key: var key } && key.StartsWith("pick:") && key[5..].Split('+').Contains("0@hand"));
+            for (int i = 0; i < handPicks && v.EnemyKnownHand.Count < v.EnemyHandCount; i++)
+                v.EnemyKnownHand.Add(SearchView.UnknownSetMonster);
             return new TurnReplay(v, ours, checkpoints);
         }
 
@@ -415,7 +461,9 @@ namespace BotTest.Game.AI.Search
         private static string Key(BotState state, SearchView view) => DecisionKey.Of(state, view, Array.Empty<string>());
 
         /// <summary>A recorded answer that only declined (no chain, no effect): the line may not get that prompt at all.</summary>
+        // (A zone prompt counts too: Omega asks where a monster goes, the engine often places it itself; seen 2026-11-18, Thestalos's zone.)
         private static bool Declined(ReplayCheckpoint cp) =>
+            cp.State == BotState.SelectPlace ||
             cp.Answer is { } a && (a.Key == "pass" || cp.State is BotState.SelectEffectYn or BotState.SelectYesNo && a.Key == "raw:00");
 
         /// <summary>The checkpoint this prompt of ours is (the next one, or a later one past checkpoints that only declined), or -1.</summary>
@@ -518,7 +566,24 @@ namespace BotTest.Game.AI.Search
                                 ?? Pick(MainAction.Activate, c => needs.UpSpells.GetValueOrDefault(c) > 0 || needs.Grave.GetValueOrDefault(c) > 0)
                                 ?? (needs.SetMonsters > 0 ? Pick(MainAction.SetMonster, c => !needs.Any(c)) ?? Pick(MainAction.SetMonster, _ => true) : null)
                                 ?? (needs.SetSpells > 0 ? Pick(MainAction.SetSpell, c => c == SearchView.InertCard) ?? Pick(MainAction.SetSpell, c => !needs.Any(c)) : null)
-                                ?? Pick(MainAction.Repos, c => needs.Defense.GetValueOrDefault(c) > 0 || needs.Attack.GetValueOrDefault(c) > 0);
+                                ?? WrongPosition();
+                    // A face-up monster in the wrong position: only the copy that needs it (seen 2026-11-18: with two Machina Gearframes, the
+                    // replay turned the one already in attack position to defence).
+                    byte[]? WrongPosition()
+                    {
+                        foreach (var card in idle.ReposableCards ?? Array.Empty<DynamicCard>())
+                        {
+                            if (!FaceUp(card.Position))
+                                continue;
+                            int c = Canon(card.ID);
+                            if (!((card.Position & 0x3) != 0 ? needs.Defense.GetValueOrDefault(c) > 0 : needs.Attack.GetValueOrDefault(c) > 0))
+                                continue;
+                            string at = $"{(int)MainAction.Repos}:{SearchActions.CardKey(card)}";
+                            if (options.FirstOrDefault(o => o.Key == at) is { } o)
+                                return SearchActions.Packet(o.Response);
+                        }
+                        return null;
+                    }
                     // Nothing visible left to do, but a known card of theirs left the hand by the checkpoint: it was played on the way (a material
                     // gone again by then). Set first: a summoned one would have shown face-up at a window.
                     bool Played(int c) => needs.Placed.GetValueOrDefault(c) > 0 && c != SearchView.InertCard && c != SearchView.UnknownSetMonster;
@@ -578,8 +643,10 @@ namespace BotTest.Game.AI.Search
                 case SelectChainData chain:
                 {
                     var cards = chain.SelectableCards ?? Array.Empty<DynamicCard>();
+                    bool fieldNeeds = needs.UpMonsters.Count > 0 || needs.UpSpells.Count > 0 || needs.SetMonsters > 0 || needs.SetSpells > 0;
                     for (int i = 0; i < cards.Length; i++)
-                        if (needs.Any(Canon(cards[i].ID)) && !DestroyedByUs(cards[i], needs, next) && !SummonedInstead(cards[i], needs, host))
+                        if (needs.Any(Canon(cards[i].ID)) && !DestroyedByUs(cards[i], needs, next) && !SummonedInstead(cards[i], needs, host) &&
+                            !AlreadyUp(cards[i], needs) && !(fieldNeeds && host.Phase < cp.Phase && SetForGraveOnly(cards[i], needs)))
                             return (BitConverter.GetBytes(i), null);
                     // Their trigger that changes only our side (Raiza's bounce): a face-up card of theirs on the field, not a card from their hand
                     // or a set one (seen 2026-11-18: their Mystical Space Typhoon chained from hand to their own Pot of Greed in the replay).
@@ -601,6 +668,25 @@ namespace BotTest.Game.AI.Search
                 }
             }
             return (OutcomePick(prompt.Data, host, next, 1), null);
+        }
+
+        /// <summary>A face-up monster of theirs whose only need is another face-up copy: it's already there, so its effect makes nothing
+        /// the checkpoint wants (seen 2026-11-18: the replay chained the on-field Machina Gearframe's equip for the second Gearframe).</summary>
+        private static bool AlreadyUp(DynamicCard card, Needs needs)
+        {
+            int code = Canon(card.ID);
+            return card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && FaceUp(card.Position) &&
+                   needs.Grave.GetValueOrDefault(code) <= 0 && needs.UpSpells.GetValueOrDefault(code) <= 0;
+        }
+
+        /// <summary>A set spell/trap of theirs the checkpoint only has in the graveyard: before an earlier phase's summons and sets are made, it
+        /// waits (seen 2026-11-18: the replay fired their Trap Dustshoot in the Draw Phase; the real game used it as the Battle Phase began,
+        /// after Machina Fortress and Machina Gearframe were summoned).</summary>
+        private static bool SetForGraveOnly(DynamicCard card, Needs needs)
+        {
+            int code = Canon(card.ID);
+            return card.CurrentCoordinates.Location == (byte)CardLocation.SpellZone && !FaceUp(card.Position) &&
+                   needs.Grave.GetValueOrDefault(code) > 0 && needs.UpSpells.GetValueOrDefault(code) <= 0;
         }
 
         /// <summary>
@@ -721,8 +807,12 @@ namespace BotTest.Game.AI.Search
                 for (int i = 0; i < cards.Length && chosen.Count < Math.Max(1, max); i++)
                 {
                     var at = cards[i].CurrentCoordinates;
-                    int code = Canon(cards[i].ID);
                     int side = at.Controller == 0 ? player : 1 - player; // the prompt sees the board from the picking player's side
+                    // Our hand card in their pick is hidden from them (Trap Dustshoot's pick, seen 2026-11-18: the line sent back a random card):
+                    // the engine knows it, from our side.
+                    int id = cards[i].ID > 0 || side != 0 ? cards[i].ID
+                        : host.CardAt(0, 0, at.Location, at.Sequence)?.ID ?? 0;
+                    int code = Canon(id);
                     bool StillThere(bool monsters) => (side == 0 ? (monsters ? t.OwnMonsters : t.OwnSpells) : (monsters ? t.EnemyMonsters : t.EnemySpells))
                         .Any(c => c.Sequence == at.Sequence && (c.Code <= 0 || Canon(c.Code) == code));
                     bool moved = at.Location switch

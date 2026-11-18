@@ -424,8 +424,7 @@ namespace OmegaBotWrapper.Logging
                     ["deck"] = _bot.DeckName,
                     ["botId"] = _bot.BotID
                 });
-
-                BotLogger.Log(_bot.BotID, "DuelLog", $"Logging duel to {_currentBasePath}.log");
+                // (No "Logging duel to ..." line: "Duel log saved" names the file at the end; user, 2026-11-18: log noise.)
             }
         }
 

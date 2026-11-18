@@ -1828,9 +1828,31 @@ namespace BotTest.Game.AI.Brains
             int others = theirAttackers.Count(NotCurrent);
             if (others > 0 && earlierAttacks >= others)
                 return _ => false;
+            var attacked = _theirAttackedZones.Turn == header.CurrentTurn ? _theirAttackedZones.Zones : new HashSet<int>();
             return card => card.CurrentCoordinates.Controller == 1 &&
                            card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone &&
-                           card.IsFaceup() && card.IsAttack() && !card.Attacked && NotCurrent(card);
+                           card.IsFaceup() && card.IsAttack() && !card.Attacked && NotCurrent(card) &&
+                           !attacked.Contains(card.CurrentCoordinates.Sequence);
+        }
+
+        // Their monster zones we saw battling this turn (their turn number): Omega never marks their attackers, and the battler is gone by
+        // the time a trigger after the battle asks us (seen 2026-11-18: Ryko, flipped by Chimeratech Fortress Dragon's attack, destroyed that
+        // same Chimeratech: "the one that had attacked", while the other Chimeratech and Machina Fortress were still to come).
+        private (int Turn, HashSet<int> Zones) _theirAttackedZones = (-1, new HashSet<int>());
+
+        /// <summary>At every prompt of ours (PromptArrived) in their Battle Phase: the monster of theirs battling now has attacked.</summary>
+        protected async Task TrackTheirAttackersAsync(BotStateHeader header)
+        {
+            var phase = (DuelPhase)header.CurrentPhase;
+            if (IsOwnTurn(header) ||
+                phase is not (DuelPhase.BattleStart or DuelPhase.BattleStep or DuelPhase.Damage or DuelPhase.DamageCal or DuelPhase.Battle))
+                return;
+            var current = await CurrentField.GetBotBattlingMonster(isOwnSide: false);
+            if (current.ID == 0 || current.CurrentCoordinates.Location != (byte)CardLocation.MonsterZone)
+                return;
+            if (_theirAttackedZones.Turn != header.CurrentTurn)
+                _theirAttackedZones = (header.CurrentTurn, new HashSet<int>());
+            _theirAttackedZones.Zones.Add(current.CurrentCoordinates.Sequence);
         }
 
         // Our monsters on the field at the last decision before their Battle Phase this turn (their turn number), for counting

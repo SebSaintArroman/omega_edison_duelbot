@@ -61,6 +61,7 @@ DeckBotBrain.GorzHoldWithSolemn = 0.3   # Added to the hold-for-Gorz chance when
 DeckBotBrain.GorzLongClockFactor = 0.8   # Gorz in their hand: its chance shrinks to this share on a Long clock.
 DeckBotBrain.GorzOrderChance = 0.3   # Gorz chance from which Main Phase 1 sets up the attack order for it (see GorzAttackOrderAsync). Tune from logs.
 DeckBotBrain.GorzPassBoost = 3   # Per-card Gorz chance multiplier after such a pass (until they put a card on the field). Tune from logs.
+DeckBotBrain.GorzPassBonus = 1.3   # After a complete pass (empty field, nothing played), the chance they hold Gorz is multiplied by this (1.3 = 30% more). User, 2026-11-18.
 DeckBotBrain.GorzPassHand = 4   # Hand size from which passing with an empty field and nothing played reads as holding Gorz. Tune from logs.
 DeckBotBrain.GorzQuickClockFactor = 0.5   # Gorz in their hand: its chance shrinks to this share on a Quick clock (they've had to use it already).
 DeckBotBrain.GorzSetResidual = 0.3   # Cards held while setting keep this share of their Gorz chance per spell/trap of theirs on the field (0.3 for one, 0.09 for two). Tune from logs.
@@ -221,7 +222,7 @@ DeckBotBrain.HoldCost.deck.hold-for-gorz = 1.5
 DeckBotBrain.HoldCost.deck.hold-for-threat-or-win = 1.5
 DeckBotBrain.HoldCost.deck.hold-monster-sets-for-battle = 1.5
 DeckBotBrain.HoldCost.deck.hold-set-for-storm = 1.5
-DeckBotBrain.HoldCost.deck.hold-sets-for-battle = 1.5
+DeckBotBrain.HoldCost.deck.hold-sets-for-battle = 0.5
 DeckBotBrain.HoldCost.deck.hold-sets-for-storm = 1.5
 DeckBotBrain.HoldCost.deck.hold-spend = 1.5
 DeckBotBrain.HoldCost.deck.hold-synchro-into-bouncer = 1.5
@@ -421,9 +422,10 @@ MctsEvaluator.ReserveWeight = 0.5   # Held monsters count at this share of their
 MctsEvaluator.RiskDiscountMax = 0.6   # How much the fear of their cards drops at full pressure (risk tolerance at its top): 0.6 = to 40%.
 MctsEvaluator.Scale = 3   # How many card units of difference move the score from 0.5 to about 0.73 (the logistic's scale).
 MctsEvaluator.SetFlipBase = 0.9   # A face-down monster that gains from being set (a flip, a floater, a graveyard effect): its base worth.
-MctsEvaluator.SetQuickPlayBonus = 0.1   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
-MctsEvaluator.SetSpellBase = 0.5   # A set spell/trap's base worth, before what it will do.
-MctsEvaluator.SetTrapBonus = 0.25   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
+MctsEvaluator.SetFlipEffectWeight = 0.25   # Weight of a set flip / floater monster's effect points (its effect still to be used), like FieldEffectWeight: using it costs that much. User, 2026-11-18.
+MctsEvaluator.SetQuickPlayBase = 0.9   # A set quick-play spell's base worth, before what it will do.
+MctsEvaluator.SetSpellBase = 0.8   # A set normal / continuous / field / equip spell's base worth, before what it will do (also an unknown set card).
+MctsEvaluator.SetTrapBase = 1.05   # A set trap's base worth, before what it will do.
 MctsEvaluator.SittingDuckWeight = 0.5   # The sitting-duck loss counts this share of the threatened monster's value (user, 2026-11-18: 0.5 so monsters still get used).
 MctsEvaluator.SpellInHandBonus0 = 0.5   # A normal / continuous / field / equip spell is worth this much more in hand than set (CSV S3: setting Miracle Dig was a bad play).
 MctsEvaluator.TaperScale = 1   # How slowly the taper bends: 1 puts Absolute Zero (5.25 points with the "all" factor) at 3.45, Stardust (9) at 4.1, Shura (10) at 4.2.
@@ -491,7 +493,7 @@ DeckBotBrain.HoldCost.deck.grave-banish-target = 0.75
 # --- LineTally
 LineTally.EmptyBattleCost = 2   # A line that enters the Battle Phase and makes no attack (user, 2026-11-17: it should outweigh the Main Phase 2 gains).
 # --- MctsEvaluator
-MctsEvaluator.ClockBonus = 1.5   # A side's clock on the other, as part of the board: ClockBonus / turns (card units). The turns are the brain's own clock (BoardAssessment.TurnsToWin).
+MctsEvaluator.ClockByTurns = 1.5, 1, 0.5, 0.25, 0.25, 0.1, 0.1, 0.1   # A side's clock on the other, as part of the board (card units), by its length: entry 1 for a 1-turn clock, 2 for 2 turns, and so on; the last entry for that many turns or more (no clock = 0). User, 2026-11-18.
 
 # added 2026-11-17 15:47 (new in the code since the file was written)
 # --- DeckBotBrain
@@ -506,6 +508,7 @@ DeckBotBrain.FuelGoalDeckChance = 0.5   # The deck-read chance (their deck type,
 DeckBotBrain.HonestSuspectChance = 0.3   # Honest counts as suspected in their hand from this deck-read chance (or when known).
 # --- MctsEvaluator
 MctsEvaluator.DamageBonusPer1000 = 0.1   # A line that attacked gets this much extra (card units) per 1000 damage dealt in our turn, up to DamageBonusMax. Small: damage is mostly the clock's business.
+MctsEvaluator.OwnDamageShare = 0.5   # Our life points lost by the end of a line count against it at this share of DamageBonusPer1000 (continuous). User, 2026-11-18.
 
 # added 2026-11-17 16:20 (new in the code since the file was written)
 # --- EffectEvaluator
@@ -515,6 +518,7 @@ EffectEvaluator.SelfSummonValue = 0.25   # A monster effect that only Special Su
 # added 2026-11-17 16:31 (new in the code since the file was written)
 # --- MctsEvaluator
 MctsEvaluator.WinBonus = 10   # A line that wins: this many card units on top of its position, times the chance the win really works (WinChance). Large.
+MctsEvaluator.WinCardCost = 1   # A won line: each card of ours it used up costs this much (card units) in the win's part of its score; the board it leaves doesn't count there. User, 2026-11-18.
 # --- SearchCardValues
 SearchCardValues.GraveFloor = 0   # A card that works from the graveyard is worth at least this there (card points), whatever its graveyard effects score.
 
@@ -530,9 +534,6 @@ EffectEvaluator.GraveStatBoostValue = 0.75   # A graveyard effect that boosts AT
 # --- MctsEvaluator
 MctsEvaluator.BigHitBonus = 0.25
 MctsEvaluator.BigHitDamage = 1500   # Damage dealt in a line from this much up earns BigHitBonus (card units, on top of the LP themselves). Small: adjust slowly.
-MctsEvaluator.WinCardsSpread = 0.009   # Won lines: how far the cards a win spent can lower its score (cheaper wins second).
-MctsEvaluator.WinLengthSpread = 0.0009   # Won lines: how far a win's length can lower its score (shorter wins last).
-MctsEvaluator.WinRiskSpread = 0.04   # Won lines: how far the risk a win ran can lower its score below 1 (lower-risk wins first).
 
 # added 2026-11-17 19:37 (new in the code since the file was written)
 # --- MctsEvaluator
@@ -552,7 +553,7 @@ SearchCardValues.VayuGraveReading = 0.8   # Vayu's own graveyard worth (card poi
 
 # added 2026-11-18 10:58 (new in the code since the file was written)
 # --- MctsEvaluator
-MctsEvaluator.TheirClockShare = 0.5   # Their clock on us counts this share of ClockBonus against a line (ours on them counts in full). User, 2026-11-18: "tone down the penalty for being on a clock ... leave the bonus for the bot putting me on a clock as is".
+MctsEvaluator.TheirClockShare = 0.5   # Their clock on us counts this share of ClockByTurns against a line (ours on them counts in full). User, 2026-11-18: "tone down the penalty for being on a clock ... leave the bonus for the bot putting me on a clock as is".
 
 # added 2026-11-18 11:29 (new in the code since the file was written)
 # --- DeckBotBrain
@@ -572,3 +573,9 @@ MctsEvaluator.SolemnGuardWeight = 0.3   # A set Solemn Judgment gains this times
 # added 2026-11-18 11:42 (new in the code since the file was written)
 # --- DeckBotBrain
 DeckBotBrain.HoldCost.deck.set-trap-dustshoot = 3
+
+# added 2026-11-18 21:24 (new in the code since the file was written)
+# --- MctsEvaluator
+MctsEvaluator.ClockBonus = 1.5   # A side's clock on the other, as part of the board: worth ClockBonus / turns (card units) for a clock of that many turns (1 turn = the full bonus; no clock = 0). The turns are the brain's own clock (BoardAssessment.TurnsToWin).
+MctsEvaluator.SetQuickPlayBonus = 0.1   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
+MctsEvaluator.SetTrapBonus = 0.25   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.

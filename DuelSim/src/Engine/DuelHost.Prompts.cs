@@ -771,6 +771,27 @@ internal static class SumSolver
         return null;
     }
 
+    /// <summary>A valid sum that includes option <paramref name="forced"/> (its indexes, forced first), or null: the search's sum options
+    /// (one per card, as Omega asks a sum one card at a time; Mcts.OptionsFor).</summary>
+    public static List<int>? FindWith(List<int> mandatory, List<int> options, int forced, int target, int min, int max, bool exact)
+    {
+        int n = Math.Min(options.Count, 16);
+        if (forced < 0 || forced >= n)
+            return null;
+        var others = Enumerable.Range(0, n).Where(i => i != forced).ToList();
+        for (int mask = 0; mask < (1 << others.Count); mask++)
+        {
+            var picked = new List<int> { forced };
+            picked.AddRange(others.Where((_, j) => (mask & (1 << j)) != 0));
+            if (exact && (picked.Count < min || picked.Count > max))
+                continue;
+            var parameters = mandatory.Concat(picked.Select(i => options[i])).ToList();
+            if (exact ? CanMakeExact(parameters, target) : AtLeast(parameters, target))
+                return picked;
+        }
+        return null;
+    }
+
     private static bool CanMakeExact(List<int> parameters, int target)
     {
         var sums = new HashSet<int> { 0 };

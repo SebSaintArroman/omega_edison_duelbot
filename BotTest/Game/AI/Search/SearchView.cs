@@ -25,7 +25,10 @@ namespace BotTest.Game.AI.Search
         /// that ends with the turn.</summary>
         bool Borrowed = false,
         /// <summary>Ours, revived by Jinzo - Returner: destroyed in our next End Phase by Returner's effect (a temporary monster, user 2026-11-18).</summary>
-        bool DestroyAtOwnersEnd = false);
+        bool DestroyAtOwnersEnd = false,
+        /// <summary>Its battle position can't change until the End Phase of this real turn (0: no lock): Lyla, Lightsworn Sorceress after her effect,
+        /// "until the end of your next turn" (user, 2026-11-18: "lyla is still stuck in defence during my next turn").</summary>
+        int PositionLockEnds = 0);
 
     /// <summary>
     /// Everything the bot knows at a decision (only what Omega shows it, plus its own deck list and the deck read), and
@@ -80,6 +83,11 @@ namespace BotTest.Game.AI.Search
         /// <summary>The decision is in the Battle Phase: the rebuilt turn goes straight to it.</summary>
         public bool InBattlePhase { get; set; }
 
+        /// <summary>Our monster zone whose monster alone may attack this turn (-1: no such restriction): Blackwing - Sirocco the Dawn's effect,
+        /// "other monsters you control cannot attack this turn", a player effect the rebuild would lose (user, 2026-11-18: the second Bora
+        /// attacked in the lines).</summary>
+        public int OnlyAttackerZone { get; set; } = -1;
+
         /// <summary>Cards drawn from our deck into the hand when a line starts (a projected next turn whose draw we don't know).</summary>
         public int DrawsAtStart { get; set; }
 
@@ -91,6 +99,10 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>Cards our draw effects drew since the replay's start, in order (SearchPosition.ForcedDraws).</summary>
         public List<int> ForcedDraws { get; } = new();
+
+        /// <summary>Our hand cards that really left for the graveyard / banished in the replayed turn: a random pick (Thestalos's discard)
+        /// takes them first (SearchPosition.RandomPicks).</summary>
+        public List<int> RandomPicks { get; } = new();
 
         /// <summary>Graveyard / banished cards that got there this turn, by id (ours, theirs): scripts' "except the turn it was sent"
         /// conditions (aux.exccon) read the turn id, which a rebuilt card doesn't have (SearchPosition.ThisTurn).</summary>
@@ -139,12 +151,13 @@ namespace BotTest.Game.AI.Search
             {
                 EnemyHandCount = EnemyHandCount, EnemyExtraCount = EnemyExtraCount, NormalSummonUsed = NormalSummonUsed,
                 BattlePhaseDone = BattlePhaseDone, FirstTurnOfDuel = FirstTurnOfDuel, RealTurn = RealTurn, InBattlePhase = InBattlePhase,
-                DrawsAtStart = DrawsAtStart, Record = Record, SkipTurns = SkipTurns, BlankNextDraw = BlankNextDraw,
+                DrawsAtStart = DrawsAtStart, Record = Record, SkipTurns = SkipTurns, BlankNextDraw = BlankNextDraw, OnlyAttackerZone = OnlyAttackerZone,
             };
             v.EnemyKnownExtra.AddRange(EnemyKnownExtra);
             v.EnemyDeckTop.AddRange(EnemyDeckTop);
             v.KnownTop.AddRange(KnownTop);
             v.ForcedDraws.AddRange(ForcedDraws);
+            v.RandomPicks.AddRange(RandomPicks);
             v.LifePoints[0] = LifePoints[0];
             v.LifePoints[1] = LifePoints[1];
             v.OwnHand.AddRange(OwnHand); v.OwnDeck.AddRange(OwnDeck); v.OwnGrave.AddRange(OwnGrave);
@@ -205,6 +218,7 @@ namespace BotTest.Game.AI.Search
             v.NormalSummonUsed = v.BattlePhaseDone = v.InBattlePhase = v.FirstTurnOfDuel = false;
             v.Record = TurnRecord.Empty;
             v.RealTurn = RealTurn + 1;
+            v.OnlyAttackerZone = -1;
             v.ReturnBorrowed();
             v.DrawsAtStart = v.OwnDeck.Count > 0 ? 1 : 0;
             v.ArrivedThisTurn.Clear();
@@ -226,6 +240,7 @@ namespace BotTest.Game.AI.Search
             v.NormalSummonUsed = v.BattlePhaseDone = v.InBattlePhase = v.FirstTurnOfDuel = false;
             v.Record = TurnRecord.Empty;
             v.RealTurn = RealTurn + 1;
+            v.OnlyAttackerZone = -1;
             v.ReturnBorrowed();
             return v;
         }
@@ -283,7 +298,9 @@ namespace BotTest.Game.AI.Search
             position.NormalSummonUsed = NormalSummonUsed;
             position.BattlePhaseDone = BattlePhaseDone;
             position.ForcedDraws.AddRange(ForcedDraws);
+            position.RandomPicks.AddRange(RandomPicks);
             position.SkipTurns = SkipTurns;
+            position.OnlyAttackerZone = OnlyAttackerZone;
 
             var placed = new Dictionary<(int, int, int), int>();
             var links = new List<(int Index, ViewCard Card, int Controller)>();
@@ -309,6 +326,7 @@ namespace BotTest.Game.AI.Search
                 (p.Attack, p.Defense) = (card.Attack, card.Defense);
                 p.Battled = card.Battled && controller == 1;
                 p.DestroyAtOwnersEnd = card.DestroyAtOwnersEnd && controller == 0;
+                p.PositionLockEndPhases = card.PositionLockEnds > 0 ? Math.Max(0, card.PositionLockEnds - RealTurn + 1) : 0;
                 p.Proper = !card.Improper;
                 p.Counters.AddRange(card.Counters);
                 placed[(controller, (int)location, card.Sequence)] = position.Cards.Count - 1;

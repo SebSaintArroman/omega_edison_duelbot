@@ -1568,7 +1568,7 @@ namespace BotTest.Game.AI.Brains
             await TrackBouncersAsync();
             if (!bouncerKnown && _bouncerInTheirHand)
                 context.Bot.LogNote("deck brain: their Grand Mole-type monster went back to their hand: it can come straight back (don't set into it)");
-            return _gameField;
+            return CurrentField; // set by AttachToBot above (the compiler can't see that through the call)
         }
 
         // ------------------------------------------------------------------ Vayu-negated monsters
@@ -1736,6 +1736,10 @@ namespace BotTest.Game.AI.Brains
             var (haveGorz, hand, cleared, setHeld) = await GorzInHandChanceAsync();
             if (haveGorz <= 0)
                 return false;
+            // They passed completely (empty field, nothing played): x GorzPassBonus on top (user, 2026-11-18: "if I pass completely, increase my
+            // gorz chance by 30%").
+            if (_gorzPassFactor > 1)
+                haveGorz = Math.Min(1, haveGorz * GorzPassBonus); // "not +30%, *1.3"
             int tokenAtk = context is DecisionContext<BattleCmdData> battle && battle.StateData.AttackableCards is { Length: > 0 } attackers
                 ? attackers[0].Attack : FirstHitAttack();
             var (canAnswer, answerWhy) = await CanAnswerGorzAndTokenAsync(tokenAtk);
@@ -1773,6 +1777,12 @@ namespace BotTest.Game.AI.Brains
             var enemy = (await CurrentField.GetBotField()).EnemySide;
             int hand = enemy.Hand?.Length ?? 0;
             bool gone = (enemy.Grave ?? Array.Empty<int>()).Contains(GorzId) || (enemy.Banish ?? Array.Empty<int>()).Contains(GorzId);
+            return GorzInHandChance(hand, gone);
+        }
+
+        /// <summary>The brain's Gorz chance for their hand (per card, raised after a pass, lowered by evidence), synchronously.</summary>
+        private (double Chance, int Hand, int Cleared, int SetHeld) GorzInHandChance(int hand, bool gone)
+        {
             if (hand == 0 || gone)
                 return (0, hand, 0, 0);
             int cleared = Math.Min(_gorzClearedCards, hand);
@@ -1782,6 +1792,18 @@ namespace BotTest.Game.AI.Brains
                       Math.Pow(1 - GorzChancePerCard * EvidenceResidual, cleared) *
                       Math.Pow(1 - GorzChancePerCard * _gorzSetResidual, setHeld);
             return (haveGorz, hand, cleared, setHeld);
+        }
+
+        /// <summary>
+        /// The brain's Gorz chance for a search's position, with the pass bonus (FearGorzAsync's number): the search's win chance uses the larger
+        /// of it and the deck read's (user, 2026-11-18: "the lethal line was risky - it only worked through gorz, did it factor that in?": the
+        /// lines counted only the deck read's chance).
+        /// </summary>
+        private protected double BrainGorzChance(Search.SearchView view)
+        {
+            bool gone = view.EnemyGrave.Concat(view.EnemyBanished).Any(id => id == GorzId || Search.SearchHost.CanonicalId(id) == GorzId);
+            double chance = GorzInHandChance(view.EnemyHandCount, gone).Chance;
+            return _gorzPassFactor > 1 ? Math.Min(1, chance * GorzPassBonus) : chance;
         }
 
         /// <summary>Gorz chance from which Main Phase 1 sets up the attack order for it (see GorzAttackOrderAsync). Tune from logs.</summary>
@@ -1906,6 +1928,10 @@ namespace BotTest.Game.AI.Brains
         /// <summary>Per-card Gorz chance multiplier after such a pass (until they put a card on the field). Tune from logs.</summary>
         [Tunable("Per-card Gorz chance multiplier after such a pass (until they put a card on the field). Tune from logs.")]
         public double GorzPassBoost { get; set; } = 3;
+
+        /// <summary>After such a pass, the chance they hold Gorz is multiplied by this (1.3 = 30% more). User, 2026-11-18.</summary>
+        [Tunable("After a complete pass (empty field, nothing played), the chance they hold Gorz is multiplied by this (1.3 = 30% more). User, 2026-11-18.")]
+        public double GorzPassBonus { get; set; } = 1.3;
 
         /// <summary>They passed their turn with an empty field and a big hand that didn't shrink: their cards are likelier Gorz.</summary>
         protected void NoteOpponentPassedForGorz() => _gorzPassFactor = GorzPassBoost;
@@ -2269,8 +2295,13 @@ namespace BotTest.Game.AI.Brains
 
         protected void MarkCardActivated(int cardId)
         {
-            if (cardId > 0)
-                _activatedThisTurn.Add(cardId);
+            if (cardId <= 0)
+                return;
+            _activatedThisTurn.Add(cardId);
+            // Live Omega sends variant ids (Brain Control as 87910998, alias 87910978): the official one too, which the checks use (seen
+            // 2026-11-18: a Fortress taken by Brain Control wasn't known to go back, and the search tributed the token instead).
+            if (Search.SearchHost.Available && Search.SearchHost.CanonicalId(cardId) is > 0 and var official)
+                _activatedThisTurn.Add(official);
         }
 
         protected bool WasCardActivatedThisTurn(int cardId) => _activatedThisTurn.Contains(cardId);

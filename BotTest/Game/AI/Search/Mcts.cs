@@ -650,7 +650,7 @@ namespace BotTest.Game.AI.Search
             int rootVisits;
             lock (_start.Lock)
             {
-                stats = _start.Children.Select(kv => new RootStat(kv.Key, kv.Value.Label, kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
+                stats = _start.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, kv.Value.Label, kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
                     .OrderByDescending(s => s.Visits).ThenByDescending(s => s.Mean).ToList();
                 rootVisits = _start.Visits;
             }
@@ -658,7 +658,7 @@ namespace BotTest.Game.AI.Search
             if (stats.Count > 0 && _start.Children.TryGetValue(stats[0].Key, out var bestChild))
                 lock (bestChild.Lock)
                     if (bestChild.ChildState is BotState.SelectCard && bestChild.ChildPlayer == 0)
-                        followUp = bestChild.Children.OrderByDescending(kv => kv.Value.Visits).Select(kv => kv.Key).FirstOrDefault();
+                        followUp = bestChild.Children.Where(kv => IsMove(kv.Key)).OrderByDescending(kv => kv.Value.Visits).Select(kv => kv.Key).FirstOrDefault();
             Dictionary<string, (double Cost, string Rule)>? rootHolds;
             lock (_start.Lock)
                 rootHolds = _start.Holds == null ? null : new Dictionary<string, (double, string)>(_start.Holds);
@@ -668,7 +668,7 @@ namespace BotTest.Game.AI.Search
                 if (_start.Children.TryGetValue(s.Key, out var child))
                     lock (child.Lock)
                         if (child.ChildState is BotState.SelectCard && child.ChildPlayer == 0)
-                            followUps[s.Key] = child.Children.Select(kv => new RootStat(kv.Key, kv.Value.Label, kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
+                            followUps[s.Key] = child.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, kv.Value.Label, kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
                                 .OrderByDescending(v => v.Visits).ToList();
             return new SearchOutcome(stats, iterations, failures, elapsed, firstFailure, followUp, _mismatch, Plans(stats), _traces.ToList(),
                 rootVisits, _maxDepth, BestLine(), rootHolds, _start.PriorKey,
@@ -831,8 +831,7 @@ namespace BotTest.Game.AI.Search
 
             var cursor = FromTurnStart is { } fromStart ? new TurnReplay.Cursor(fromStart)
             {
-                IsRoot = (p, h) => p.State == _rootState &&
-                                   DecisionKey.Of(p.State, h.Summary(0), h.Summary(1), OptionsFor(p, true, rng)?.Select(o => o.Key) ?? Enumerable.Empty<string>()) == RootKey,
+                IsRoot = (p, h) => IsRootPrompt(p, h, RootKey, rng),
             } : null;
             Prompt? prompt;
             try
@@ -940,6 +939,16 @@ namespace BotTest.Game.AI.Search
                                         Answer(host, prompt, replayed);
                                         continue;
                                     }
+                                    // A pick Omega asked one card at a time (select / unselect) and the engine all at once (a sum: Machina Fortress's
+                                    // discard; seen 2026-11-18 live, "pick Machina Fortress, SelectUnselectCard, not on offer at SelectSum"): the run
+                                    // of one-card answers as the sum's cards.
+                                    if (prompt.Data is SelectSumData sum && step.State == BotState.SelectUnselectCard &&
+                                        ReplayKeys.SumPacket(sum, replay.Ours.Skip(replayNext).ToList(), out int sumSteps) is { } summed)
+                                    {
+                                        replayNext += sumSteps;
+                                        Answer(host, prompt, summed);
+                                        continue;
+                                    }
                                     // A prompt the real game never showed us (an optional one): declined, and the replay goes on.
                                     if (!SameKind(prompt.State, step.State) && Passive(prompt) is { } declined && extraPrompts++ < 8)
                                     {
@@ -950,7 +959,7 @@ namespace BotTest.Game.AI.Search
                                     return ReplayMiss($"step {replayNext + 1} ({step.Label}, {step.State}) not on offer at {prompt.State}");
                                 }
                                 var windowOptions = OptionsFor(prompt, true, rng)?.Select(o => o.Key).ToList() ?? new List<string>();
-                                if (prompt.State != _rootState || DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), windowOptions) != replay.TargetKey)
+                                if (!IsRootPrompt(prompt, host, replay.TargetKey, rng))
                                 {
                                     if (prompt.State != _rootState && Passive(prompt) is { } skip && extraPrompts++ < 8)
                                     {
@@ -1041,6 +1050,24 @@ namespace BotTest.Game.AI.Search
                     }
                     if (rootReached && inTree && OptionsFor(prompt, ours, rng) is { Count: > 1 } options)
                     {
+                        // One kind of prompt per node (seen 2026-11-18: a Main Phase search continued from a node that also held the "yes" / "no"
+                        // of Armageddon Knight's trigger, and listed "no" among its moves): a line meeting another kind of prompt (or the other
+                        // player's) at a node that already has answers goes on in a sub-node for that kind ("@" key, never a move).
+                        MctsNode? kindNode = null;
+                        lock (node.Lock)
+                            if (node != _start && node.Children.Count > 0 && (node.ChildState != prompt.State || node.ChildPlayer != prompt.Player))
+                            {
+                                string kindKey = $"@{prompt.State}/{prompt.Player}";
+                                if (!node.Children.TryGetValue(kindKey, out kindNode))
+                                    node.Children[kindKey] = kindNode = new MctsNode { Label = $"({prompt.State})", Available = 1 };
+                            }
+                        if (kindNode != null)
+                        {
+                            lock (kindNode.Lock)
+                                kindNode.Visits++;
+                            path.Add(new PathStep(kindNode, 0));
+                            node = kindNode;
+                        }
                         // Our main / battle decisions are filed by board and answers, so a later decision finds them again.
                         if (ours && prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd)
                         {
@@ -1381,9 +1408,32 @@ namespace BotTest.Game.AI.Search
 
         // Our step at a node: the best-scoring answer among those with MinPlanVisits+ lines (like the move the search plays),
         // or null. Their answers (walked past, never planned): the most-visited.
+        /// <summary>
+        /// This prompt is the searched decision: its kind, board and answers are the real ones (<paramref name="key"/>). A sum the engine asks
+        /// at once counts as Omega's one-card-at-a-time pick of it (SelectUnselectCard), with the same cards on offer ("cancel" aside).
+        /// </summary>
+        private bool IsRootPrompt(Prompt p, DuelHost h, string? key, Random rng)
+        {
+            bool sumForPick = p.State == BotState.SelectSum && _rootState == BotState.SelectUnselectCard;
+            if (key == null || p.State != _rootState && !sumForPick)
+                return false;
+            var options = OptionsFor(p, true, rng)?.Select(o => o.Key) ?? Enumerable.Empty<string>();
+            string mine = DecisionKey.Of(_rootState, h.Summary(0), h.Summary(1), options);
+            return sumForPick ? WithoutCancel(mine) == WithoutCancel(key) : mine == key;
+        }
+
+        // A decision key without its "cancel" answer (the last '#' part lists the answers, ';'-separated).
+        private static string WithoutCancel(string key) =>
+            key.LastIndexOf('#') is int hash and >= 0
+                ? key[..(hash + 1)] + string.Join(";", key[(hash + 1)..].Split(';').Where(o => o != "cancel"))
+                : key;
+
+        /// <summary>A real answer, not a sub-node for another kind of prompt ("@" key).</summary>
+        private static bool IsMove(string key) => !key.StartsWith('@');
+
         private static KeyValuePair<string, MctsNode>? StepAt(MctsNode node, bool ours)
         {
-            var tried = node.Children.Where(kv => kv.Value.Visits >= MinPlanVisits).ToList();
+            var tried = node.Children.Where(kv => IsMove(kv.Key) && kv.Value.Visits >= MinPlanVisits).ToList();
             if (tried.Count == 0)
                 return null;
             return ours ? tried.OrderByDescending(kv => kv.Value.Mean).First() : tried.OrderByDescending(kv => kv.Value.Visits).First();
@@ -1474,7 +1524,7 @@ namespace BotTest.Game.AI.Search
                     break;
                 KeyValuePair<string, MctsNode>? next;
                 lock (node.Lock)
-                    next = node.Children.Count == 0 ? null : node.Children.OrderByDescending(kv => kv.Value.Visits).First();
+                    next = node.Children.Count(kv => IsMove(kv.Key)) == 0 ? null : node.Children.Where(kv => IsMove(kv.Key)).OrderByDescending(kv => kv.Value.Visits).First();
                 if (next is not { } step || step.Key == "end")
                     break;
                 node = step.Value;
@@ -1702,6 +1752,24 @@ namespace BotTest.Game.AI.Search
                     return Picks(SearchActions.CardPicks(tribute.SelectableCards!, tribute.Minimum, tribute.Maximum, false, rng, MaxPickOptions));
                 case SelectUnselectCardData unselect when (unselect.SelectableCards?.Length ?? 0) is var n && n > 0 && n <= MaxTreePickCards:
                     return Picks(SearchActions.CardPicks(unselect.SelectableCards!, Math.Min(unselect.Minimum, 1), 1, unselect.Minimum == 0 || unselect.Cancelable));
+                // Our sum (Machina Fortress's discard, fusion materials): one option per card, keyed as Omega's one-card-at-a-time prompt keys
+                // it (the live decision is a SelectUnselectCard), answered with a valid sum that includes that card (seen 2026-11-18 live: the
+                // search could never stop at the discard).
+                case SelectSumData sum when prompt.Player == 0 && (sum.SelectableCards?.Length ?? 0) > 0:
+                {
+                    var cards = sum.SelectableCards!;
+                    static int Param(DynamicCard c) => c.OpParam1 | (c.OpParam2 << 16);
+                    var must = (sum.MandatoryCards ?? Array.Empty<DynamicCard>()).Select(Param).ToList();
+                    var all = cards.Select(Param).ToList();
+                    var list = new List<Option>();
+                    for (int i = 0; i < cards.Length; i++)
+                        if (DuelSim.Engine.SumSolver.FindWith(must, all, i, sum.Sum, sum.Minimum, sum.Maximum, sum.MustBeExactValue) is { } picked)
+                        {
+                            var one = SearchActions.CardPicks(new[] { cards[i] }, 1, 1, false)[0];
+                            list.Add(new Option(one.Key, one.Label, new[] { (byte)picked.Count }.Concat(picked.Select(x => (byte)x)).ToArray()));
+                        }
+                    return list.GroupBy(o => o.Key).Select(g => g.First()).ToList();
+                }
                 case SelectChainData chain:
                 {
                     var cards = chain.SelectableCards ?? Array.Empty<DynamicCard>();

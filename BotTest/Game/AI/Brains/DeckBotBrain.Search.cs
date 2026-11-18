@@ -94,10 +94,11 @@ namespace BotTest.Game.AI.Brains
         /// value tuning set on this brain (Rules.SetCost).
         /// </summary>
         protected virtual double HoldCost(string rule) =>
-            // Sets held for Main Phase 2 cost nothing as holds: the search charges the actual sequence instead (a set in Main
-            // Phase 1, then the Battle Phase: LineTally), so a line that sets and never battles isn't charged
-            // and one that does isn't charged twice. The brain's own play still follows the rule.
-            rule is DeckRules.HoldSetsForBattle or DeckRules.HoldMonsterSetsForBattle ? 0 : Rules.Cost(rule);
+            // Monster sets held for Main Phase 2 cost nothing as holds: the search charges the actual sequence instead (a set in
+            // Main Phase 1, then the Battle Phase: LineTally). Spell/trap sets held for the battle cost their own tier on top
+            // (user, 2026-11-18: "'hold sets for battle' rule costs 0 in the scoring... what?! why?! yes give it a cost. give it
+            // 0.5": a Main Phase 1 set that then skipped the battle tied with attacking).
+            rule is DeckRules.HoldMonsterSetsForBattle ? 0 : Rules.Cost(rule);
 
         // Rules whose summon holds the search now checks on the actual line (LineTally, user 2026-11-13): a monster summoned
         // that never attacks, uses an effect or leaves the field; Lyla's effect, a union equip, or a set in Main Phase 1 before
@@ -544,6 +545,8 @@ namespace BotTest.Game.AI.Brains
 
         /// <summary>The turn number of the decision being made.</summary>
         protected int CurrentTurnNumber => _currentHeader.CurrentTurn;
+
+        public bool AlwaysUses(SelectEffectYnData data) => data.EffectCard is { } card && AlwaysTriggers(card);
 
         /// <summary>Optional effects the deck always uses when offered (no plan may decline them). Default: none.</summary>
         protected virtual bool AlwaysTriggers(DynamicCard card) => false;
@@ -1442,6 +1445,7 @@ namespace BotTest.Game.AI.Brains
                 view.InBattlePhase = inBattle;
                 view.FirstTurnOfDuel = turn == 1;
                 view.RealTurn = turn;
+                view.OnlyAttackerZone = _siroccoTarget.Turn == turn ? _siroccoTarget.Zone : -1;
                 view.Record = await BuildTurnRecordAsync();
                 // The board a mid-chain replay rebuilds (DeckBotBrain.MidChain): this decision, and our answers from here on.
                 if (IsOwnTurn(_currentHeader))
@@ -1610,7 +1614,7 @@ namespace BotTest.Game.AI.Brains
                     // Theirs, taken until the End Phase (Brain Control / Mind Control / Change of Heart activated this turn): it goes back
                     // in the rebuilt turn too and doesn't count toward our exposure (C1, user 2026-11-16). Taken for good (Goyo): ours.
                     Borrowed = card.Owner == 1 && _activatedThisTurn.Overlaps(TemporaryControlIds),
-                    DestroyAtOwnersEnd = IsReturnerJinzo(card) });
+                    DestroyAtOwnersEnd = IsReturnerJinzo(card), PositionLockEnds = PositionLockEnds(card) });
             foreach (var card in await CurrentField.GetBotCardsInZone(CardLocation.SpellZone, true))
                 view.OwnSpells.Add(ToView(card, card.ID) with { ThisTurn = OwnCardThisTurn(false, card) });
 
@@ -1624,7 +1628,8 @@ namespace BotTest.Game.AI.Brains
                     continue;
                 if (faceUpMonsters.TryGetValue(z, out var up) && up.ID > 0)
                 {
-                    view.EnemyMonsters.Add(ToView(up, up.ID) with { Improper = Summons.ImproperOnField(1, z), Battled = _battledThisTurn.Contains((_currentHeader.CurrentTurn, z, up.ID)) });
+                    view.EnemyMonsters.Add(ToView(up, up.ID) with { Improper = Summons.ImproperOnField(1, z), Battled = _battledThisTurn.Contains((_currentHeader.CurrentTurn, z, up.ID)),
+                        PositionLockEnds = PositionLockEnds(up) });
                     continue;
                 }
                 var faceDown = new DynamicCard { CurrentCoordinates = new CardCoordinate { Controller = 1, Location = (byte)CardLocation.MonsterZone, Sequence = (byte)z } };

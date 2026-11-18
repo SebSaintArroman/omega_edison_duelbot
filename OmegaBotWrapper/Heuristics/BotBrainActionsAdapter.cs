@@ -136,9 +136,14 @@ namespace OmegaBotWrapper.Heuristics
 
         public async Task<bool> OnSelectEffectYn(SelectEffectYnData state)
         {
-            bool used = (_brain as IDecisionRefiner)?.PlannedEffectYn(state) is bool planned
-                ? planned
-                : await SearchedYesNo(BotState.SelectEffectYn) ?? await _brain.OnSelectEffectYnAsync(CreateContext(BotState.SelectEffectYn, state));
+            // Every decision is searched (user, 2026-11-18); the plan's answer, then the brain's, only when the search has no verdict.
+            bool used = await SearchedYesNo(BotState.SelectEffectYn) is bool searched
+                ? searched
+                : (_brain as IDecisionRefiner)?.PlannedEffectYn(state) is bool planned
+                    ? planned
+                    : await _brain.OnSelectEffectYnAsync(CreateContext(BotState.SelectEffectYn, state));
+            if (!used && _brain is IDecisionRefiner always && always.AlwaysUses(state))
+                used = true;
             (_brain as IDecisionRefiner)?.EffectYnAnswered(state, used);
             return used;
         }
@@ -150,22 +155,22 @@ namespace OmegaBotWrapper.Heuristics
             _brain is IDecisionRefiner refiner && await refiner.SearchedChoiceAsync(state, YesNoKeys) is string key ? key == "yes" : null;
 
         public async Task<bool> OnSelectYesNo(SelectYesNoData state) =>
-            (_brain as IDecisionRefiner)?.PlannedYesNo(BotState.SelectYesNo) is bool planned
+            state.Description != 31 && await SearchedYesNo(BotState.SelectYesNo) is bool searched ? searched // (31: "attack directly?", always yes)
+            : (_brain as IDecisionRefiner)?.PlannedYesNo(BotState.SelectYesNo) is bool planned
                 ? planned
-                : state.Description != 31 && await SearchedYesNo(BotState.SelectYesNo) is bool searched ? searched // (31: "attack directly?", always yes)
                 : await _brain.OnSelectYesNoAsync(CreateContext(BotState.SelectYesNo, state));
 
         public async Task<int> OnSelectOption(SelectOptionData state)
         {
             var options = state.Options ?? Array.Empty<int>();
-            if ((_brain as IDecisionRefiner)?.PlannedOption(options) is int planned)
-                return planned;
             if (_brain is IDecisionRefiner refiner && await refiner.SearchedChoiceAsync(BotState.SelectOption, options.Select(o => $"option:{o}").ToList()) is string key)
             {
                 int index = Array.FindIndex(options, o => $"option:{o}" == key);
                 if (index >= 0)
                     return index;
             }
+            if ((_brain as IDecisionRefiner)?.PlannedOption(options) is int planned)
+                return planned;
             return await _brain.OnSelectOptionAsync(CreateContext(BotState.SelectOption, state));
         }
 
@@ -178,7 +183,7 @@ namespace OmegaBotWrapper.Heuristics
             var keys = (state.Positions ?? Array.Empty<byte>()).Select(p => $"pos:{p}").ToList();
             if (keys.Count > 1 && _brain is IDecisionRefiner refiner)
             {
-                string? key = refiner.PlannedChoice(BotState.SelectPosition, keys) ?? await refiner.SearchedChoiceAsync(BotState.SelectPosition, keys);
+                string? key = await refiner.SearchedChoiceAsync(BotState.SelectPosition, keys) ?? refiner.PlannedChoice(BotState.SelectPosition, keys);
                 if (key != null && byte.TryParse(key.AsSpan(4), out byte position))
                     return (CardPosition)position;
             }

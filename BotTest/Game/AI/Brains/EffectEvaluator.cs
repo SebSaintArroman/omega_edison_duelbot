@@ -199,6 +199,10 @@ namespace BotTest.Game.AI.Brains
         // "When this card is Synchro Summoned", "If this card is Normal or Special Summoned", "FLIP:"... (spent once on the field).
         private static readonly Regex OnSummonTrigger = R(
             @"(when|if) this card is (normal |special |synchro |xyz |fusion |tribute |flip )?(summoned|(normal or special|normal or flip) summoned)|^\s*flip:");
+        // An effect used from the hand only: its cost is the card itself in hand (D.D. Crow, Kuriboh, Honest: "discard this card").
+        // (Battle Fader: "Special Summon this card from your hand, then end the Battle Phase": seen 2026-11-18, a used Battle Fader on the field
+        // still scored its effect, and Substitoad tributed Junk Synchron instead of it.)
+        private static readonly Regex HandOnlyEffect = R(@"discard this card|this card from your hand|(send|banish|reveal) this card (from|in) your hand|while this card is in your hand");
         // Its own summoning procedure from the hand ("You can Special Summon this card (from your hand)").
         private static readonly Regex SelfSummonProcedure = R(@"special summon this card(?! from your (graveyard|gy))");
         // An effect it can use again and again ("Once per turn: ...").
@@ -261,11 +265,14 @@ namespace BotTest.Game.AI.Brains
                 {
                     bool hadAny = sentences.Count > 0;
                     var notSpent = sentences.Where(s => !OnSummonTrigger.IsMatch(s) && !(rule.Name == "special summons" && SelfSummonProcedure.IsMatch(s))).ToList();
-                    // Graveyard effects (Vayu, Necro Gardna) can't be used while it's on the field.
-                    sentences = notSpent.Where(s => !GraveyardEffect.IsMatch(s)).ToList();
+                    // Graveyard effects (Vayu, Necro Gardna) can't be used while it's on the field, nor hand-only ones (D.D. Crow's "discard
+                    // this card": seen 2026-11-18, a summoned Crow kept its whole effect, at the field weight, and the search summoned it).
+                    var notGrave = notSpent.Where(s => !GraveyardEffect.IsMatch(s)).ToList();
+                    sentences = notGrave.Where(s => !HandOnlyEffect.IsMatch(s)).ToList();
                     if (sentences.Count == 0)
                     {
-                        reasons.Add(hadAny && notSpent.Count > 0 ? $"{rule.Name} (works from the GY: not on the field)" : $"{rule.Name} (on summon: already used)");
+                        reasons.Add(!hadAny || notSpent.Count == 0 ? $"{rule.Name} (on summon: already used)"
+                            : notGrave.Count == 0 ? $"{rule.Name} (works from the GY: not on the field)" : $"{rule.Name} (works from the hand: not on the field)");
                         continue;
                     }
                 }

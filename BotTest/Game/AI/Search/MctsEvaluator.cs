@@ -76,6 +76,11 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>Their life points as the search began: gains above this count for nothing (CSV S6). 0: not set.</summary>
         public int TheirStartLp { get; init; }
+        /// <summary>Our life points at the decision: the life points we lose by the end of a line count against it (OwnDamageShare).</summary>
+        public int OurStartLp { get; init; }
+
+        [Tunable("Our life points lost by the end of a line count against it at this share of DamageBonusPer1000 (continuous: 0.5 x 0.1 per 1000 = 0.05 per 1000 lost). User, 2026-11-18: \"make it count 50% of the opponent's one\".")]
+        public static double OwnDamageShare = 0.5;
 
         /// <summary>Per card we draw in our turn, on top of the card itself: a drawn card counts as 1.01 cards (CSV S6, so free draws aren't
         /// skipped for a tie).</summary>
@@ -110,22 +115,24 @@ namespace BotTest.Game.AI.Search
         [Tunable("A line that attacked gets this much extra (card units) per 1000 damage dealt in our turn, in proportion (no cap). Small: damage is mostly the clock's business.")]
         public static double DamageBonusPer1000 = 0.1;
 
-        [Tunable("A side's clock on the other, as part of the board: worth ClockBonus / turns (card units) for a clock of that many turns (1 turn = the full bonus; no clock = 0). The turns are the brain's own clock (BoardAssessment.TurnsToWin).")]
-        public static double ClockBonus = 1.5;
-        [Tunable("Their clock on us counts this share of ClockBonus against a line (ours on them counts in full). User, 2026-11-18: \"tone down the penalty for being on a clock ... leave the bonus for the bot putting me on a clock as is\".")]
+        [Tunable("A side's clock on the other, as part of the board (card units), by its length: entry 1 for a 1-turn clock, 2 for 2 turns, and so on; the last entry for that many turns or more (no clock = 0). The turns are the brain's own clock (BoardAssessment.TurnsToWin). User, 2026-11-18: 1.5 / 1 / 0.5 / 0.25 (4-5) / 0.1 (6-7) / 0.1 (8+, its own bracket).")]
+        public static double[] ClockByTurns = { 1.5, 1, 0.5, 0.25, 0.25, 0.1, 0.1, 0.1 };
+        [Tunable("Their clock on us counts this share of ClockByTurns against a line (ours on them counts in full). User, 2026-11-18: \"tone down the penalty for being on a clock ... leave the bonus for the bot putting me on a clock as is\".")]
         public static double TheirClockShare = 0.5;
 
         /// <summary>
         /// A player's clock as part of the board (user, 2026-11-17: "make a player's clock a part of the board state evaluation, following the
         /// existing clock rules that the brain uses ... give it a bonus the lower the clock is at the end"): the brain's clock
         /// (BoardAssessment.TurnsToWin, the same function its push / hold / spend rules use) for this side's face-up attack-position monsters
-        /// against the other side's monsters and life points, as ClockBonus / turns. Attacking lowers their life points, more monsters and
+        /// against the other side's monsters and life points, as ClockByTurns by its length. Attacking lowers their life points, more monsters and
         /// monsters kept alive add ATK: all of them shorten it.
         /// </summary>
         internal static double ClockValue(SideSummary attacker, SideSummary defender)
         {
             int turns = ClockTurns(attacker, defender);
-            return turns == BoardAssessment.NoClock ? 0 : ClockBonus / Math.Max(1, turns);
+            if (turns == BoardAssessment.NoClock || ClockByTurns.Length == 0)
+                return 0;
+            return ClockByTurns[Math.Clamp(turns, 1, ClockByTurns.Length) - 1];
         }
 
         /// <summary>The brain's clock (turns to win) of this side on the other, from a search position.</summary>
@@ -139,9 +146,12 @@ namespace BotTest.Game.AI.Search
         [Tunable("Gorz in our hand and our field empty at the end of a line: this small bonus (card units): Gorz can come out on their direct hit.")]
         public static double GorzReadyBonus = 0.3;
         private const int GorzCode = 44330098;
+        private const int LylaCode = 22624373;
 
         [Tunable("A line that wins: this many card units on top of its position, times the chance the win really works (WinChance). Large.")]
         public static double WinBonus = 10;
+        [Tunable("A won line: each card of ours it used up costs this much (card units) in the win's part of its score; the board it leaves doesn't count there (user, 2026-11-18).")]
+        public static double WinCardCost = 1.0;
 
         /// <summary>
         /// The chance a win found in a line really happens: none of their unknown set cards is a stopper that would have fired (the lines never
@@ -188,7 +198,7 @@ namespace BotTest.Game.AI.Search
                 return 0;
             var ours = host.Summary(0);
             var theirs = host.Summary(1);
-            double diff = SideScore(ours, 0, theirs) - SideScore(theirs, 1) + Dominance(ours, theirs, 0) - Dominance(theirs, ours, 1) - Threat(ours) - penalty -
+            double diff = SideScore(ours, 0, theirs) - SideScore(theirs, 1, ours) + Dominance(ours, theirs, 0) - Dominance(theirs, ours, 1) - Threat(ours) - penalty -
                           (ourTurnEnd is { } end ? Backrow(end.Ours, end.Theirs, end.Attacked) : 0);
             if (ourTurnEnd is { Attacked: true } attackedEnd)
             {
@@ -198,6 +208,10 @@ namespace BotTest.Game.AI.Search
                 if (TheirStartLp > 0 && attackedEnd.Theirs.LifePoints < TheirStartLp)
                     diff += DamageBonusPer1000 * (TheirStartLp - attackedEnd.Theirs.LifePoints) / 1000.0;
             }
+            // Our own life points lost by the end of the line, at half the damage bonus (user, 2026-11-18: Super-Nimble Mega Hamster switched to
+            // attack position took 1600 more damage from Gorz for nothing, the loss inside the same clock count costing nothing).
+            if (!won && OurStartLp > 0 && ours.LifePoints < OurStartLp)
+                diff -= OwnDamageShare * DamageBonusPer1000 * (OurStartLp - ours.LifePoints) / 1000.0;
             // Each side's clock on the other at the end of the line, as part of the board: ours on them counts for us, theirs on us against.
             if (!won)
                 diff += ClockValue(ours, theirs) - TheirClockShare * ClockValue(theirs, ours);
@@ -205,8 +219,15 @@ namespace BotTest.Game.AI.Search
             // you should get a small bonus for ending on an empty field because it'll let you use gorz").
             if (!won && ours.Monsters.Count == 0 && ours.SpellCodes.Count == 0 && ours.HandCodes.Any(c => SearchHost.Is(c, GorzCode)))
                 diff += GorzReadyBonus;
+            // A won line: what it spent, not the board it leaves (user, 2026-11-18: "yes, on that change to winning lines": a superfluous Bora
+            // summoned on the way to a win scored higher for the extra board). As an expected value, so a risky win compares like for like
+            // with lines that don't win: if the win works (its chance), the decision's own position plus the win bonus, less WinCardCost per
+            // card of ours the line used up; if it doesn't, the board the line actually ends with.
             if (won)
-                diff += WinBonus * WinChance(ourTurnEnd?.Attacked ?? true, theirs);
+            {
+                double chance = WinChance(ourTurnEnd?.Attacked ?? true, theirs);
+                diff = chance * (center + WinBonus - WinCardCost * Math.Max(0, cardsSpent) - penalty) + (1 - chance) * diff; // the rules it broke cost in both
+            }
             // A position still alive sits clearly between a loss and a win: far behind, the squashed score is ~0 and a line that
             // survives (the Dupe lock at 300 LP) looked no better than one that dies (seen 2026-11-11: every option scored 0-2
             // and the bot summoned Thestalos into a lost board instead of locking).
@@ -230,7 +251,7 @@ namespace BotTest.Game.AI.Search
         {
             var ours = host.Summary(0);
             var theirs = host.Summary(1);
-            return SideScore(ours, 0, theirs) - SideScore(theirs, 1) + Dominance(ours, theirs, 0) - Dominance(theirs, ours, 1) - Threat(ours) +
+            return SideScore(ours, 0, theirs) - SideScore(theirs, 1, ours) + Dominance(ours, theirs, 0) - Dominance(theirs, ours, 1) - Threat(ours) +
                    ClockValue(ours, theirs) - TheirClockShare * ClockValue(theirs, ours);
         }
 
@@ -471,12 +492,24 @@ namespace BotTest.Game.AI.Search
         public static double DefenceShare = 0.6;
         [Tunable("A face-down monster that gains from being set (a flip, a floater, a graveyard effect): its base worth.")]
         public static double SetFlipBase = 0.9;
+        // A set flip monster's effect is on the field already, ready to go: weighed like a field effect, so using it costs what it's worth
+        // (user, 2026-11-18: "using a one-time effect like ryko's should have cost the value of that effect, while attacking should have had no
+        // cost": at the held weight a set Ryko's destroy was ~0.3 card units, and Ryko was flipped for a kill an attack would have made).
+        [Tunable("Weight of a set flip / floater monster's effect points (its effect still to be used), like FieldEffectWeight: using it costs that much.")]
+        public static double SetFlipEffectWeight = 0.25;
         [Tunable("Any other face-down monster: just a wall (walls are worth little).")]
         public static double WallValue = 0.3;
         [Tunable("A face-up spell/trap's base worth, before its lasting effect.")]
         public static double FaceUpSpellBase = 0.3;
-        [Tunable("A set spell/trap's base worth, before what it will do.")]
-        public static double SetSpellBase = 0.5;
+        // Set cards by kind (user, 2026-11-18: "shouldn't there be separate ones for spells and traps (and a third for quick-play spells)?
+        // happy with raising it a bit in line with the new hand scores"): each 0.3 up with a hand card (0.5 -> 0.8), the old set-trap /
+        // set-quick-play bonuses (0.25 / 0.1) folded in, so setting a trap still beats holding it by 0.25.
+        [Tunable("A set normal / continuous / field / equip spell's base worth, before what it will do (also an unknown set card).")]
+        public static double SetSpellBase = 0.8;
+        [Tunable("A set quick-play spell's base worth, before what it will do.")]
+        public static double SetQuickPlayBase = 0.9;
+        [Tunable("A set trap's base worth, before what it will do.")]
+        public static double SetTrapBase = 1.05;
         [Tunable("A card in hand: its base worth, before its effects and ATK.")]
         public static double HandCardBase = 0.8; // user, 2026-11-18 (was 0.5)
         [Tunable("A monster in hand: its ATK counts as effect points at ATK / this.")]
@@ -575,7 +608,7 @@ namespace BotTest.Game.AI.Search
             var card = _values.Get(m.Code, side);
             double field = m.FaceUp
                 ? MonsterBase + AtkValue(Power(m)) + (m.Negated ? 0 : FieldEffectWeight * Taper(card.Field))
-                : card.LikesSet ? SetFlipBase + HeldEffectWeight * Taper(card.Held) : WallValue;
+                : card.LikesSet ? SetFlipBase + SetFlipEffectWeight * Taper(card.Held) : WallValue;
             field += Bonus(m.Code, m.FaceUp ? CardPlace.Field : CardPlace.Set, side);
             bool token = (m.Type & 0x4000) != 0;
             double grave = token ? 0 : (card.Grave > 0 ? card.Grave : GraveMonsterShare * (MonsterBase + AtkValue(Math.Max(0, SearchHost.Cards.Get(m.Code)?.Attack ?? 0)) + FieldEffectWeight * Taper(card.Field))) + Bonus(m.Code, CardPlace.Grave, side);
@@ -612,7 +645,7 @@ namespace BotTest.Game.AI.Search
         // What one of our spells/traps is worth where it stands (lost to a wipe or Icarus).
         private double SpellLoss((int Code, bool FaceUp) s) =>
             s.FaceUp ? FaceUpSpellBase + FieldEffectWeight * Taper(_values.Get(s.Code, 0).Field) + Bonus(s.Code, CardPlace.Field, 0)
-                     : SetSpellBase + HeldEffectWeight * Taper(_values.Get(s.Code, 0).Held) + Bonus(s.Code, CardPlace.Set, 0);
+                     : SetBase(s.Code) + HeldEffectWeight * Taper(_values.Get(s.Code, 0).Held) + Bonus(s.Code, CardPlace.Set, 0);
 
         /// <summary>
         /// Single-card removal now (D-Prison, Bottomless, Raigeki Break, Compulsory...: OtherStopChance): our best monster, at a quarter
@@ -662,15 +695,11 @@ namespace BotTest.Game.AI.Search
                 return 0;
             // Bait (a set card worth chaining in response: Jar of Greed, Dust Tornado, MST...) isn't lost to it (CSV S2).
             var set = ours.SpellCodes.Where(c => !c.FaceUp && c.Code != SearchView.InertCard && !BaitCodes.Contains(c.Code))
-                .Select(c => SetSpellBase + HeldEffectWeight * Taper(_values.Get(c.Code, 0).Held) + Bonus(c.Code, CardPlace.Set, 0) + SetBonus(c.Code)).ToList();
+                .Select(c => SetBase(c.Code) + HeldEffectWeight * Taper(_values.Get(c.Code, 0).Held) + Bonus(c.Code, CardPlace.Set, 0)).ToList();
             // Each extra set card makes the wipe worse than one more card's worth (CSV S2: "gradually stops setting them").
             return HeavyStormChance * set.Sum() * Math.Max(1, set.Count * OversetCurve);
         }
 
-        /// <summary>The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play
-        /// spell (CSV S2/S3). Card units; numbers to confirm with the user.</summary>
-        [Tunable("The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.")]
-        public static double SetTrapBonus = 0.25, SetQuickPlayBonus = 0.1;
         /// <summary>A normal / continuous / field / equip spell is worth this much more in hand than set (CSV S3: setting Miracle Dig was a bad play).</summary>
         [Tunable("A normal / continuous / field / equip spell is worth this much more in hand than set (CSV S3: setting Miracle Dig was a bad play).")]
         public static double SpellInHandBonus0 = 0.5; // user, 2026-11-17: Brain Control set again: "increase the penalty for setting a non-chainable card" (was 0.1)
@@ -735,7 +764,7 @@ namespace BotTest.Game.AI.Search
             // Bait (Jar of Greed, Dust Tornado...): their MST, Lyla or Ryko picking among our sets may take it instead of a better one.
             if (BaitCodes.Contains(code) && ourSets.Count > 1)
             {
-                double others = ourSets.Where(c => !BaitCodes.Contains(c)).Sum(c => SetSpellBase + HeldEffectWeight * Taper(_values.Get(c, 0).Held));
+                double others = ourSets.Where(c => !BaitCodes.Contains(c)).Sum(c => SetBase(c) + HeldEffectWeight * Taper(_values.Get(c, 0).Held));
                 extra += BaitWeight * others / ourSets.Count;
             }
             return extra;
@@ -768,8 +797,9 @@ namespace BotTest.Game.AI.Search
         [Tunable("A set bait card gains this times our other sets' worth over the number of our sets (the share of a random pick).")]
         public static double BaitWeight = 0.5;
 
-        private static double SetBonus(int code) =>
-            SearchHost.Cards.Get(code) is not { } r ? 0 : (r.Type & 0x4) != 0 ? SetTrapBonus : (r.Type & 0x2) != 0 && (r.Type & 0x10000) != 0 ? SetQuickPlayBonus : 0;
+        /// <summary>A set card's base worth by its kind: trap, quick-play spell, other spell (and an unknown card).</summary>
+        internal static double SetBase(int code) =>
+            SearchHost.Cards.Get(code) is not { } r ? SetSpellBase : (r.Type & 0x4) != 0 ? SetTrapBase : (r.Type & 0x2) != 0 && (r.Type & 0x10000) != 0 ? SetQuickPlayBase : SetSpellBase;
 
         private static double SpellInHandBonus(int code) =>
             SearchHost.Cards.Get(code) is { } r && (r.Type & 0x2) != 0 && (r.Type & 0x10000) == 0 ? SpellInHandBonus0 : 0;
@@ -841,10 +871,12 @@ namespace BotTest.Game.AI.Search
             foreach (var m in s.Monsters)
             {
                 var card = _values.Get(m.Code, side);
+                // Lyla's effect destroys a spell/trap: with none on the other side it's worth nothing (user, 2026-11-18).
+                bool idle = SearchHost.Is(m.Code, LylaCode) && other != null && other.SpellCodes.Count == 0;
                 value += m.FaceUp
-                    ? MonsterBase + AtkValue(Power(m)) + (m.Negated ? 0 : Effect(card.Field, FieldEffectWeight))
+                    ? MonsterBase + AtkValue(Power(m)) + (m.Negated || idle ? 0 : Effect(card.Field, FieldEffectWeight))
                     : card.LikesSet
-                        ? SetFlipBase + Effect(card.Held, HeldEffectWeight) // a flip or a floater, still to be used
+                        ? SetFlipBase + Effect(card.Held, SetFlipEffectWeight) // a flip or a floater, still to be used
                         : WallValue; // just a wall: walls are worth little
                 value += Bonus(m.Code, m.FaceUp ? CardPlace.Field : CardPlace.Set, side);
             }
@@ -856,7 +888,7 @@ namespace BotTest.Game.AI.Search
             foreach (var (code, faceUp) in s.SpellCodes.Where(c => c.Code != SearchView.InertCard)) // stand-ins count in Threat
             {
                 var card = _values.Get(code, side);
-                value += faceUp ? FaceUpSpellBase + Effect(card.Field, FieldEffectWeight) : SetSpellBase + Effect(card.Held, HeldEffectWeight) + (side == 0 ? SetBonus(code) : 0);
+                value += faceUp ? FaceUpSpellBase + Effect(card.Field, FieldEffectWeight) : SetBase(code) + Effect(card.Held, HeldEffectWeight);
                 if (!faceUp && side == 0)
                     value += SetCardSituational(code, card, protectNeed, lpNeed, ourSets, other) + (SearchHost.Is(code, SolemnJudgmentCode) ? SolemnGuardsHand(s) : 0);
                 value += Bonus(code, faceUp ? CardPlace.Field : CardPlace.Set, side);

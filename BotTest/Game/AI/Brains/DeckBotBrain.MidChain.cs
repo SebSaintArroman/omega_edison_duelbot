@@ -196,6 +196,15 @@ namespace BotTest.Game.AI.Brains
                     return stunAnswer == brainIndex ? null : stunAnswer;
             }
             catch { /* the brain's answer stands */ }
+            // Trap Dustshoot fires at the earliest chance (user, 2026-11-18: "dustshoot should be fired at the earliest opportunity ... it's an
+            // outlier in that regard": it needs their 4+ cards in hand, which only shrinks). The search's lines can't value it (their unseen
+            // hand cards are blanks there, so it hits nothing), so it doesn't overrule the brain here.
+            var brainCards = context.StateData.SelectableCards ?? Array.Empty<DynamicCard>();
+            if (brainIndex >= 0 && brainIndex < brainCards.Length && brainCards[brainIndex].IsCode(TrapDustshootId))
+            {
+                context.Bot.LogNote("search: Trap Dustshoot fires at the earliest chance (no search)");
+                return null;
+            }
             // Their turn, or ours before any searched decision (our Draw and Standby Phases): the search from the turn's start
             // (DeckBotBrain.TurnLog; plan steps 3 and 4).
             if (!IsSearchTwin && _ownTurnParity >= 0 && SearchWanted(context.Bot) &&
@@ -414,6 +423,14 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         public async Task<IList<byte>?> RefinePickAsync(BotState state, object data, CancellationToken ct = default)
         {
+            // The next card of a sum Omega asks one card at a time (Machina Fortress's discard): the search chose the sum at its first card (the
+            // engine asks it whole, Mcts.OptionsFor); the rest is completed by the brain, no new search.
+            if (!IsSearchTwin && state == BotState.SelectUnselectCard && _checkpoints.Count >= 2 && _checkpoints[^1].Answer == null &&
+                _checkpoints[^2] is { State: BotState.SelectUnselectCard, Answer: { Key: var prev } } && prev.StartsWith("pick:") && prev != "pick:")
+            {
+                _trackedBot?.LogNote("search: the next card of a sum the search chose at its first card: the brain completes it");
+                return null;
+            }
             // Their turn, or ours before any searched decision: the search from the turn's start (DeckBotBrain.TurnLog).
             if (!IsSearchTwin && _trackedBot != null && _ownTurnParity >= 0 && SearchWanted(_trackedBot) &&
                 (!IsOwnTurn(_currentHeader) || _anchor is not { } searched || searched.Turn != _currentHeader.CurrentTurn))
@@ -458,9 +475,8 @@ namespace BotTest.Game.AI.Brains
                 var planNode = PlannedNode(state);
                 var planStep = planNode is { } plan ? PlanNodeStep(plan.Node, options) : null;
                 string? original = planStep?.Key;
-                // Nothing new and a well-explored plan node: the plan's pick is played as it is (PlannedCards). Thin or missing: search here.
-                if (!news && planStep is { } sure && sure.Visits >= StartLines)
-                    return null;
+                // Every pick is searched, the plan's node continued (user, 2026-11-18: "I thought every decision got a search? this is a decision.
+                // it should have a search. otherwise we run into thin lines again"): the plan's pick is only the fallback.
                 var view = await BuildSearchViewAsync(bot);
                 bot.LogNote((news ? "search: MID-CHAIN replan at a pick (something new since the plan, no chain window to re-plan in)"
                                   : planNode != null ? $"search: pick: the plan's node is thin ({planStep?.Visits ?? 0} lines behind its best pick); searching on from it"

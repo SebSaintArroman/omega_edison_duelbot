@@ -41,6 +41,8 @@ namespace BotTest.Game.AI.Search
         public bool Battled;
         /// <summary>Ours: destroyed in our next End Phase (Jinzo revived by Jinzo - Returner), as the real card's effect does.</summary>
         public bool DestroyAtOwnersEnd;
+        /// <summary>End Phases (counting this turn's) until its battle position may change again (0: free): Lyla's lock (ViewCard.PositionLockEnds).</summary>
+        public int PositionLockEndPhases;
     }
 
     /// <summary>
@@ -69,12 +71,18 @@ namespace BotTest.Game.AI.Search
         /// next of these to the top of the deck, so a shuffle before the draw (Pot of Avarice) still draws what the real game drew.</summary>
         public List<int> ForcedDraws { get; } = new();
 
+        /// <summary>Cards a random pick takes first when they're among its choices (a replay's real random outcomes: Thestalos's discard).</summary>
+        public List<int> RandomPicks { get; } = new();
+
         /// <summary>
         /// Turns the engine skips before play starts (EFFECT_SKIP_TURN: a skipped turn only runs its resets), for a replay from the start
         /// of a real turn (TurnReplay): 1 = their turn 2 is the rebuilt turn (with its draw), 2 = our turn 3 is (with its draw; turn 1
         /// never draws). 0 = the rebuilt turn is turn 1, ours, as for every search from our own main / battle decisions.
         /// </summary>
         public int SkipTurns { get; set; }
+
+        /// <summary>Our monster zone whose monster alone may attack in the rebuilt turn (-1: none): Sirocco's restriction (SearchView.OnlyAttackerZone).</summary>
+        public int OnlyAttackerZone { get; set; } = -1;
 
         /// <summary>The engine turn the line's real turn is played on.</summary>
         public int RebuiltTurn => 1 + SkipTurns;
@@ -140,6 +148,11 @@ namespace BotTest.Game.AI.Search
             for (int i = 0; i < Cards.Count; i++)
             {
                 string c = $"c[{i + 1}]";
+                // A position lock that outlives the rebuild (Lyla's "cannot change its battle position until the end of your next turn"): counted in
+                // End Phases, the skipped turns' ones included (their resets fire too).
+                if (Cards[i].PositionLockEndPhases > 0 && Cards[i].Location == LocMZone)
+                    lua.Append($"if {c} then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_CANNOT_CHANGE_POSITION) ")
+                        .Append($"e:SetReset(RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END,{Cards[i].PositionLockEndPhases + SkipTurns}) {c}:RegisterEffect(e) end\n");
                 if (Cards[i].DestroyAtOwnersEnd && Cards[i].Location == LocMZone)
                     lua.Append($"if {c} then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS) e:SetRange(LOCATION_MZONE) ")
                         .Append($"e:SetCode(EVENT_PHASE+PHASE_END) e:SetCountLimit(1) e:SetCondition(function(e) return Duel.IsTurnPlayer(e:GetHandler():GetControler()) end) ")
@@ -148,6 +161,13 @@ namespace BotTest.Game.AI.Search
                     lua.Append($"if {c} and c{DariusId} and c{DariusId}.regop then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS) ")
                         .Append($"e:SetCode(EVENT_LEAVE_FIELD_P) e:SetOperation(c{DariusId}.regop) e:SetReset(RESET_EVENT+RESETS_STANDARD) {c}:RegisterEffect(e) end\n");
             }
+            // Sirocco the Dawn's restriction this turn: our other monsters, those summoned later too, can't attack (its own field effect, by the
+            // target's field id, reset at the End Phase; the skipped turns' End Phases count).
+            int onlyAttacker = OnlyAttackerZone < 0 ? -1 : Cards.FindIndex(x => x.Controller == 0 && x.Location == LocMZone && x.Sequence == OnlyAttackerZone);
+            if (onlyAttacker >= 0)
+                lua.Append($"do local tc=c[{onlyAttacker + 1}] if tc then local e=Effect.GlobalEffect() e:SetType(EFFECT_TYPE_FIELD) e:SetCode(EFFECT_CANNOT_ATTACK) ")
+                    .Append("e:SetProperty(EFFECT_FLAG_OATH) e:SetTargetRange(LOCATION_MZONE,0) local fid=tc:GetFieldID() e:SetTarget(function(e,c) return c:GetFieldID()~=fid end) ")
+                    .Append($"e:SetReset(RESET_PHASE+PHASE_END,{1 + SkipTurns}) Duel.RegisterEffect(e,0) end end\n");
             // The stand-in for unknown cards (SearchView.InertCard, Bubble Blaster) must never do anything: no copy can be activated (a safety
             // net: one Zombie TeleDAD list plays Bubbleman; the old stand-in, Jar Robber, answered the Pot of Greed every deck plays now).
             lua.Append("do local e=Effect.GlobalEffect() e:SetType(EFFECT_TYPE_FIELD) e:SetProperty(EFFECT_FLAG_PLAYER_TARGET) e:SetCode(EFFECT_CANNOT_ACTIVATE) ")
@@ -167,6 +187,13 @@ namespace BotTest.Game.AI.Search
             // A replay's draws: before each of our draw effects in the rebuilt turn, the card the real game drew goes to the top of the
             // deck (a shuffle first, as Pot of Avarice does, would otherwise draw at random; user, 2026-11-15). Only these cards, once each.
             lua.Append("_st_draws={").Append(string.Join(",", ForcedDraws)).Append("}\n");
+            // A replay's random picks (seen 2026-11-18: Thestalos discarded another card of ours in the line): the cards that really went, first.
+            lua.Append("_st_random={").Append(string.Join(",", RandomPicks)).Append("}\n");
+            lua.Append("if not _st_rs then _st_rs=Group.RandomSelect Group.RandomSelect=function(g,p,n,...) ")
+                .Append("if _st_random and #_st_random>0 and Duel.GetTurnCount()==_st_turn then local out=Group.CreateGroup() ")
+                .Append("for i=1,#_st_random do if out:GetCount()<n then local tc=g:Filter(function(c) return c:IsCode(_st_random[i]) and not out:IsContains(c) end,nil):GetFirst() ")
+                .Append("if tc then out:AddCard(tc) _st_random[i]=0 end end end ")
+                .Append("if out:GetCount()==n then return out end end return _st_rs(g,p,n,...) end end\n");
             lua.Append("if not _st_draw then _st_draw=Duel.Draw Duel.Draw=function(p,n,r) ")
                 .Append("if p==0 and _st_draws and #_st_draws>0 and Duel.GetTurnCount()==_st_turn then ")
                 // Cards no longer in the deck (a search took them first) are dropped, so they don't hold up the cards behind them.

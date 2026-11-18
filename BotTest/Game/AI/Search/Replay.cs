@@ -5,7 +5,12 @@ using OmegaBotWrapper.Struct;
 namespace BotTest.Game.AI.Search
 {
     /// <summary>One answer of ours in the real game since the last searched decision: the prompt's kind and the answer as a key.</summary>
-    internal sealed record ReplayStep(BotState State, string Key, string Label);
+    internal sealed record ReplayStep(BotState State, string Key, string Label)
+    {
+        /// <summary>The answer's exact key (zones kept), tried before the loose <see cref="Key"/>: with two copies of a card on the field
+        /// the loose key took the first one (seen 2026-11-18: the replay changed the position of the other Machina Gearframe).</summary>
+        public string? Exact { get; init; }
+    }
 
     /// <summary>
     /// A card of theirs we saw come into play since the last searched decision, and when: after <see cref="AfterOurAnswers"/>
@@ -55,7 +60,7 @@ namespace BotTest.Game.AI.Search
                     case IdleCmdData idle:
                     {
                         var c = SearchActions.Idle(idle).FirstOrDefault(x => SearchActions.Packet(x.Response).AsSpan().SequenceEqual(response));
-                        return c == null ? Raw(state, response) : new ReplayStep(state, SearchActions.LooseKey(c.Key), c.Label);
+                        return c == null ? Raw(state, response) : new ReplayStep(state, SearchActions.LooseKey(c.Key), c.Label) { Exact = c.Key };
                     }
                     case BattleCmdData battle:
                     {
@@ -63,7 +68,7 @@ namespace BotTest.Game.AI.Search
                         // Omega attacks with the first attacker by zone whatever index we send (server attack order): that one.
                         if (c != null && c.Key.StartsWith("attack:"))
                             c = SearchActions.Battle(battle).FirstOrDefault(x => x.Key.StartsWith("attack:")) ?? c;
-                        return c == null ? Raw(state, response) : new ReplayStep(state, SearchActions.LooseKey(c.Key), c.Label);
+                        return c == null ? Raw(state, response) : new ReplayStep(state, SearchActions.LooseKey(c.Key), c.Label) { Exact = c.Key };
                     }
                     case SelectChainData chain:
                     {
@@ -72,8 +77,8 @@ namespace BotTest.Game.AI.Search
                         if (i < 0 || i >= cards.Length)
                             return new ReplayStep(state, "pass", "don't chain");
                         var descs = chain.Descriptions ?? Array.Empty<int>();
-                        return new ReplayStep(state, SearchActions.LooseKey($"chain:{SearchActions.CardKey(cards[i])}:{(i < descs.Length ? descs[i] : 0)}"),
-                            $"chain {OmegaBotWrapper.Logging.CardNames.Get(cards[i].ID)}");
+                        string chainKey = $"chain:{SearchActions.CardKey(cards[i])}:{(i < descs.Length ? descs[i] : 0)}";
+                        return new ReplayStep(state, SearchActions.LooseKey(chainKey), $"chain {OmegaBotWrapper.Logging.CardNames.Get(cards[i].ID)}") { Exact = chainKey };
                     }
                     case SelectPositionData when response.Length >= 1:
                         // As the search's tree keys a position (Mcts.OptionsFor).
@@ -91,12 +96,17 @@ namespace BotTest.Game.AI.Search
                     if (n == 0)
                         return new ReplayStep(state, "pick:", "cancel");
                     var keys = new List<string>();
+                    var exact = new List<string>();
                     for (int k = 1; k <= n && k < response.Length; k++)
                         if (response[k] < pickFrom.Length)
+                        {
                             keys.Add(Loose(pickFrom[response[k]]));
+                            exact.Add(SearchActions.CardKey(pickFrom[response[k]]));
+                        }
                     return new ReplayStep(state, "pick:" + string.Join('+', keys.OrderBy(x => x, StringComparer.Ordinal)),
                         "pick " + string.Join(" + ", Enumerable.Range(1, Math.Min(n, response.Length - 1)).Where(k => response[k] < pickFrom.Length)
-                            .Select(k => pickFrom[response[k]].ID > 0 ? OmegaBotWrapper.Logging.CardNames.Get(pickFrom[response[k]].ID) : "a face-down card")));
+                            .Select(k => pickFrom[response[k]].ID > 0 ? OmegaBotWrapper.Logging.CardNames.Get(pickFrom[response[k]].ID) : "a face-down card")))
+                        { Exact = "pick:" + string.Join('+', exact) };
                 }
                 return Raw(state, response);
             }
@@ -119,20 +129,28 @@ namespace BotTest.Game.AI.Search
                 case IdleCmdData idle:
                 {
                     var idleChoices = SearchActions.Idle(idle).ToList();
-                    var m = idleChoices.FirstOrDefault(c => SearchActions.LooseKey(c.Key) == key) ??
+                    var m = idleChoices.FirstOrDefault(c => c.Key == step.Exact) ?? idleChoices.FirstOrDefault(c => SearchActions.LooseKey(c.Key) == key) ??
                             (SearchActions.SameMoveIn(key, idleChoices.Select(c => c.Key)) is { } same ? idleChoices.First(c => c.Key == same) : null);
                     return m != null ? SearchActions.Packet(m.Response) : null;
                 }
                 case BattleCmdData battle:
-                    return SearchActions.Battle(battle, anyOrder: true).FirstOrDefault(c => SearchActions.LooseKey(c.Key) == key) is { } b ? SearchActions.Packet(b.Response) : null;
+                {
+                    var battleChoices = SearchActions.Battle(battle, anyOrder: true).ToList();
+                    return (battleChoices.FirstOrDefault(c => c.Key == step.Exact) ?? battleChoices.FirstOrDefault(c => SearchActions.LooseKey(c.Key) == key)) is { } b
+                        ? SearchActions.Packet(b.Response) : null;
+                }
                 case SelectChainData chain:
                 {
                     if (key == "pass")
                         return chain.Forced ? null : BitConverter.GetBytes(-1);
                     var cards = chain.SelectableCards ?? Array.Empty<DynamicCard>();
                     var descs = chain.Descriptions ?? Array.Empty<int>();
+                    var chainKeys = Enumerable.Range(0, cards.Length).Select(i => $"chain:{SearchActions.CardKey(cards[i])}:{(i < descs.Length ? descs[i] : 0)}").ToList();
+                    int exactAt = step.Exact == null ? -1 : chainKeys.IndexOf(step.Exact);
+                    if (exactAt >= 0)
+                        return BitConverter.GetBytes(exactAt);
                     for (int i = 0; i < cards.Length; i++)
-                        if (SearchActions.LooseKey($"chain:{SearchActions.CardKey(cards[i])}:{(i < descs.Length ? descs[i] : 0)}") == key)
+                        if (SearchActions.LooseKey(chainKeys[i]) == key)
                             return BitConverter.GetBytes(i);
                     return null;
                 }
@@ -151,6 +169,23 @@ namespace BotTest.Game.AI.Search
             {
                 if (key == "pick:")
                     return new byte[] { 0 };
+                // The exact cards first (zones kept), when every one is on offer.
+                if (step.Exact is { Length: > 5 } exactPick && exactPick.StartsWith("pick:"))
+                {
+                    var exactChosen = new List<byte>();
+                    foreach (string w in exactPick[5..].Split('+'))
+                    {
+                        int at = Array.FindIndex(cardsToPick, c => SearchActions.CardKey(c) == w);
+                        if (at < 0 || exactChosen.Contains((byte)at))
+                        {
+                            exactChosen.Clear();
+                            break;
+                        }
+                        exactChosen.Add((byte)at);
+                    }
+                    if (exactChosen.Count > 0)
+                        return new[] { (byte)exactChosen.Count }.Concat(exactChosen).ToArray();
+                }
                 var wanted = key[5..].Split('+');
                 var used = new HashSet<int>();
                 var chosen = new List<byte>();
@@ -171,6 +206,37 @@ namespace BotTest.Game.AI.Search
                 return new[] { (byte)chosen.Count }.Concat(chosen).ToArray();
             }
             return null;
+        }
+
+        /// <summary>
+        /// A sum the engine asks at once (SelectSum), answered by the run of one-card picks Omega asked for it (SelectUnselectCard steps, up to a
+        /// finishing "pick:"): their cards, each matched once among the sum's. <paramref name="used"/>: the steps it covers. Null when none match.
+        /// </summary>
+        public static byte[]? SumPacket(SelectSumData data, IReadOnlyList<ReplayStep> steps, out int used)
+        {
+            used = 0;
+            var cards = data.SelectableCards ?? Array.Empty<DynamicCard>();
+            var chosen = new List<byte>();
+            foreach (var step in steps)
+            {
+                if (step.State != BotState.SelectUnselectCard || !step.Key.StartsWith("pick:"))
+                    break;
+                used++;
+                if (step.Key == "pick:")
+                    break; // finished
+                foreach (string w in step.Key[5..].Split('+'))
+                {
+                    int at = Enumerable.Range(0, cards.Length).FirstOrDefault(i => !chosen.Contains((byte)i) && Loose(cards[i]) == w, -1);
+                    if (at >= 0)
+                        chosen.Add((byte)at);
+                }
+            }
+            if (chosen.Count == 0)
+            {
+                used = 0;
+                return null;
+            }
+            return new[] { (byte)chosen.Count }.Concat(chosen).ToArray();
         }
 
         /// <summary>Their card pick that takes the targets this revealed card really took, or null (not those cards on offer).</summary>

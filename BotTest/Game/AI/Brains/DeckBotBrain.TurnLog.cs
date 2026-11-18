@@ -55,6 +55,8 @@ namespace BotTest.Game.AI.Brains
                     AuditTurn(bot, last, _checkpoints.ToList());
             }
             _currentHeader = header;
+            // Our hand at our last prompt of the last turn: what this turn's draw is measured against (UndoDraw).
+            var lastHand = _checkpoints.Count > 0 ? _checkpoints[^1].View.OwnHand.ToList() : null;
             _checkpoints.Clear();
             SearchView view;
             try { view = await BuildSearchViewAsync(bot); }
@@ -67,10 +69,46 @@ namespace BotTest.Game.AI.Brains
             // The first poll of a new turn still shows the last turn's End Phase (or no phase on turn 1): nothing drawn yet.
             // Turn 1 has no draw at all, so its snapshot is always a "before the draw" one.
             bool beforeDraw = header.CurrentTurn == 1 || header.CurrentPhase == 0 || (DuelPhase)header.CurrentPhase == DuelPhase.End;
+            // Live Omega's first view of a turn is usually its Draw Phase, the card already drawn (seen 2026-11-18: 117 live decisions had no
+            // turn-start replay). The draw is taken back out (the plan's late snapshot), so the rebuilt turn draws it again.
+            if (!beforeDraw && (DuelPhase)header.CurrentPhase == DuelPhase.Draw)
+            {
+                bool oursNow = header.CurrentPlayer == 0;
+                if (_ownTurnParity < 0)
+                    _ownTurnParity = oursNow ? header.CurrentTurn % 2 : 1 - header.CurrentTurn % 2;
+                bot.LogNote($"turn log: turn {header.CurrentTurn}: snapshot in the Draw Phase; {UndoDraw(view, oursNow, lastHand)}");
+                beforeDraw = true;
+            }
             _turnStart = new TurnStartSnapshot(header.CurrentTurn, beforeDraw, header.CurrentPhase, view);
             bot.LogNote($"turn log: turn {header.CurrentTurn} ({TurnOwnerWord(header.CurrentTurn)}) starts; snapshot {SnapshotWhen(_turnStart)}: " +
                         $"our hand {view.OwnHand.Count}, field {view.OwnMonsters.Count}+{view.OwnSpells.Count}; " +
                         $"their hand {view.EnemyHandCount}, field {view.EnemyMonsters.Count}+{view.EnemySpells.Count}; LP {view.LifePoints[0]} / {view.LifePoints[1]}");
+        }
+
+        /// <summary>
+        /// A Draw Phase snapshot made into one from before the draw: their hand one card smaller on their turn; on ours, the card our hand
+        /// gained since our last prompt (else the newest hand card) back into our deck, where the replay finds it as the turn's draw.
+        /// </summary>
+        private static string UndoDraw(SearchView view, bool ours, List<int>? lastHand)
+        {
+            if (!ours)
+            {
+                view.EnemyHandCount = Math.Max(0, view.EnemyHandCount - 1);
+                return "their draw taken back (their hand one smaller)";
+            }
+            if (view.OwnHand.Count == 0)
+                return "our hand is empty: nothing to take back";
+            int drawn = view.OwnHand[^1];
+            if (lastHand != null)
+            {
+                var left = lastHand.ToList();
+                var gained = view.OwnHand.Where(id => !left.Remove(id)).ToList();
+                if (gained.Count == 1)
+                    drawn = gained[0];
+            }
+            view.OwnHand.Remove(drawn);
+            view.OwnDeck.Add(drawn);
+            return $"our draw ({OmegaBotWrapper.Logging.CardNames.Get(drawn)}) taken back into the deck";
         }
 
         /// <summary>
@@ -83,6 +121,10 @@ namespace BotTest.Game.AI.Brains
             if (!IsSearchTwin)
             {
                 try { await TrackTemporaryMonstersAsync(); }
+                catch { /* tracking is best effort */ }
+                try { await TrackTheirAttackersAsync(header); }
+                catch { /* tracking is best effort */ }
+                try { await TrackLylasAsync(header.CurrentTurn); }
                 catch { /* tracking is best effort */ }
             }
             if (IsSearchTwin || _turnStart is not { } start || start.Turn != header.CurrentTurn)
@@ -100,6 +142,10 @@ namespace BotTest.Game.AI.Brains
         // ------------------------------------------------------------------ temporary monsters (user, 2026-11-18)
 
         private const int JinzoReturnerId = 9418534;
+        private const int SiroccoId = 75498415;
+        // Sirocco the Dawn activated this turn (its target pick still to come), and its target: our monster zone that alone may attack.
+        private int _siroccoPending = -1;
+        private (int Turn, int Zone) _siroccoTarget = (-1, -1);
         // Our monster zones holding a Jinzo revived by Jinzo - Returner (destroyed in our next End Phase by Returner's effect).
         private readonly HashSet<int> _returnerJinzoZones = new();
         // Returner was just used: our Jinzo zones before it resolved (the new one is Returner's).
@@ -116,9 +162,44 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         protected bool IsTemporaryMonster(DynamicCard card) =>
             IsReturnerJinzo(card) ||
+            // Theirs, borrowed until the End Phase (Brain Control, Change of Heart, Mind Control): expendable (user, 2026-11-18: "give all cards
+            // borrowed from me the expendable tag (if they're borrowed, not if they're taken for good like goyo guardian)").
+            card.CurrentCoordinates.Controller == 0 && card.Owner == 1 && _activatedThisTurn.Overlaps(TemporaryControlIds) ||
             _ownMonsters.Any(darius => darius.IsCode(SearchPosition.DariusId) && darius.IsFaceup() &&
                                        (darius.TargetCards ?? Array.Empty<CardCoordinate>()).Any(t => t.Location == (byte)CardLocation.MonsterZone &&
                                            t.Controller == 0 && t.Sequence == card.CurrentCoordinates.Sequence));
+
+        // Face-up Lylas (controller, zone): in attack position at the last prompt, and the real turn whose End Phase ends her position lock
+        // (0: none). Her effect turns her to defence, then "this card cannot change its battle position until the end of your next turn".
+        private readonly Dictionary<(int Controller, int Zone), (bool Attack, int LockEnds)> _lylas = new();
+        private static readonly int[] LylaIds = { 22624373, 22624393 }; // official, pre-errata
+
+        /// <summary>At each prompt: a Lyla gone from attack to defence used her effect (locked until the end of her controller's next turn).</summary>
+        private async Task TrackLylasAsync(int turn)
+        {
+            var seen = new HashSet<(int, int)>();
+            var cards = (await GetBotMonsterCardsAsync(onlyFaceUp: true)).Concat(await GetEnemyMonsterCardsAsync(onlyFaceUp: true));
+            foreach (var card in cards.Where(c => c.IsFaceup() && c.IsCode(LylaIds)))
+            {
+                var key = ((int)card.CurrentCoordinates.Controller, (int)card.CurrentCoordinates.Sequence);
+                seen.Add(key);
+                bool attack = card.IsAttack();
+                int lockEnds = 0;
+                if (_lylas.TryGetValue(key, out var was))
+                {
+                    lockEnds = was.Attack && !attack ? turn + 2 : was.LockEnds;
+                    if (lockEnds > 0 && turn > lockEnds)
+                        lockEnds = 0;
+                }
+                _lylas[key] = (attack, lockEnds);
+            }
+            foreach (var gone in _lylas.Keys.Where(k => !seen.Contains(k)).ToList())
+                _lylas.Remove(gone);
+        }
+
+        /// <summary>The real turn whose End Phase ends this monster's position lock (Lyla's), or 0.</summary>
+        protected int PositionLockEnds(DynamicCard card) =>
+            _lylas.TryGetValue(((int)card.CurrentCoordinates.Controller, (int)card.CurrentCoordinates.Sequence), out var l) && card.IsCode(LylaIds) ? l.LockEnds : 0;
 
         /// <summary>At each prompt: Returner's Jinzo found after Returner was used, and zones no longer holding a Jinzo forgotten.</summary>
         private async Task TrackTemporaryMonstersAsync()
@@ -141,6 +222,21 @@ namespace BotTest.Game.AI.Brains
             if (!IsSearchTwin && ReplayKeys.Of(state, data, response) is { } step && step.Key.Contains(JinzoReturnerId.ToString()) &&
                 !step.Key.StartsWith("pick:"))
                 _jinzoZonesBeforeReturner = _ownMonsters.Where(m => m.IsCode(JinzoId) && m.IsFaceup()).Select(m => (int)m.CurrentCoordinates.Sequence).ToHashSet();
+            // Sirocco the Dawn used: its target (our next pick of our own monster) alone may attack this turn (SearchView.OnlyAttackerZone).
+            if (!IsSearchTwin && _siroccoPending == _currentHeader.CurrentTurn && data is SelectCardData siroccoPick && response.Length >= 2 &&
+                siroccoPick.SelectableCards is { } offered && response[1] < offered.Length &&
+                offered[response[1]].CurrentCoordinates is { Controller: 0, Location: (byte)CardLocation.MonsterZone } at)
+            {
+                _siroccoTarget = (_currentHeader.CurrentTurn, at.Sequence);
+                _siroccoPending = -1;
+            }
+            if (!IsSearchTwin && ReplayKeys.Of(state, data, response) is { } siroccoUse && SearchActions.KeyCardId(siroccoUse.Key) == SiroccoId &&
+                (siroccoUse.Key.StartsWith($"{(int)MainAction.Activate}:") || siroccoUse.Key.StartsWith("chain:")))
+                _siroccoPending = _currentHeader.CurrentTurn;
+            // Every activation we send counts as activated this turn, whoever chose it (the search's too: Brain Control's borrow check).
+            if (!IsSearchTwin && ReplayKeys.Of(state, data, response) is { } sent &&
+                (sent.Key.StartsWith($"{(int)MainAction.Activate}:") || sent.Key.StartsWith("chain:")) && SearchActions.KeyCardId(sent.Key) is > 0 and var activated)
+                MarkCardActivated(activated);
             if (IsSearchTwin || _checkpoints.Count == 0 || _checkpoints[^1].Answer != null || _checkpoints[^1].State != state)
                 return;
             _checkpoints[^1].Answer = ReplayKeys.Of(state, data, response);

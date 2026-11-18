@@ -146,6 +146,12 @@ namespace OmegaBotWrapper
             {
                 BotLogger.Log(BotID, "System", "Bot stopped by cancellation.");
             }
+            // The server drops a bot when its duel is over: the next poll fails with an HTTP error. One line, not a stack trace
+            // (user, 2026-11-18: "lots of noise is creeping into the logs").
+            catch (System.Net.Http.HttpRequestException ex)
+            {
+                BotLogger.Log(BotID, "System", $"Server stopped answering ({(ex.StatusCode is { } code ? $"HTTP {(int)code} {code}" : ex.Message)}): the duel is over or the bot was removed.");
+            }
             catch (Exception ex)
             {
                 BotLogger.Error(BotID, "Heartbeat failed", ex);

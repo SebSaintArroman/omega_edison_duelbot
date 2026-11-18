@@ -28,6 +28,9 @@ namespace OmegaBotWrapper.Heuristics
         /// <summary>The planned answer to an optional effect (the brain may insist on one: a trigger it always uses), or null.</summary>
         bool? PlannedEffectYn(SelectEffectYnData data) => PlannedYesNo(BotState.SelectEffectYn);
 
+        /// <summary>An optional effect the deck always uses (Black Whirlwind): no search or plan may decline it.</summary>
+        bool AlwaysUses(SelectEffectYnData data) => false;
+
         /// <summary>The planned option (index into <paramref name="options"/>) that follows a refined decision, or null.</summary>
         int? PlannedOption(int[] options);
 
