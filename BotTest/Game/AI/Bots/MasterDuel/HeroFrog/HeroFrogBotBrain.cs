@@ -31,7 +31,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         [Tunable("The search's setup value for Treeborn Frog in our graveyard with no spell/trap of ours out (it comes back).")]
         public static double TreebornLiveValue = 0; // user, 2026-11-17: its own GY reading (it revives itself, 1.0) is the value; was 0.6
         [Tunable("The search's setup value for Treeborn Frog in our graveyard while a spell/trap of ours blocks it (negative: a cost).")]
-        public static double TreebornBlockedValue = -1; // blocked by our spell/trap it can't come back: cancels its GY reading (2026-11-17; was -0.3)
+        public static double TreebornBlockedValue = -2; // blocked by our spell/trap it can't come back: cancels its GY reading (1.0) and costs 1.0 more, above the set-card bonuses (user, 2026-11-18)
         [Tunable("The search's setup value for the Dupe Frog lock (two face-up Dupe Frogs).")]
         public static double DupeLockValue = 2.0;
         [Tunable("The search's setup value for one face-up Dupe Frog.")]
@@ -93,10 +93,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             HeroFrogCardId.ElementalHeroOcean
         };
 
-        // Swap Frog's trigger: the Level 2- WATER Aqua sent from the deck to the graveyard (Treeborn: it comes back).
+        // Swap Frog's trigger: the Level 2- WATER Aqua sent from the deck to the graveyard, best first (user, 2026-11-18): Treeborn (it comes
+        // back), then Substitoad, then another Swap Frog; Dupe Frog last (its search only fires from the field).
         private static readonly int[] SwapFrogSends =
         {
-            HeroFrogCardId.TreebornFrog, HeroFrogCardId.DupeFrog, HeroFrogCardId.SwapFrog, HeroFrogCardId.Substitoad
+            HeroFrogCardId.TreebornFrog, HeroFrogCardId.Substitoad, HeroFrogCardId.SwapFrog, HeroFrogCardId.DupeFrog
         };
 
         private static readonly int[] OwnTriggers =
@@ -974,6 +975,20 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         /// <summary>The turn Swap Frog was Normal Summoned to put a WATER in the graveyard for Miracle Fusion (its send picks that, not Treeborn).</summary>
         private int _swapSendForFusionTurn = -1;
 
+        /// <summary>
+        /// The set the frog deck holds back (user, 2026-11-18): Spiritual Water Art - Aoi without a face-up WATER monster of ours on the field
+        /// ("should never be set unless you have a water monster on field"). (Enemy Controller may be set with a plan to use it: the Treeborn
+        /// blocking penalty, TreebornBlockedValue, charges a set left in place.)
+        /// </summary>
+        protected override async Task DeckHoldsAsync(DecisionContext<IdleCmdData> context)
+        {
+            var setable = context.StateData.SpellSetableCards ?? Array.Empty<DynamicCard>();
+            if (setable.Any(card => IsId(card, HeroFrogCardId.SpiritualWaterArtAoi)) &&
+                !(await GetBotMonsterCardsAsync()).Any(card => card.IsFaceup() && (card.Attribute & (int)CardAttribute.Water) != 0) &&
+                Rule(HeroFrogRules.AoiSetNeedsWater))
+                Hold(HeroFrogCardId.SpiritualWaterArtAoi, MainAction.SetSpell, HeroFrogRules.AoiSetNeedsWater);
+        }
+
         /// <summary>The turn the Swap Frog route to the Dupe lock started (its steps follow one another).</summary>
         private int _swapLockTurn = -1;
 
@@ -1779,16 +1794,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                     .ThenBy(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Grave ? 0 : 1)
                     .ThenBy(x => EffectiveAttack(x.Card)), "fusion material (unplanned)");
 
-            // Swap Frog's trigger when it was summoned for Miracle Fusion's WATER: a Frog that isn't Treeborn (Swap Frog > Des
-            // Frog > Dupe Frog > Substitoad, from the deck).
-            if (hint == DHint.TOGRAVE && allOurs && _swapSendForFusionTurn == context.Header.CurrentTurn &&
-                indexed.Any(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck && !IsId(x.Card, HeroFrogCardId.TreebornFrog)))
-            {
-                _swapSendForFusionTurn = -1;
-                int[] order = { HeroFrogCardId.SwapFrog, HeroFrogCardId.DesFrog, HeroFrogCardId.DupeFrog, HeroFrogCardId.Substitoad };
-                return Pick(indexed.Where(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck && !IsId(x.Card, HeroFrogCardId.TreebornFrog))
-                    .OrderBy(x => Array.FindIndex(order, id => IsId(x.Card, id)) is int i and >= 0 ? i : order.Length), "Swap Frog sends a WATER for Miracle Fusion");
-            }
+            // (Swap Frog summoned for Miracle Fusion's WATER used to send a Frog other than Treeborn. No more: Treeborn always; user, 2026-11-18:
+            // "swap frog should always send treeborn frog".)
 
             // Miracle Fusion: which fusion -> Absolute Zero.
             if (hint == DHint.SPSUMMON && In(CardLocation.Extra) && indexed.Any(x => IsId(x.Card, HeroFrogCardId.ElementalHeroAbsoluteZero)))
@@ -1803,6 +1810,22 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 return Pick(indexed.OrderBy(x => Array.FindIndex(order, id => id > 0 && IsId(x.Card, id)) is int i and >= 0 ? i : order.Length), "special summon from the deck");
             }
 
+            // Swap Frog's trigger: Treeborn into the graveyard, always (user, 2026-11-18). Any other card it could send is held, so a search line
+            // that sends one (Dupe Frog, for its search) pays for it.
+            if (hint == DHint.TOGRAVE && allOurs && indexed.Any(x => IsId(x.Card, HeroFrogCardId.TreebornFrog) && x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck) &&
+                Rule(HeroFrogRules.SwapSendsTreeborn))
+                foreach (int other in indexed.Where(x => !IsId(x.Card, HeroFrogCardId.TreebornFrog)).Select(x => x.Card.ID).Distinct())
+                    HoldPick(other, HeroFrogRules.SwapSendsTreeborn);
+            // No Treeborn left: the rest of the order (Substitoad, Swap Frog, Dupe Frog last), each card below the best one on offer held lightly.
+            else if (hint == DHint.TOGRAVE && allOurs && indexed.Any(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck) &&
+                     indexed.Any(x => IsId(x.Card, HeroFrogCardId.SwapFrog) || IsId(x.Card, HeroFrogCardId.DupeFrog) || IsId(x.Card, HeroFrogCardId.Substitoad)) &&
+                     Rule(HeroFrogRules.SwapSendOrder))
+            {
+                var fromDeck = indexed.Where(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck).ToList();
+                int best = fromDeck.Min(x => StaplePriorityIndex(SwapFrogSends, x.Card));
+                foreach (int worse in fromDeck.Where(x => StaplePriorityIndex(SwapFrogSends, x.Card) > best).Select(x => x.Card.ID).Distinct())
+                    HoldPick(worse, HeroFrogRules.SwapSendOrder);
+            }
             // Swap Frog's trigger: Treeborn into the graveyard.
             if (hint == DHint.TOGRAVE && allOurs && In(CardLocation.Deck | CardLocation.MonsterZone) && indexed.Any(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck))
                 return Pick(indexed.Where(x => !(x.Card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && IsId(x.Card, HeroFrogCardId.SwapFrog)))

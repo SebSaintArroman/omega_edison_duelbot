@@ -544,3 +544,7 @@ EffectEvaluator.TunerValue = 0.5   # A Tuner monster (in hand or on the field): 
 # added 2026-11-17 20:07 (new in the code since the file was written)
 # --- SearchCardValues
 SearchCardValues.VayuGraveReading = 0.8   # Vayu's own graveyard worth (card points; its pairing is scored by the Vayu / Blackwing brains on top). User, 2026-11-17: about as valuable in the GY as Plaguespreader, more than Necro Gardna.
+
+# added 2026-11-18 10:58 (new in the code since the file was written)
+# --- MctsEvaluator
+MctsEvaluator.TheirClockShare = 0.5   # Their clock on us counts this share of ClockBonus against a line (ours on them counts in full). User, 2026-11-18: "tone down the penalty for being on a clock ... leave the bonus for the bot putting me on a clock as is".

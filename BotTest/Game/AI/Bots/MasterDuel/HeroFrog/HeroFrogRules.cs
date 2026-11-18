@@ -26,6 +26,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         public const string ProdigyFodder = "herofrog.prodigy-fodder";
         public const string PressureSummon = "herofrog.pressure-summon";
         public const string SwapBounce = "herofrog.swap-bounce";
+        /// <summary>Swap Frog's trigger sends Treeborn Frog, always (user, 2026-11-18).</summary>
+        [HoldCost(HoldCosts.Strong)]
+        public const string SwapSendsTreeborn = "herofrog.swap-sends-treeborn";
+        /// <summary>With no Treeborn to send, Swap Frog sends Substitoad, then another Swap Frog, Dupe Frog last (user, 2026-11-18).</summary>
+        [HoldCost(HoldCosts.Light)]
+        public const string SwapSendOrder = "herofrog.swap-send-order";
+        /// <summary>Spiritual Water Art - Aoi is never set without a face-up WATER monster of ours on the field (user, 2026-11-18).</summary>
+        [HoldCost(HoldCosts.Strong)]
+        public const string AoiSetNeedsWater = "herofrog.aoi-set-needs-water";
         public const string HoldMiracleFusion = "herofrog.hold-miracle-fusion";
         public const string HeroForFusion = "herofrog.hero-for-fusion";
         public const string RaigekiBreak = "herofrog.raigeki-break";

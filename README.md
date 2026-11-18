@@ -1,118 +1,83 @@
-<a name="readme-top"></a>
+# Omega Edison Duel Bot
 
-<div align="center">
-  <img src="https://avatars.githubusercontent.com/u/53418547" alt="logo" width="140"  height="auto" />
-  <br/>
+A Yu-Gi-Oh! bot for [YGO Omega](https://omega.duelistsunite.org/) that plays the Edison format (Master Duel rules). You start a custom-AI duel in Omega, and the bot plays it.
 
-  <h3><b>YGO OMEGA BOT API</b></h3>
+Each of its decisions is checked by a search: it plays thousands of short lines with a copy of the real rules engine, scores the positions they reach, and picks the move whose lines come out best.
 
-</div>
+## What you need
 
-# 📖 YGO OMEGA BOT API (Duel Bot Wrapper) <a name="about-project"></a>
+- Windows 10 or 11
+- [YGO Omega](https://omega.duelistsunite.org/), installed in its default folder (`C:\Program Files (x86)\YGO Omega`)
+- The [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0), to build the bot
 
-Duel Bot Wrapper is Omega Custom Duel BOT API of [Yu-Gi-Oh!](https://www.yugioh-card.com/en/) game written in [C#](https://dotnet.microsoft.com/en-us/languages/csharp). Compatible with [YGO Omega - The Ultimate Yu-Gi-Oh! Simulator.](https://omega.duelistsunite.org/)
+## Build
 
-## ✨ Features
+    git clone https://github.com/SebSaintArroman/omega_edison_duelbot.git
+    cd omega_edison_duelbot
+    dotnet build
 
-- **Create your BOT**
-  - It allows you to create and customize your own bot to interact with the game, automating actions like playing cards and responding to effects. "Create your bot" means building a personalized bot to suit your needs in the game. 
-  - You can create it in any format (Master Duel, Rush Duel, Speed Duel...)
-- **Soon...**
-  - Soon....
+A plain `dotnet build` makes the Release build (the fast one), which is what the launcher runs.
 
-## 💻 Getting Started
+## Play against it
 
-  - [🎮 **YGO Omega** ]
-    - Run YGO Omega
-    - Create a Duel
-    - Select AI_CUSTOM
+1. Run the launcher, from the repo folder:
 
-  - [🛠 **Bot Actions** ]
-    - Run Bot (Visual Studio or Bot.exe)
-    - Select the Duel Format
-    - Select the Deck
-    - It's time to duel!!
+       powershell -ExecutionPolicy Bypass -File Launch-DuelBot.ps1
 
-## 🪄 Available Decks <a name="built-with"></a>
+   It starts YGO Omega if it isn't already open, starts the bot, and opens the **AI Room** page in your browser (http://localhost:58966). If the bot is already running, it restarts it, so a new build is picked up. To have a one-click start, make a desktop shortcut to that command.
+2. In the AI Room page, choose the bot's **Deck** (or a random one).
+3. In YGO Omega, create a duel against the custom AI (**AI_CUSTOM**). The bot joins and plays.
 
-### Master Duel <a name="master-duel"></a>
+While you play, the page shows what the bot did and why. Each decision expands to show the board and the bot's reasons. Tick **Thinking** to watch its search progress, or **Engine chatter** to see the low-level messages. **Pause auto-start** stops the bot from joining new duels on its own.
 
-<details>
-  <summary>Blue-Eyes</summary>
-  <ul>
-    <li>Test Only</li>
-  </ul>
-</details>
+## Decks
 
-<details>
-  <summary>Swordsoul</summary>
-  <ul>
-    <li>First Basic combination done! Need updates new logics</li>
-  </ul>
-</details>
+All Edison format:
 
-### Speed Duel <a name="speed-duel"></a>
+- Miracle Vayu
+- Blackwing
+- Blackwing Hybrid
+- Gladiator Control
+- Hero Frog Monarchs
+- Machina Control
+- Machina Jinzo
 
-<details>
-  <summary>Super Duck</summary>
-  <ul>
-    <li>Skill: Room of Growth</li>
-    <li>Playable!</li>
-    <li>Difficulty: Normal</li>
-  </ul>
-</details>
+## Duel logs and comments
 
-<details>
-  <summary>Machine Angel Ascension</summary>
-  <ul>
-    <li>Skill: Machine Angel Ascension</li>
-    <li>Playable!</li>
-    <li>Difficulty: Normal</li>
-  </ul>
-</details>
+Every duel is written to `BotTest/duel-logs/`: a readable `.log`, and a `.jsonl` with the full detail. If the bot plays badly, use **Comment on this duel** on the page. The comment is saved to `BotTest/duel-logs/comments.jsonl`, together with the decision it's about, which makes it easy to find the moment in the log later.
 
-<details>
-  <summary>Amazoness</summary>
-  <ul>
-    <li>Skill: Battle City Bestie</li>
-    <li>Playable!</li>
-    <li>Difficulty: Normal/Hard</li>
-  </ul>
-</details>
+## Tuning
 
-### Rush Duel <a name="rush-duel"></a>
+Every number the bot weighs its decisions with lives in plain text files that you can edit:
 
-<details>
-  <summary>Seven Road</summary>
-  <ul>
-    <li>Test Only</li>
-  </ul>
-</details>
+- `BotTest/bot-tuning.txt`: shared values and the search's settings
+- `BotTest/bot-tuning-<Deck>.txt`: each deck's own values and rules
 
-## 🔭 Future Features <a name="future-features"></a>
+Each line has a short explanation. Restart the bot after editing.
 
-- [ ] **[Insert the Deck Hash directly from the console and the bot will execute its basic actions.]**
-- [ ] **[Create default actions for the most common cards.]**
-- [ ] **[Soon...]**
+## DuelSim (bot against bot, offline)
 
+`DuelSim/` runs whole duels between two of the bots without Omega. It's useful for testing changes. See [DuelSim/README.md](DuelSim/README.md).
 
-## 🤝 Contributing <a name="contributing"></a>
+## Sharing the bot without the SDK
 
-Contributions, issues, and feature requests are welcome!
+`Packaging/Package-DuelBot.ps1` builds `dist/DuelBot-<date>.zip`: a self-contained copy (no .NET install needed) with a setup script, a start script, and a script that exports the duel logs to send back.
 
-## 🔗Community
-YGO Omega is developed in [Duelist Unite](https://duelistsunite.org/) community, join the [https://discord.gg/duelistsunite](https://gitlab.com/uploads/-/system/group/avatar/5775229/53418547.png?width=48), where you can ask questions and make discussions.
+## Project layout
 
-## 👥 Authors <a name="authors"></a>
+- `OmegaBotWrapper/`: the connection to YGO Omega's custom-AI API, the duel logger, and the wrapper the decks build on
+- `BotTest/`: the bot itself: the deck brains, the search, the AI Room page and its server
+- `DuelSim/`: the offline simulator, and the rules engine, card database and card scripts the search uses
+- `Launch-DuelBot.ps1`: the launcher
 
-- Kunogi ([@Kunogi](https://gitlab.com/Kunogi)) - Creating Duelists Unite Omega Custom Duel Bot API.
-- BBeretta ([@BPBCoding](https://gitlab.com/BPBCoding)) - Creation of templates and bot actions.
-- IceYGO/windbot ([IceYGO/windbot](https://github.com/IceYGO/windbot)) - Bots and flow ideas are extracted from this project. Credit goes to their contributions.
+## Known limits of Omega's bot API
 
+- Omega always attacks with the bot's first attacker by zone, whichever one the bot names. The bot plans its attack order around this.
+- Omega never asks the bot "attack directly?". A monster that can attack directly always does, even if there are monsters on the field.
+- Effects that choose a zone to disable (Ojama King, Boompoline!!) aren't handled by the server and can end the duel.
 
-## 🐛 Known Issues <a name="faq"></a>
+## Credits
 
-- [ ] `AttackableCards -> DeclareAttack()`-> Regardless of which monster you want to initiate the attack from, from any zone, it always starts in zone 0.
-The server does not recognize which monster I want to attack. It only attacks in order by zone (z0, z1...).
-
-- [ ] `OnSelectDisfield` -> It's not operating correctly. Any effect card that involves choosing a zone to disable (Ojama King, Boompoline!!, etc.), the `OnSelectDisfield` action is not recognized on the server. The duel ends unexpectedly.
+- Built on the Duel Bot Wrapper from the [Duelists Unite](https://duelistsunite.org/) community, by Kunogi ([@Kunogi](https://gitlab.com/Kunogi)) and BBeretta ([@BPBCoding](https://gitlab.com/BPBCoding)).
+- Ideas and flow from [IceYGO/windbot](https://github.com/IceYGO/windbot).
+- YGO Omega is developed by the Duelists Unite community: [discord.gg/duelistsunite](https://discord.gg/duelistsunite).

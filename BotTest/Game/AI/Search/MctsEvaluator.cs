@@ -105,6 +105,8 @@ namespace BotTest.Game.AI.Search
 
         [Tunable("A side's clock on the other, as part of the board: worth ClockBonus / turns (card units) for a clock of that many turns (1 turn = the full bonus; no clock = 0). The turns are the brain's own clock (BoardAssessment.TurnsToWin).")]
         public static double ClockBonus = 1.5;
+        [Tunable("Their clock on us counts this share of ClockBonus against a line (ours on them counts in full). User, 2026-11-18: \"tone down the penalty for being on a clock ... leave the bonus for the bot putting me on a clock as is\".")]
+        public static double TheirClockShare = 0.5;
 
         /// <summary>
         /// A player's clock as part of the board (user, 2026-11-17: "make a player's clock a part of the board state evaluation, following the
@@ -191,7 +193,7 @@ namespace BotTest.Game.AI.Search
             }
             // Each side's clock on the other at the end of the line, as part of the board: ours on them counts for us, theirs on us against.
             if (!won)
-                diff += ClockValue(ours, theirs) - ClockValue(theirs, ours);
+                diff += ClockValue(ours, theirs) - TheirClockShare * ClockValue(theirs, ours);
             // Gorz in our hand with our field empty: it can come out when they hit us directly (user, 2026-11-17: "if you have a gorz in hand,
             // you should get a small bonus for ending on an empty field because it'll let you use gorz").
             if (!won && ours.Monsters.Count == 0 && ours.SpellCodes.Count == 0 && ours.HandCodes.Any(c => SearchHost.Is(c, GorzCode)))

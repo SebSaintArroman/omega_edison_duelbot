@@ -48,6 +48,9 @@ namespace BotTest.Game.AI.Brains
         /// <summary>Goyo Guardian (any monster that takes what it destroys by battle) into a battle recruiter, unless it takes a turn off our clock (user, 2026-11-17).</summary>
         [HoldCost(HoldCosts.Strong)] // "this should only be done very rarely"
         public const string NoStealRecruiter = "deck.no-steal-recruiter";
+        /// <summary>A monster whose effect works from the hand (Battle Fader, Honest, Kalut) isn't set (user, 2026-11-18: "NEVER").</summary>
+        [HoldCost(HoldCosts.Critical)]
+        public const string NoHandTrapSet = "deck.no-hand-trap-set";
         /// <summary>On their turn, a monster we summon goes to defence when one of their attackers can still beat it.</summary>
         public const string DefenceOnTheirTurn = "deck.defence-on-their-turn";
         public const string DeferSummonForAttackOrder = "deck.defer-summon-for-attack-order";

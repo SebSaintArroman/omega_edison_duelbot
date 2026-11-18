@@ -238,6 +238,17 @@ namespace BotTest.Game.AI.Brains
         /// <summary>A deck's own holds at a main-phase decision (before the search reads them). Default: none.</summary>
         protected virtual Task DeckHoldsAsync(DecisionContext<IdleCmdData> context) => Task.CompletedTask;
 
+        /// <summary>
+        /// Monsters whose effect works from the hand (Battle Fader, Honest, Kalut) aren't set: set, they lose it (user, 2026-11-18: "NEVER set
+        /// battle fader - its effect in hand stops more attacks than it would while set").
+        /// </summary>
+        private void HoldHandTrapSets(DecisionContext<IdleCmdData> context)
+        {
+            foreach (var card in context.StateData.MonsterSetableCards ?? Array.Empty<DynamicCard>())
+                if ((card.IsCode(BattleFaderId) || card.IsCode(HonestId) || card.IsCode(KalutId)) && Rule(DeckRules.NoHandTrapSet))
+                    Hold(card.ID, MainAction.SetMonster, DeckRules.NoHandTrapSet);
+        }
+
         private const int BurialFromADifferentDimensionId = 48976825;
 
         /// <summary>Setting Burial from a Different Dimension with none of our monsters banished: held (see DeckRules.NoEmptyBurialSet).</summary>
@@ -646,6 +657,7 @@ namespace BotTest.Game.AI.Brains
                 await HoldSetsBeforeBattleAsync(context, brainChoice);
                 await HoldEmptyBurialSetAsync(context);
                 await HoldForTorrentialTestAsync(context);
+                HoldHandTrapSets(context);
                 await DeckHoldsAsync(context);
                 return await SearchIdleAsync(context, brainChoice, ct);
             }
