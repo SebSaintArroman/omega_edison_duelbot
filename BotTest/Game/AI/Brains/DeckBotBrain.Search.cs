@@ -1150,9 +1150,25 @@ namespace BotTest.Game.AI.Brains
                     decidedBy = "time limit";
                     break;
                 }
-                if (enough && (elapsed >= TaperAfterMs || !Unsure(outcome, brainKey, legal)))
+                // After TaperAfterMs: no stopping inside the uncertainty (user, 2026-11-19: "I don't like choices being in that uncertainty
+                // range at all ... why aren't we looking further to resolve the uncertainty?"). The best move must be clearly ahead of the
+                // runner-up (more than 2 standard errors of the difference), or the uncertainty itself be down to TieCardUnits (a real tie:
+                // the best score is played, no bias), or MaxThinkMs be reached.
+                var runnerUp = outcome.Root.Where(s => legal.Contains(s.Key) && s.Key != top.Key &&
+                        !transposed.Any(p => p.A == top.Key && p.B == s.Key || p.A == s.Key && p.B == top.Key))
+                    .OrderByDescending(s => s.Mean).FirstOrDefault();
+                double tieMargin = runnerUp == null ? 0 : 2 * Math.Sqrt(top.StdErr * top.StdErr + runnerUp.StdErr * runnerUp.StdErr);
+                bool clearlyAhead = runnerUp == null || top.Mean - runnerUp.Mean > tieMargin;
+                bool tieSettled = runnerUp != null && BotTest.Game.AI.Search.MctsEvaluator.CardUnitsErr(top.Mean, tieMargin) <= TieCardUnits;
+                bool resolved = clearlyAhead || tieSettled;
+                if (enough && (elapsed < TaperAfterMs ? !Unsure(outcome, brainKey, legal) : resolved || elapsed >= MaxThinkMs))
                 {
-                    decidedBy = top.Visits >= need && (replaced == null || replaced.Visits >= need) ? "line count" : "settled score";
+                    decidedBy = elapsed >= TaperAfterMs && !resolved ? "time limit (still a close call)"
+                        : elapsed >= TaperAfterMs && !clearlyAhead ? "a settled tie"
+                        : top.Visits >= need && (replaced == null || replaced.Visits >= need) ? "line count" : "settled score";
+                    if (!resolved && runnerUp != null)
+                        bot.LogNote($"search: time limit ({MaxThinkMs / 1000} s) on a close call: {top.Label} {BotTest.Game.AI.Search.MctsEvaluator.CuPm(top.Mean, top.StdErr)} " +
+                                    $"over {top.Visits} lines vs {runnerUp.Label} {BotTest.Game.AI.Search.MctsEvaluator.CuPm(runnerUp.Mean, runnerUp.StdErr)} over {runnerUp.Visits}");
                     break;
                 }
                 if (elapsed >= nextNote)
@@ -1175,7 +1191,10 @@ namespace BotTest.Game.AI.Brains
                 if (replaced != null && !Met(replaced)) short_.Add(replaced.Key);
                 short_.AddRange(challengers.Where(s => !Met(s)).Select(s => s.Key));
                 // The unscreened moves first, up to ScreenLines each; then the two being compared, up to the requirement.
-                _focusRoot = unscreened.Count > 0 ? (unscreened, ScreenLines) : short_.Count > 0 ? (short_, need) : null;
+                _focusRoot = unscreened.Count > 0 ? (unscreened, ScreenLines) : short_.Count > 0 ? (short_, need)
+                    // All have their lines but the best isn't clearly ahead (past TaperAfterMs): the two being compared get the next run's lines.
+                    : elapsed >= TaperAfterMs && !resolved && runnerUp != null ? (new List<string> { top.Key, runnerUp.Key }, Math.Max(top.Visits, runnerUp.Visits) + need)
+                    : null;
                 SearchOutcome? more;
                 // Longer runs than the taper step: each run rebuilds the view and the holds (about a second), so 0.5 s runs spent two
                 // thirds of the time outside the search (seen 2026-11-16: a run every 1.5 s).
@@ -1231,6 +1250,9 @@ namespace BotTest.Game.AI.Brains
 
         [Tunable("The least a decision with a real choice thinks (ms), however settled its scores look: early stops left moves with many follow-ups (the Battle Phase) scored on their average. User, 2026-11-19: \"seems like a lot of these bugs are from early stopping\".", Section = "Search")]
         public static int MinThinkMs = 5000; // user, 2026-11-19: 5 s
+
+        [Tunable("Past TaperAfterMs a decision thinks on until the best move is clearly ahead of the runner-up (2 standard errors of the difference), or that uncertainty is down to this many card units (a real tie), or MaxThinkMs. User, 2026-11-19 (option 2).", Section = "Search")]
+        public static double TieCardUnits = 0.15;
 
         // Extra runs in a row that added no lines to this decision's moves.
         private int _noProgressRuns;

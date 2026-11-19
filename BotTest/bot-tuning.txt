@@ -409,7 +409,7 @@ MctsEvaluator.LowLpScale = 1500   # How fast that value falls as our LP rise abo
 MctsEvaluator.LpHighWorth = 0   # Life points: everything from LpLowBand to 8000 is worth this many card units in all.
 MctsEvaluator.LpLowBand = 2000   # Life points: the band that counts at LpLowWorth.
 MctsEvaluator.LpLowWorth = 0   # Life points: the first LpLowBand of them are worth this many card units in all (each point matters more when low).
-MctsEvaluator.Main2BoardShare = 0.5   # Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn) count this share of their board value; monster sets count in full. User, 2026-11-18.
+MctsEvaluator.Main2BoardShare = 0.25   # Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn) count this share of their board value; monster sets count in full. User, 2026-11-18. 2026-11-19: 0.25 (was 0.5), "strengthen the penalty for summoning something in mp2".
 MctsEvaluator.MonsterBase = 0.3   # A face-up monster's base worth, before its ATK (the ATK table) and its effects. User, 2026-11-19: was 0.6, with AtkScale 1.15.
 MctsEvaluator.NoListNormalAttack = 1800   # Sitting duck without deck-list data: their assumed Level 4-or-lower attacker's ATK.
 MctsEvaluator.NoListTributeAttack = 2400   # Sitting duck without deck-list data: their assumed tribute attacker's ATK (user, 2026-11-18: 2400).
@@ -477,6 +477,7 @@ Search.UnknownStrength = 1500   # A face-down monster's assumed strength (unknow
 # added 2026-11-17 10:41 (new in the code since the file was written)
 # --- Search
 Search.MinThinkMs = 5000   # The least a decision with a real choice thinks (ms), however settled its scores look. User, 2026-11-19: 5 s.
+Search.TieCardUnits = 0.15   # Past TaperAfterMs a decision thinks on until the best move is clearly ahead of the runner-up (2 standard errors), or that uncertainty is down to this many card units (a real tie), or MaxThinkMs. User, 2026-11-19.
 Search.MaxThinkMs = 30000   # The most a decision thinks (ms): past it the best move so far is played and the log flags it loudly with every move's lines and scores.
 Search.ScreenLines = 40   # Every legal move needs this many lines before a decision is made (a fair look at each), however far ahead another is.
 Search.WatchdogGraceMs = 20000   # A search thread still busy this long past its budget (ms) is reported as stuck and left behind.

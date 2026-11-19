@@ -512,7 +512,7 @@ namespace BotTest.Game.AI.Search
         }
 
         [Tunable("Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn) count this share of their board value; monster sets count in full. User, 2026-11-18.")]
-        public static double Main2BoardShare = 0.5;
+        public static double Main2BoardShare = 0.25; // user, 2026-11-19: "strengthen the penalty for summoning something in mp2" (was 0.5)
 
         /// <summary>What our face-up Main Phase 2 summons (by card) lose of their board value: (1 - Main2BoardShare) of each one's worth.</summary>
         private double Main2BodyDiscount(SideSummary ours, IReadOnlyList<int>? codes)
