@@ -40,8 +40,6 @@ internal sealed class OcgDuel : IDisposable
     public static OcgDuel Create(CardStore cards, ScriptStore scripts, ulong[] seed, ulong flags,
         int startingLp = 8000, int startingHand = 5, int drawPerTurn = 1)
     {
-        if (IntPtr.Size != 4)
-            throw new PlatformNotSupportedException("ocgcore.dll is 32-bit: run the simulator as an x86 process.");
 
         var duel = new OcgDuel(cards, scripts);
         duel._self = GCHandle.Alloc(duel);

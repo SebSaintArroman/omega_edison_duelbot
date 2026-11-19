@@ -1,5 +1,5 @@
 # Duel Bot setup: run once (double-click Setup.bat). It:
-#  1. installs the Microsoft Visual C++ runtime (32-bit) if it's missing (the rules engine needs it),
+#  1. installs the Microsoft Visual C++ runtime (64-bit) if it's missing (the rules engine needs it),
 #  2. finds YGO Omega (or asks where it is),
 #  3. asks for a name to put on your log exports,
 #  4. makes two desktop shortcuts: "Duel Bot" and "Duel Bot - Export Logs".
@@ -13,12 +13,12 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 
 Write-Host '== Duel Bot setup ==' -ForegroundColor Cyan
 
-# 1. Visual C++ runtime (x86).
-$vc = Join-Path $env:SystemRoot 'SysWOW64\vcruntime140.dll'
+# 1. Visual C++ runtime (x64).
+$vc = Join-Path $env:SystemRoot 'System32\vcruntime140.dll'
 if (-not (Test-Path $vc)) {
-    Write-Host 'Installing the Microsoft Visual C++ runtime (32-bit)...'
-    $installer = Join-Path $env:TEMP 'vc_redist.x86.exe'
-    Invoke-WebRequest 'https://aka.ms/vs/17/release/vc_redist.x86.exe' -OutFile $installer -UseBasicParsing
+    Write-Host 'Installing the Microsoft Visual C++ runtime (64-bit)...'
+    $installer = Join-Path $env:TEMP 'vc_redist.x64.exe'
+    Invoke-WebRequest 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile $installer -UseBasicParsing
     Start-Process $installer -ArgumentList '/install', '/quiet', '/norestart' -Wait -Verb RunAs
 } else {
     Write-Host 'Visual C++ runtime: already installed.'

@@ -71,8 +71,7 @@ namespace BotTest.Game.AI.Search
         {
             try
             {
-                if (IntPtr.Size != 4)
-                    return new Stores(null, null, "the bot runs as a 64-bit process; the rules engine (ocgcore.dll) is 32-bit");
+                // (32-bit or 64-bit: the ocgcore.dll next to the bot must match; a mismatch fails to load below.)
                 var root = FindSimulatorRoot();
                 if (root == null)
                     return new Stores(null, null, "DuelSim folder not found (set DUELBOT_SIM_ROOT to it)");

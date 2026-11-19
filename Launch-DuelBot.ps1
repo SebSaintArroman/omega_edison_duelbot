@@ -63,7 +63,7 @@ try {
 
     # 3. Start the bot server, in its own console window (close that window to stop the bot).
     # The Release build: optimised, so the play search runs much faster than in a Debug build.
-    $exe = Join-Path $project 'bin\Release\net9.0\win-x86\BotTest.exe'
+    $exe = Join-Path $project 'bin\Release\net9.0\win-x64\BotTest.exe'
     if (-not $Build -and (Test-Path $exe)) {
         $env:ASPNETCORE_URLS = 'http://localhost:58966'
         $env:ASPNETCORE_ENVIRONMENT = 'Development'

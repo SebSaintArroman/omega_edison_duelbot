@@ -4,8 +4,8 @@ namespace DuelSim.Native;
 
 /// <summary>
 /// P/Invoke bindings for the EDOPro rules engine (ocgcore, API 11.0; see vendor/core-src/ocgapi.h).
-/// The shipped Windows DLL is 32-bit, so struct layouts below are the MSVC x86 ones (pointers are 4 bytes,
-/// 64-bit fields are 8-aligned) and every call is cdecl.
+/// Works as a 32-bit or 64-bit process with the matching DLL (layouts below follow the pointer size; 64-bit fields are
+/// 8-aligned) and every call is cdecl.
 /// </summary>
 internal static class OcgApi
 {
@@ -71,33 +71,34 @@ internal delegate int OcgScriptReader(IntPtr payload, IntPtr duel, IntPtr name);
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate void OcgLogHandler(IntPtr payload, IntPtr text, int type);
 
-/// <summary>OCG_DuelOptions, x86 layout.</summary>
-[StructLayout(LayoutKind.Explicit, Size = 104)]
+/// <summary>OCG_DuelOptions. Sequential, so the pointer fields take 4 bytes in a 32-bit process and 8 in a 64-bit one (the
+/// fields before them are all 8-aligned either way: offset 64).</summary>
+[StructLayout(LayoutKind.Sequential)]
 internal struct DuelOptions
 {
-    [FieldOffset(0)] public ulong Seed0;
-    [FieldOffset(8)] public ulong Seed1;
-    [FieldOffset(16)] public ulong Seed2;
-    [FieldOffset(24)] public ulong Seed3;
-    [FieldOffset(32)] public ulong Flags;
-    [FieldOffset(40)] public uint Team1StartingLp;
-    [FieldOffset(44)] public uint Team1StartingDraw;
-    [FieldOffset(48)] public uint Team1DrawPerTurn;
-    [FieldOffset(52)] public uint Team2StartingLp;
-    [FieldOffset(56)] public uint Team2StartingDraw;
-    [FieldOffset(60)] public uint Team2DrawPerTurn;
-    [FieldOffset(64)] public IntPtr CardReader;
-    [FieldOffset(68)] public IntPtr Payload1;
-    [FieldOffset(72)] public IntPtr ScriptReader;
-    [FieldOffset(76)] public IntPtr Payload2;
-    [FieldOffset(80)] public IntPtr LogHandler;
-    [FieldOffset(84)] public IntPtr Payload3;
-    [FieldOffset(88)] public IntPtr CardReaderDone;
-    [FieldOffset(92)] public IntPtr Payload4;
-    [FieldOffset(96)] public byte EnableUnsafeLibraries;
+    public ulong Seed0;
+    public ulong Seed1;
+    public ulong Seed2;
+    public ulong Seed3;
+    public ulong Flags;
+    public uint Team1StartingLp;
+    public uint Team1StartingDraw;
+    public uint Team1DrawPerTurn;
+    public uint Team2StartingLp;
+    public uint Team2StartingDraw;
+    public uint Team2DrawPerTurn;
+    public IntPtr CardReader;
+    public IntPtr Payload1;
+    public IntPtr ScriptReader;
+    public IntPtr Payload2;
+    public IntPtr LogHandler;
+    public IntPtr Payload3;
+    public IntPtr CardReaderDone;
+    public IntPtr Payload4;
+    public byte EnableUnsafeLibraries;
 }
 
-/// <summary>OCG_NewCardInfo, x86 layout.</summary>
+/// <summary>OCG_NewCardInfo (no pointers: the same layout in 32 and 64 bits).</summary>
 [StructLayout(LayoutKind.Explicit, Size = 24)]
 internal struct NewCardInfo
 {
@@ -110,7 +111,7 @@ internal struct NewCardInfo
     [FieldOffset(20)] public uint Position;
 }
 
-/// <summary>OCG_QueryInfo, x86 layout.</summary>
+/// <summary>OCG_QueryInfo (no pointers: the same layout in 32 and 64 bits).</summary>
 [StructLayout(LayoutKind.Explicit, Size = 20)]
 internal struct QueryInfo
 {
@@ -121,11 +122,14 @@ internal struct QueryInfo
     [FieldOffset(16)] public uint OverlaySequence;
 }
 
-/// <summary>Offsets of OCG_CardData (x86), which the engine hands to the card reader to fill in.</summary>
+/// <summary>Offsets of OCG_CardData, which the engine hands to the card reader to fill in: the setcodes pointer is 4 bytes in a
+/// 32-bit process and 8 in a 64-bit one, and the 64-bit race field is 8-aligned (offset 24 on x86, 32 on x64).</summary>
 internal static class CardDataLayout
 {
-    public const int Code = 0, Alias = 4, SetCodes = 8, Type = 12, Level = 16, Attribute = 20, Race = 24,
-        Attack = 32, Defense = 36, LScale = 40, RScale = 44, LinkMarker = 48;
+    private static readonly int P = IntPtr.Size;
+    public const int Code = 0, Alias = 4, SetCodes = 8;
+    public static readonly int Type = 8 + P, Level = 12 + P, Attribute = 16 + P, Race = (20 + P + 7) & ~7,
+        Attack = Race + 8, Defense = Race + 12, LScale = Race + 16, RScale = Race + 20, LinkMarker = Race + 24;
 }
 
 /// <summary>Engine constants used by the simulator (vendor/core-src/common.h).</summary>

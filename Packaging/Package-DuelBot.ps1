@@ -19,9 +19,9 @@ New-Item -ItemType Directory -Force $out | Out-Null
 
 # 1. The bot, published self-contained for 32-bit Windows (the rules engine is 32-bit).
 Write-Host 'Publishing the bot...'
-dotnet publish (Join-Path $repo 'BotTest\BotTest.csproj') -c Release -r win-x86 --self-contained true -o (Join-Path $out 'bot')
+dotnet publish (Join-Path $repo 'BotTest\BotTest.csproj') -c Release -r win-x64 --self-contained true -o (Join-Path $out 'bot')
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
-$engine = Join-Path $repo 'DuelSim\vendor\ocgcore\ocgcore.dll'
+$engine = Join-Path $repo 'DuelSim\vendor\ocgcore-x64\ocgcore.dll'
 if (-not (Test-Path (Join-Path $out 'bot\ocgcore.dll'))) { Copy-Item $engine (Join-Path $out 'bot') }
 
 # 2. The card database and scripts. The bot finds them through the DuelSim folder next to its own (DuelSim.csproj marks it).

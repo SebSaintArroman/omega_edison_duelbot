@@ -585,3 +585,10 @@ MctsEvaluator.SetTrapBonus = 0.25   # The bonus of a set trap over the same trap
 # added 2026-11-19 11:06 (new in the code since the file was written)
 # --- Search
 Search.LineValueAvailableShare = 0.9   # A follow-up answer counts for a move's value only when it was on offer at least this share of the times lines reached that decision (an answer that depends on a lucky draw isn't ours to pick).
+
+# added 2026-11-19 11:39 (new in the code since the file was written)
+# --- LineTally
+LineTally.BrainControlUnusedCost = 2   # Brain Control whose monster goes back to them at the end of our turn (not tributed, not Synchro material, no win): this small cost. User, 2026-11-19: "the goal of it is to tribute or synchro with my monster, or win that turn".
+LineTally.EarlyTrapCost = 1.5   # A trap of ours fired on their turn in a window opened by nothing (no chain to answer, no attack, no summon just made; not their End Phase): it could have waited for the last possible moment. User, 2026-11-19.
+LineTally.ReturnTheirTurnCost = 1.5   # Return from the Different Dimension fired on their turn, even against an attack, unless Return is about to be destroyed: this cost, instead of EarlyTrapCost. Not on our turn (plenty of plays there). User, 2026-11-19.
+LineTally.SetNormalSpellCost = 0.5   # Setting a normal spell (it is worth less set than in hand, and shows a card): this line cost. User, 2026-11-19: "put the set spell value back to 0.8 and add back the line penalty of 0.5 for setting one".

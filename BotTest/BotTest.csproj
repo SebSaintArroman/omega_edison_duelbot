@@ -5,11 +5,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <!--
-      32-bit: the play search runs the rules engine in-process (ocgcore.dll is 32-bit). Self-contained, so no x86 .NET
-      install is needed (as DuelSim).
+      64-bit since 2026-11-19 (about 30% more search lines per second): the play search runs the rules engine in-process,
+      DuelSim/vendor/ocgcore-x64/ocgcore.dll (built from DuelSim/vendor/ygopro-core). Self-contained, as DuelSim.
     -->
-    <PlatformTarget>x86</PlatformTarget>
-    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
   </PropertyGroup>
 
@@ -21,8 +21,8 @@
     <Compile Include="..\DuelSim\src\Native\*.cs;..\DuelSim\src\Engine\*.cs;..\DuelSim\src\Data\*.cs;..\DuelSim\src\SimPaths.cs"
              Link="Simulator\%(RecursiveDir)%(Filename)%(Extension)" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
-    <None Include="..\DuelSim\vendor\ocgcore\ocgcore.dll" CopyToOutputDirectory="PreserveNewest" Link="ocgcore.dll"
-          Condition="Exists('..\DuelSim\vendor\ocgcore\ocgcore.dll')" />
+    <None Include="..\DuelSim\vendor\ocgcore-x64\ocgcore.dll" CopyToOutputDirectory="PreserveNewest" Link="ocgcore.dll"
+          Condition="Exists('..\DuelSim\vendor\ocgcore-x64\ocgcore.dll')" />
   </ItemGroup>
 
   <ItemGroup>

@@ -25,7 +25,7 @@ Plays BotTest's deck bots against each other without Omega, so you can run many 
 dotnet build DuelSim\DuelSim.csproj
 ```
 
-The engine DLL is 32-bit, so the simulator builds as a self-contained win-x86 app. No x86 .NET install is needed.
+The simulator builds as a self-contained win-x64 app with the 64-bit engine DLL (vendor/ocgcore-x64, built from vendor/ygopro-core). No .NET install is needed.
 
 ## Run
 
@@ -37,8 +37,8 @@ From the repo root (`C:\Users\Seb\duelbotwrapper`), in PowerShell:
 dotnet build DuelSim\DuelSim.csproj
 
 # Run duels
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe run Vayu Vayu --duels 15
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe run Vayu MachinaControl --duels 20 --seed 42 --no-bot-logs
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe run Vayu Vayu --duels 15
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe run Vayu MachinaControl --duels 20 --seed 42 --no-bot-logs
 ```
 
 Options for `run <DeckA> <DeckB>`:
@@ -53,8 +53,8 @@ Options for `run <DeckA> <DeckB>`:
 Other commands:
 
 ```powershell
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe list     # deck names you can use
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe check    # engine, card data and decks load?
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe list     # deck names you can use
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe check    # engine, card data and decks load?
 ```
 
 Ctrl+C stops a run. Finished duels keep their folders, but `summary.txt` is only written when the run completes.
@@ -89,10 +89,10 @@ A duel is also cut off after 20 minutes (`--timeout-min`) or at turn 150.
 
 ```powershell
 dotnet build DuelSim\DuelSim.csproj          # after any bot change
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe evolve                  # Vayu, until Ctrl+C
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe evolve --generations 20 --duels 100 --workers 6
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe params vayu-test-1      # what the champion changes vs Vayu
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe run vayu-test-1 Vayu --duels 50   # play a variant like any deck
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe evolve                  # Vayu, until Ctrl+C
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe evolve --generations 20 --duels 100 --workers 6
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe params vayu-test-1      # what the champion changes vs Vayu
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe run vayu-test-1 Vayu --duels 50   # play a variant like any deck
 ```
 
 **What gets tuned** (159 values for Vayu). The original deck (`Vayu`) always plays the values in the code, untouched.
@@ -130,7 +130,7 @@ finishes (bot logs not needed: works with `--no-bot-logs`). After every run, `ou
 with every number) is rebuilt from all current runs; superseded runs drop out with their folder. To rebuild by hand:
 
 ```
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe analyze [run folders...] [--min 30] [--out file.md]
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe analyze [run folders...] [--min 30] [--out file.md]
 ```
 
 **The rule x board-genre matrix**: `out/ANALYSIS.html` (open in a browser) has, per deck, every rule (rows) in every
@@ -161,7 +161,7 @@ To refresh it:
 2. Convert it for the bot (official ids, card kinds, names):
 
 ```
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe edison-data path\to\decks.json ..\BotTest\Game\AI\Brains\Data\edison-decks.json
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe edison-data path\to\decks.json ..\BotTest\Game\AI\Brains\Data\edison-decks.json
 ```
 
 To add the bot's own lists (every Master Duel deck in the catalog, ids 900001+, under their Edison deck type) and keep
@@ -169,7 +169,7 @@ every list already there, rebuild from the data file itself. Rerun it after addi
 are rebuilt each time and the downloaded lists are kept:
 
 ```
-DuelSim\bin\Debug\net9.0\win-x86\DuelSim.exe edison-data ..\BotTest\Game\AI\Brains\Data\edison-decks.json ..\BotTest\Game\AI\Brains\Data\edison-decks.json --with-bots
+DuelSim\bin\Debug\net9.0\win-x64\DuelSim.exe edison-data ..\BotTest\Game\AI\Brains\Data\edison-decks.json ..\BotTest\Game\AI\Brains\Data\edison-decks.json --with-bots
 ```
 
 `DuelSim cards <deck code>` prints any deck code's cards with their text (handy when writing a new bot).
@@ -207,7 +207,7 @@ The simulator is meant to play exactly like Omega. What it does to match:
 
 | Path | What |
 |---|---|
-| `src/Native/OcgApi.cs` | P/Invoke bindings and x86 struct layouts for ocgcore API 11.0 |
+| `src/Native/OcgApi.cs` | P/Invoke bindings and struct layouts (32- or 64-bit) for ocgcore API 11.0 |
 | `src/Data/` | card database (SQLite), script lookup, Omega deck codes, card filters, Omega-id aliases |
 | `src/Engine/DuelHost*.cs` | duel loop and state tracking; Omega-shaped views; prompt building and response translation |
 | `src/Bridge/OmegaEmulator.cs` | the in-memory Omega bot API |

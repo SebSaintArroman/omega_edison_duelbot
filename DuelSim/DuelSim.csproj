@@ -3,14 +3,16 @@
   <!--
     Offline bot-vs-bot duel simulator.
 
-    Runs the real EDOPro rules engine (ocgcore.dll, 32-bit) and plays the bots against each other in-process.
+    Runs the real EDOPro rules engine (ocgcore.dll, 64-bit) and plays the bots against each other in-process.
     The bots talk to an in-memory emulation of Omega's bot API, so their code is used unchanged.
 
     The bot sources are compiled straight into this assembly (see the Compile items below) instead of referencing
     BotTest.csproj: building the simulator never touches BotTest's or OmegaBotWrapper's own bin/obj folders, so it
     can't clash with a running BotTest. Every simulator build picks up the current bot code.
 
-    The engine DLL is 32-bit, so this is a self-contained win-x86 app (no x86 .NET install needed).
+    64-bit since 2026-11-19 (about 30% more search lines per second than 32-bit): a self-contained win-x64 app using
+    vendor/ocgcore-x64/ocgcore.dll, built from vendor/ygopro-core (commit 9cd0936, the same version as the old 32-bit DLL;
+    identical results on a fixed-line bench).
   -->
 
   <PropertyGroup>
@@ -19,8 +21,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>DuelSim</RootNamespace>
-    <PlatformTarget>x86</PlatformTarget>
-    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Server GC: the play search runs lines on several threads and allocates a lot (about 15% faster). -->
@@ -48,7 +50,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="vendor\ocgcore\ocgcore.dll" CopyToOutputDirectory="PreserveNewest" Link="ocgcore.dll" Condition="Exists('vendor\ocgcore\ocgcore.dll')" />
+    <None Include="vendor\ocgcore-x64\ocgcore.dll" CopyToOutputDirectory="PreserveNewest" Link="ocgcore.dll" Condition="Exists('vendor\ocgcore-x64\ocgcore.dll')" />
   </ItemGroup>
 
 </Project>
