@@ -426,7 +426,7 @@ MctsEvaluator.SetFlipBase = 0.9   # A face-down monster that gains from being se
 MctsEvaluator.SetFlipEffectWeight = 0.25   # Weight of a set flip / floater monster's effect points (its effect still to be used), like FieldEffectWeight: using it costs that much. User, 2026-11-18.
 MctsEvaluator.SetQuickPlayBase = 0.9   # A set quick-play spell's base worth, before what it will do.
 MctsEvaluator.SetSpellBase = 0.8   # A set normal / continuous / field / equip spell's base worth, before what it will do. User, 2026-11-19: back to 0.8, plus LineTally.SetNormalSpellCost 0.5 for setting a normal spell.
-MctsEvaluator.SetTrapBase = 1.05   # A set trap's base worth, before what it will do.
+MctsEvaluator.SetTrapBase = 1.25   # A set trap's base worth, before what it will do.
 MctsEvaluator.SittingDuckWeight = 0.5   # The sitting-duck loss counts this share of the threatened monster's value (user, 2026-11-18: 0.5 so monsters still get used).
 MctsEvaluator.TaperScale = 1   # How slowly the taper bends: 1 puts Absolute Zero (5.25 points with the "all" factor) at 3.45, Stardust (9) at 4.1, Shura (10) at 4.2.
 MctsEvaluator.TaperStart = 2   # Effect points are linear up to this, then taper (see Taper).
@@ -475,6 +475,7 @@ Search.UnknownStrength = 1500   # A face-down monster's assumed strength (unknow
 
 # added 2026-11-17 10:41 (new in the code since the file was written)
 # --- Search
+Search.MinThinkMs = 5000   # The least a decision with a real choice thinks (ms), however settled its scores look. User, 2026-11-19: 5 s.
 Search.MaxThinkMs = 30000   # The most a decision thinks (ms): past it the best move so far is played and the log flags it loudly with every move's lines and scores.
 Search.ScreenLines = 40   # Every legal move needs this many lines before a decision is made (a fair look at each), however far ahead another is.
 Search.WatchdogGraceMs = 20000   # A search thread still busy this long past its budget (ms) is reported as stuck and left behind.
@@ -498,7 +499,7 @@ MctsEvaluator.ClockByTurns = 1.5, 1, 0.5, 0.25, 0.25, 0.1, 0.1, 0.1   # A side's
 # added 2026-11-17 15:47 (new in the code since the file was written)
 # --- DeckBotBrain
 DeckBotBrain.HoldCost.deck.no-revive-grave-effect = 1.5
-DeckBotBrain.HoldCost.deck.no-steal-recruiter = 1.5
+DeckBotBrain.HoldCost.deck.no-steal-recruiter = 3   # user, 2026-11-19: "make that stronger" (the code's Strong tier; this file had 1.5)
 
 # added 2026-11-17 16:11 (new in the code since the file was written)
 # --- DeckBotBrain
@@ -592,3 +593,10 @@ LineTally.BrainControlUnusedCost = 2   # Brain Control whose monster goes back t
 LineTally.EarlyTrapCost = 1.5   # A trap of ours fired on their turn in a window opened by nothing (no chain to answer, no attack, no summon just made; not their End Phase): it could have waited for the last possible moment. User, 2026-11-19.
 LineTally.ReturnTheirTurnCost = 1.5   # Return from the Different Dimension fired on their turn, even against an attack, unless Return is about to be destroyed: this cost, instead of EarlyTrapCost. Not on our turn (plenty of plays there). User, 2026-11-19.
 LineTally.SetNormalSpellCost = 0.5   # Setting a normal spell (it is worth less set than in hand, and shows a card): this line cost. User, 2026-11-19: "put the set spell value back to 0.8 and add back the line penalty of 0.5 for setting one".
+
+# added 2026-11-19 13:09 (new in the code since the file was written)
+# --- LineTally
+LineTally.JarTheirTurnCost = 1.5   # Jar of Greed fired on their turn when it isn't about to be destroyed, nor clearing our field for Gorz against an attack (it's our only card, Gorz in hand): this cost, instead of EarlyTrapCost. User, 2026-11-19: those, or our own turn with no play, "are the only legitimate times".
+LineTally.OwnDestroyCost = 3   # Our own card picked for one of our effects that destroys (Mystical Space Typhoon on our own set card): this cost per card. User, 2026-11-19: "HUGE HUGE Error: mst destroy own card".
+# --- Mcts
+Mcts.UnexploredMinVisits = 10   # Lines a follow-up needs before UnexploredBest counts its mean: a move still scored on the average of its follow-ups, one of which already looks as good as the best move, keeps getting lines.

@@ -1,4 +1,4 @@
-﻿using BotTest.Game.Field;
+using BotTest.Game.Field;
 using BotTest.Utils;
 using OmegaBotWrapper;
 using OmegaBotWrapper.Enum;
@@ -1514,6 +1514,7 @@ namespace BotTest.Game.AI.Brains
                 _theirLifePoints = fieldTask.Result.EnemySide.LifePoints;
                 _weCanProtect = Search.SearchHost.Available && (fieldTask.Result.OwnSide.SpellZones ?? Array.Empty<CardArray>())
                     .Select(zone => (zone.Cards ?? Array.Empty<int>()).FirstOrDefault()).Where(id => id > 0)
+                    .Where(id => id != 53582587 && id != 5318639) // Torrential Tribute kills what it'd protect, MST protects nothing (user, 2026-11-19)
                     .Any(id => Search.SearchHost.Cards.Get(id) is { } c && Search.SearchCardValues.Protection(c.Type, c.Text) > 0);
                 OnFieldRefreshed(fieldTask.Result);
                 // Real-duel bookkeeping, skipped by the play search's brain twins (they play thousands of imagined decisions):

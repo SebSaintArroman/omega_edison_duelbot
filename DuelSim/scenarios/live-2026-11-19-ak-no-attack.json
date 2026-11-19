@@ -1,0 +1,26 @@
+// Live 2026-11-19 Miracle Vayu #009 (turn 2, main1): Armageddon Knight (1400, face-up ATK) didn't attack their face-down monster.
+// Bottomless Trap Hole set this turn (#007, search over the brain's Battle Phase). Normal Summon used.
+// The search: go to the Battle Phase -0.63 +/-0.15 (n=189, plain lines average -0.02) below end the turn -0.11 +/-0.06 (n=150).
+// User: check whether attacking wins with the 5 s minimum think time and the "unexplored follow-up" stopping fix.
+// Their deck was Lightsworn Fairy (94%); DuelSim has no such deck, MachinaControl stands in (Ryko, Lyla, Card Trooper in its list).
+// Not carried: the turn record (Bottomless set in Main Phase 1), so the lines start with an empty record.
+{
+  "deck": "Vayu",
+  "opponent": "MachinaControl",
+  "lp": [8000, 8000],
+  "turn": 2,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 28985331, "zone": 2 } ],
+    "spells": [ { "id": 29401950, "zone": 2, "set": true } ],
+    "hand": [ 65192027, 83968380, 14536035, 75498415, 53582587 ],
+    "grave": [ 55144522, 33420078 ]
+  },
+  "theirs": {
+    "monsters": [ { "zone": 2, "pos": "set" } ],
+    "handCount": 5,
+    "grave": []
+  }
+}

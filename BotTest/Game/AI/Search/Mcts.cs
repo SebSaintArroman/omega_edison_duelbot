@@ -1,4 +1,4 @@
-﻿using BotTest.Game.AI.Brains;
+using BotTest.Game.AI.Brains;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using DuelSim.Engine;
@@ -37,7 +37,8 @@ namespace BotTest.Game.AI.Search
 
     /// <param name="Mean">The move's score: its line value (MctsNode.LineValue), 0-1.</param>
     /// <param name="Average">The plain average of every line through it (what Mean was before 2026-11-16), for the log.</param>
-    internal sealed record RootStat(string Key, string Label, int Visits, double Mean, double Average = double.NaN, double StdErr = 1);
+    internal sealed record RootStat(string Key, string Label, int Visits, double Mean, double Average = double.NaN, double StdErr = 1,
+        double Unexplored = double.NaN);
 
     /// <summary>
     /// What this search's lines through one root choice ended in, averaged (for the log: user, 2026-11-13, "the log should
@@ -146,6 +147,23 @@ namespace BotTest.Game.AI.Search
         /// a line worth 90 read as 76 and the bot ended turn after turn with a full hand).
         /// </summary>
         public double LineValue(int minVisits) => LineValue(minVisits, new Dictionary<MctsNode, double>(ReferenceEqualityComparer.Instance));
+
+        /// <summary>
+        /// While none of our follow-up choices here has its LineValueVisits yet (so the score is still the plain average over all of them,
+        /// bad branches included): the best follow-up's mean among those with a few lines (UnexploredMinVisits). NaN once one has its
+        /// lines, or with no choice of ours to make. Seen 2026-11-19: "go to the Battle Phase" 1.3 below "end the turn" on 116 lines,
+        /// its "make no attack" branches in the average; "end the turn" has no follow-ups, so it settled at once and the search stopped.
+        /// </summary>
+        public double UnexploredBest(int lineValueVisits)
+        {
+            lock (Lock)
+            {
+                if (ChildPlayer != 0 || Children.Count < 2 || Children.Values.Any(c => c.Visits >= lineValueVisits))
+                    return double.NaN;
+                var tried = Children.Values.Where(c => c.Visits >= Mcts.UnexploredMinVisits).ToList();
+                return tried.Count == 0 ? double.NaN : tried.Max(c => c.Mean);
+            }
+        }
 
         // Memoised: transpositions make the tree a graph (two orders of the same play share a subtree), so an unmemoised walk
         // revisits shared subtrees once per path, which blew up on a board with four set cards (seen 2026-11-16: the bot stopped
@@ -640,6 +658,11 @@ namespace BotTest.Game.AI.Search
         /// <summary>Lines a follow-up answer needs before a move's value is read through it (MctsNode.LineValue). Tune from logs.</summary>
         [Tunable("Lines a follow-up answer needs before a move's value is read through it (MctsNode.LineValue). Tune from logs.", Section = "Search")]
         public static int LineValueVisits = 30;
+        [Tunable("Lines a follow-up needs before UnexploredBest counts its mean: a move still scored on the average of its follow-ups, one of which already looks as good as the best move, keeps getting lines.")]
+        public static int UnexploredMinVisits = 10;
+
+        /// <summary>Brain holds that only exist for the Battle Phase: a line that never enters it doesn't pay them.</summary>
+        internal static readonly HashSet<string> BattleOnlyHolds = new() { "deck.hold-sets-for-battle", "deck.hold-monster-sets-for-battle", "deck.sets-after-battle" };
 
         /// <summary>A follow-up answer counts for a move's value only when it was on offer at least this share of the times lines reached
         /// that decision: an answer that depends on chance (a draw, a random effect) isn't ours to pick, so it counts through the average.</summary>
@@ -668,7 +691,7 @@ namespace BotTest.Game.AI.Search
             int rootVisits;
             lock (_start.Lock)
             {
-                stats = _start.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, _start.LabelOf(kv.Key, kv.Value), kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
+                stats = _start.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, _start.LabelOf(kv.Key, kv.Value), kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr, kv.Value.UnexploredBest(LineValueVisits)))
                     .OrderByDescending(s => s.Visits).ThenByDescending(s => s.Mean).ToList();
                 rootVisits = _start.Visits;
             }
@@ -686,7 +709,7 @@ namespace BotTest.Game.AI.Search
                 if (_start.Children.TryGetValue(s.Key, out var child))
                     lock (child.Lock)
                         if (child.ChildState is BotState.SelectCard && child.ChildPlayer == 0)
-                            followUps[s.Key] = child.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, child.LabelOf(kv.Key, kv.Value), kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
+                            followUps[s.Key] = child.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, child.LabelOf(kv.Key, kv.Value), kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr, kv.Value.UnexploredBest(LineValueVisits)))
                                 .OrderByDescending(v => v.Visits).ToList();
             return new SearchOutcome(stats, iterations, failures, elapsed, firstFailure, followUp, _mismatch, Plans(stats), _traces.ToList(),
                 rootVisits, _maxDepth, BestLine(), rootHolds, _start.PriorKey,
@@ -781,7 +804,11 @@ namespace BotTest.Game.AI.Search
                 if (rootReached && p.Player == 0 && host.Turn == SearchTurn)
                     penalty += tally.OnOurAnswer(p, packet, note);
                 else if (rootReached && p.Player == 0 && host.TurnPlayer != 0 && p.Data is SelectChainData theirTurnChain)
-                    penalty += tally.OnTheirTurnChain(theirTurnChain, packet, host.EventlessWindow, host.Attacking, (loc, seq) => host.Doomed(0, loc, seq), host.Phase, note);
+                    penalty += tally.OnTheirTurnChain(theirTurnChain, packet, host.EventlessWindow, host.Attacking, (loc, seq) => host.Doomed(0, loc, seq), host.Phase,
+                        () => host.CountIn(0, SearchPosition.LocMZone) + host.CountIn(0, SearchPosition.LocSZone),
+                        () => host.Summary(0).HandCodes.Any(c => SearchHost.Is(c, LineTally.Gorz[0])), note);
+                if (rootReached && p.Player == 0 && p.Data is SelectCardData destroyPick)
+                    penalty += tally.OnOurPick(destroyPick, packet, note);
             }
 
             // Overexposure along the line (user, 2026-11-15: part of the score): Torrential at each of our summons, Mirror Force at
@@ -819,6 +846,8 @@ namespace BotTest.Game.AI.Search
             int DustshootsGone() => host.Summary(0).GraveCodes.Count(c => SearchHost.Is(c, TrapDustshootId));
             int dustshootsAtRoot = -1; // our Trap Dustshoots in the graveyard at the decision
             int? rootAdvantage = null; // our cards minus theirs at the decision (the +1 bonus)
+            int rootTheirDeck = -1; // their deck then: what they drew since isn't a card we lost
+            double deferredBattleHolds = 0; // battle-only holds broken in Main Phase 1: charged when the line enters the Battle Phase
             void NoteMirror()
             {
                 if (!rootReached || host.Turn != SearchTurn)
@@ -898,6 +927,18 @@ namespace BotTest.Game.AI.Search
                         Undo();
                         return "line stopped: over 3000 prompts (a loop)";
                     }
+                    if (deferredBattleHolds > 0)
+                    {
+                        if (host.Turn != SearchTurn)
+                            deferredBattleHolds = 0; // our turn ended without a Battle Phase: the holds evaporate
+                        else if (host.Phase is >= (int)OmegaBotWrapper.Enum.DuelPhase.BattleStart and <= (int)OmegaBotWrapper.Enum.DuelPhase.Battle)
+                        {
+                            penalty += deferredBattleHolds;
+                            Interlocked.Increment(ref HoldsCharged);
+                            trace?.Add($"  (into the Battle Phase after the battle-only holds: -{deferredBattleHolds:0.#})");
+                            deferredBattleHolds = 0;
+                        }
+                    }
                     if (host.Turn != lastTurn && lastTurn == SearchTurn && rootReached && turnEnd == null)
                     {
                         turnEnd = (host.Summary(0), host.Summary(1), attacked); // our turn just ended: the board their backrow would have hit
@@ -944,7 +985,7 @@ namespace BotTest.Game.AI.Search
                         (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
                         ourCardsAtRoot = OurCards();
                         dustshootsAtRoot = DustshootsGone();
-                        rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
+                        rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
                         if (double.IsNaN(Volatile.Read(ref _tree.Center))) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                         long at = Stopwatch.GetTimestamp();
                         SearchTimings.Add(ref SearchTimings.ToRoot, at - phaseStart);
@@ -1022,7 +1063,7 @@ namespace BotTest.Game.AI.Search
                                 (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
                                 ourCardsAtRoot = OurCards();
                                 dustshootsAtRoot = DustshootsGone();
-                                rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
+                                rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
                                 if (double.IsNaN(Volatile.Read(ref _tree.Center))) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                                 long reachedAt = Stopwatch.GetTimestamp();
                                 SearchTimings.Add(ref SearchTimings.ToRoot, reachedAt - phaseStart);
@@ -1037,7 +1078,7 @@ namespace BotTest.Game.AI.Search
                             (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
                             ourCardsAtRoot = OurCards();
                             dustshootsAtRoot = DustshootsGone();
-                            rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
+                            rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
                             if (double.IsNaN(Volatile.Read(ref _tree.Center))) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                             CheckPosition(host);
                             long now = Stopwatch.GetTimestamp();
@@ -1206,7 +1247,16 @@ namespace BotTest.Game.AI.Search
                             lock (node.Lock)
                                 if (node.Holds != null && node.Holds.TryGetValue(key, out var h))
                                     held = h;
-                            if (held is { } broken)
+                            // A hold that only exists for the Battle Phase (set after attacking): charged only if this line enters it; a line
+                            // that ends the turn from Main Phase 1 sets freely (user, 2026-11-19: "if the line doesn't go to battle phase, then the
+                            // mp2 rules should evaporate on that line").
+                            if (held is { } battleOnly && BattleOnlyHolds.Contains(battleOnly.Rule) && host.Turn == SearchTurn &&
+                                host.Phase == (int)OmegaBotWrapper.Enum.DuelPhase.Main1)
+                            {
+                                deferredBattleHolds += battleOnly.Cost;
+                                trace?.Add($"  (the brain's hold {battleOnly.Rule}: -{battleOnly.Cost:0.#} if this line goes to the Battle Phase)");
+                            }
+                            else if (held is { } broken)
                             {
                                 penalty += broken.Cost;
                                 Interlocked.Increment(ref HoldsCharged);
@@ -1303,7 +1353,9 @@ namespace BotTest.Game.AI.Search
             double advantage = 0;
             if (rootAdvantage is int atRoot && turnEnd is { } advEnd)
             {
-                int gained = MctsEvaluator.CardAdvantage(advEnd.Ours, advEnd.Theirs) - atRoot;
+                // Taken at their turn's first prompt, after their Draw Phase draw: that draw isn't a card we lost (seen 2026-11-19: "card
+                // advantage -1" on a line that only ended the turn).
+                int gained = MctsEvaluator.CardAdvantage(advEnd.Ours, advEnd.Theirs) - atRoot + Math.Max(0, rootTheirDeck - advEnd.Theirs.Deck);
                 advantage = gained * MctsEvaluator.PlusOneBonus;
                 if (gained != 0)
                     trace?.Add($"  (card advantage {gained:+0;-0} in our turn: {advantage:+0.0;-0.0})");

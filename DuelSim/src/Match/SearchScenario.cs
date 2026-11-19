@@ -18,7 +18,9 @@ namespace DuelSim.Match;
 /// </summary>
 internal static class SearchScenario
 {
-    private sealed class Card { public int Id { get; set; } public int Zone { get; set; } public string? Pos { get; set; } public bool Set { get; set; } public bool Attacked { get; set; } public bool Improper { get; set; } public int? EquippedTo { get; set; } }
+    private sealed class Card { public int Id { get; set; } public int Zone { get; set; } public string? Pos { get; set; } public bool Set { get; set; } public bool Attacked { get; set; } public bool Improper { get; set; } public int? EquippedTo { get; set; }
+        /// <summary>Their unknown face-down monster: the deck read's likely cards, [[id, chance], ...] (as live EnemySetMonsterOdds).</summary>
+        public List<double[]>? Likely { get; set; } }
     private sealed class Side
     {
         public List<Card> Monsters { get; set; } = new();
@@ -72,6 +74,8 @@ internal static class SearchScenario
         view.OwnGrave.AddRange(file.Ours.Grave);
         view.OwnBanished.AddRange(file.Ours.Banished);
         view.EnemyMonsters.AddRange(file.Theirs.Monsters.Select(c => ToView(c, true, 1)));
+        foreach (var c in file.Theirs.Monsters.Where(c => c.Id == 0 && c.Likely is { Count: > 0 }))
+            view.EnemySetMonsterOdds[c.Zone] = c.Likely!.Select(p => ((int)p[0], p[1])).ToList();
         view.EnemySpells.AddRange(file.Theirs.Spells.Select(c => ToView(c, false, 1)));
         view.EnemyGrave.AddRange(file.Theirs.Grave);
         view.EnemyBanished.AddRange(file.Theirs.Banished);

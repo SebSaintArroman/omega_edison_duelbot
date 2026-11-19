@@ -589,7 +589,7 @@ namespace BotTest.Game.AI.Search
         [Tunable("A set quick-play spell's base worth, before what it will do.")]
         public static double SetQuickPlayBase = 0.9;
         [Tunable("A set trap's base worth, before what it will do.")]
-        public static double SetTrapBase = 1.05;
+        public static double SetTrapBase = 1.25; // user, 2026-11-19: "no traps are being set - increase the setting traps bonus" (was 1.05)
         [Tunable("A card in hand: its base worth, before its effects and ATK.")]
         public static double HandCardBase = 0.8; // user, 2026-11-18 (was 0.5)
         [Tunable("A monster in hand: its ATK counts as effect points at ATK / this.")]

@@ -389,7 +389,10 @@ public static class Program
                 int budgetMs = int.Parse(Option2(args, "--ms", "0"));
                 var settings = new BotTest.Game.AI.Search.SearchSettings(BudgetMs: budgetMs > 0 ? budgetMs : 0, Threads: threads, MaxIterations: budgetMs > 0 ? int.MaxValue : lines,
                     Horizon: int.Parse(Option2(args, "--horizon", "2")),
-                    TraceRoot: args.Contains("--trace") ? Option2(args, "--trace", "") : null, TraceLines: int.Parse(Option2(args, "--trace-lines", args.Contains("--trace") ? "3" : "0")));
+                    TraceRoot: args.Contains("--trace") ? Option2(args, "--trace", "") : null, TraceLines: int.Parse(Option2(args, "--trace-lines", args.Contains("--trace") ? "3" : "0")),
+                    // --focus KEY[,KEY] --focus-lines N: send lines to these root moves first, as the live stopping loop does for moves short of lines.
+                    FocusRoots: args.Contains("--focus") ? Option2(args, "--focus", "").Split(',') : null,
+                    FocusLines: int.Parse(Option2(args, "--focus-lines", "200")));
                 // The deck brain's own goals and card values, as in a real search.
                 var deckBrain = Tuning.BrainParams.FindBrain(MatchRunner.FindDeck("MasterDuel", benchDeck).Factory()) as BotTest.Game.AI.Brains.DeckBotBrain;
                 var benchDef = MatchRunner.FindDeck("MasterDuel", benchDeck);
@@ -440,7 +443,9 @@ public static class Program
                 {
                     var plan = outcome.Plans?.GetValueOrDefault(stat.Key);
                     console.WriteLine($"  [{stat.Key}]");
-                    console.WriteLine($"  {stat.Label,-50} score {stat.Mean * 100,5:0.0}  ({stat.Visits} lines)" +
+                    console.WriteLine($"  {stat.Label,-50} score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(stat.Mean, stat.StdErr)} card units  ({stat.Visits} lines" +
+                                      (double.IsNaN(stat.Average) ? "" : $", lines average {BotTest.Game.AI.Search.MctsEvaluator.Cu(stat.Average)}") +
+                                      (double.IsNaN(stat.Unexplored) ? "" : $", best unexplored follow-up {BotTest.Game.AI.Search.MctsEvaluator.Cu(stat.Unexplored)}") + ")" +
                                       (plan is { Count: > 0 } ? $"  then: {string.Join(" -> ", plan.Select(p => p.Label))}" : ""));
                 }
                 return 0;

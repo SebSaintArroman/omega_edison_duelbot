@@ -1,4 +1,4 @@
-﻿using BotTest.Game.AI.Search;
+using BotTest.Game.AI.Search;
 using DuelSim.Data;
 using OmegaBotWrapper;
 using OmegaBotWrapper.Enum;
@@ -1130,10 +1130,13 @@ namespace BotTest.Game.AI.Brains
                 // of the same play aren't a doubt.
                 var transposed = outcome.Transposed ?? Array.Empty<(string A, string B)>();
                 var challengers = outcome.Root.Where(s => legal.Contains(s.Key) && s.Key != top.Key && (replaced == null || s.Key != replaced.Key) &&
-                        top.Mean - s.Mean <= 2 * Math.Sqrt(top.StdErr * top.StdErr + s.StdErr * s.StdErr) &&
+                        (top.Mean - s.Mean <= 2 * Math.Sqrt(top.StdErr * top.StdErr + s.StdErr * s.StdErr) ||
+                         // Still scored on the average of all its follow-ups, while one of them already looks as good as the best (user,
+                         // 2026-11-19: "it should really have attacked there"): it needs its lines too.
+                         !double.IsNaN(s.Unexplored) && s.Unexplored >= top.Mean - 2 * Math.Sqrt(top.StdErr * top.StdErr + s.StdErr * s.StdErr)) &&
                         !transposed.Any(p => p.A == top.Key && p.B == s.Key || p.A == s.Key && p.B == top.Key))
                     .ToList();
-                bool enough = Met(top) && (replaced == null || Met(replaced)) && unscreened.Count == 0 && challengers.All(Met);
+                bool enough = elapsed >= MinThinkMs && Met(top) && (replaced == null || Met(replaced)) && unscreened.Count == 0 && challengers.All(Met);
                 // The time limit (user, 2026-11-16: "if it gets to 30s, just take the best move available whatever it is and flag it really
                 // loudly in the logs ... give a full breakdown as to what went wrong").
                 if (!enough && elapsed >= MaxThinkMs)
@@ -1225,6 +1228,9 @@ namespace BotTest.Game.AI.Brains
 
         [Tunable("The most a decision thinks (ms): past it the best move so far is played and the log flags it loudly with every move's lines and scores.", Section = "Search")]
         public static int MaxThinkMs = 30000;
+
+        [Tunable("The least a decision with a real choice thinks (ms), however settled its scores look: early stops left moves with many follow-ups (the Battle Phase) scored on their average. User, 2026-11-19: \"seems like a lot of these bugs are from early stopping\".", Section = "Search")]
+        public static int MinThinkMs = 5000; // user, 2026-11-19: 5 s
 
         // Extra runs in a row that added no lines to this decision's moves.
         private int _noProgressRuns;

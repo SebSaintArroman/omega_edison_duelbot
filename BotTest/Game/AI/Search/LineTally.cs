@@ -1,4 +1,4 @@
-﻿using BotTest.Game.AI.Brains;
+using BotTest.Game.AI.Brains;
 using DuelSim.Engine;
 using OmegaBotWrapper.Enum;
 using OmegaBotWrapper.States;
@@ -112,6 +112,29 @@ namespace BotTest.Game.AI.Search
         [Tunable("Return from the Different Dimension fired on their turn, even against an attack, unless Return is about to be destroyed: this cost, instead of EarlyTrapCost. Not on our turn (plenty of plays there). User, 2026-11-19.")]
         public static double ReturnTheirTurnCost = 1.5;
         internal static readonly int[] ReturnFromTheDifferentDimension = { 27174286 };
+        internal static readonly int[] TrapDustshoot = { 64697231 };
+        internal static readonly int[] JarOfGreed = { 83968380, 30461781 }; // and Legacy of Yata-Garasu: the same rules always (user, 2026-11-19)
+        internal static readonly int[] Gorz = { 44330098 };
+        [Tunable("Jar of Greed fired on their turn when it isn't about to be destroyed, nor clearing our field for Gorz against an attack (it's our only card, Gorz in hand): this cost, instead of EarlyTrapCost. User, 2026-11-19: those, or our own turn with no play, \"are the only legitimate times\".")]
+        public static double JarTheirTurnCost = 1.5;
+        [Tunable("Our own card picked for one of our effects that destroys (Mystical Space Typhoon on our own set card): this cost per card. User, 2026-11-19: \"HUGE HUGE Error: mst destroy own card\".")]
+        public static double OwnDestroyCost = 3;
+
+        /// <summary>Our pick for an effect that destroys (any turn): each of our own cards picked costs OwnDestroyCost.</summary>
+        public double OnOurPick(SelectCardData pick, byte[] packet, Action<string>? note)
+        {
+            if (pick.SelectionHint != (int)DHint.DESTROY || packet.Length < 2)
+                return 0;
+            var cards = pick.SelectableCards ?? Array.Empty<OmegaBotWrapper.Struct.DynamicCard>();
+            int own = 0;
+            for (int i = 1; i <= packet[0] && i < packet.Length; i++)
+                if (packet[i] < cards.Length && cards[packet[i]].CurrentCoordinates.Controller == 0)
+                    own++;
+            if (own == 0)
+                return 0;
+            note?.Invoke($"  ({own} of our own card(s) picked to destroy: -{OwnDestroyCost * own:0.#})");
+            return OwnDestroyCost * own;
+        }
 
         private bool _brainControlPending;
         private int _brainTarget, _brainTargetCopies;
@@ -122,7 +145,8 @@ namespace BotTest.Game.AI.Search
         private static bool IsTrap(int code) => code > 0 && SearchHost.Cards.Get(code) is { } r && (r.Type & 0x4) != 0;
 
         /// <summary>Our chain answer on their turn: a trap fired in an eventless window (not their End Phase) costs EarlyTrapCost.</summary>
-        public double OnTheirTurnChain(SelectChainData chain, byte[] packet, bool eventless, bool attacking, Func<int, int, bool> doomed, int phase, Action<string>? note)
+        public double OnTheirTurnChain(SelectChainData chain, byte[] packet, bool eventless, bool attacking, Func<int, int, bool> doomed, int phase,
+            Func<int>? ourFieldCards, Func<bool>? gorzInHand, Action<string>? note)
         {
             if (packet.Length < 4)
                 return 0;
@@ -141,7 +165,18 @@ namespace BotTest.Game.AI.Search
                 note?.Invoke($"  (Return from the Different Dimension on their turn, not about to be destroyed: -{ReturnTheirTurnCost:0.#})");
                 return ReturnTheirTurnCost;
             }
-            if (!eventless || phase == (int)OmegaBotWrapper.Enum.DuelPhase.End)
+            // Jar of Greed (user, 2026-11-19): on their turn only when it's about to be destroyed, or against an attack with Jar our only card
+            // and Gorz in hand (clearing the field for Gorz).
+            if (Is(cards[index].ID, JarOfGreed))
+            {
+                var at = cards[index].CurrentCoordinates;
+                if (doomed(at.Location, at.Sequence) || attacking && ourFieldCards?.Invoke() == 1 && gorzInHand?.Invoke() == true)
+                    return 0;
+                note?.Invoke($"  (Jar of Greed on their turn, not about to be destroyed nor clearing the field for Gorz: -{JarTheirTurnCost:0.#})");
+                return JarTheirTurnCost;
+            }
+            // Trap Dustshoot fires at the earliest chance (its own rule and DustshootBonus): never charged for being early.
+            if (!eventless || phase == (int)OmegaBotWrapper.Enum.DuelPhase.End || Is(cards[index].ID, TrapDustshoot))
                 return 0;
             note?.Invoke($"  (a trap fired on their turn with nothing to answer: it could wait for the last moment: -{EarlyTrapCost:0.#})");
             return EarlyTrapCost;
