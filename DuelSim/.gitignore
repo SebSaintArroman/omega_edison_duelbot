@@ -1,5 +1,8 @@
-# Downloaded by setup.ps1 (engine, card scripts, card database, engine headers)
-vendor/
+# Downloaded by setup.ps1 (engine, card scripts, card database, engine headers) or cloned (ygopro-core, build tools)
+vendor/*
+# The 64-bit engine DLL we built from vendor/ygopro-core (commit 9cd0936, unmodified; AGPL-3.0): kept in git so a fresh
+# clone has it (setup.ps1 only downloads the old 32-bit one).
+!vendor/ocgcore-x64/
 # Simulation results
 out/
 bin/

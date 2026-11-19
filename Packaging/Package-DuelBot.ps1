@@ -17,7 +17,7 @@ $out   = Join-Path $dist 'DuelBot'
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Force $out | Out-Null
 
-# 1. The bot, published self-contained for 32-bit Windows (the rules engine is 32-bit).
+# 1. The bot, published self-contained for 64-bit Windows (the rules engine is 64-bit since 2026-11-19).
 Write-Host 'Publishing the bot...'
 dotnet publish (Join-Path $repo 'BotTest\BotTest.csproj') -c Release -r win-x64 --self-contained true -o (Join-Path $out 'bot')
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
@@ -40,11 +40,17 @@ Copy-Item (Join-Path $PSScriptRoot 'package\*') $out -Recurse
 $commit = try { (git -C $repo rev-parse --short HEAD 2>$null) } catch { 'unknown' }
 $dirty  = try { if (git -C $repo status --porcelain 2>$null) { ' (with uncommitted changes)' } else { '' } } catch { '' }
 "Duel Bot build $stamp, commit $commit$dirty" | Set-Content (Join-Path $out 'version.txt') -Encoding utf8
+# The release tag (GitHub builds set DUELBOT_TAG = build-<n>): the installed bot compares it with the latest release to offer updates.
+# A local build has none, so it never offers one.
+if ($env:DUELBOT_TAG) { $env:DUELBOT_TAG | Set-Content (Join-Path $out 'tag.txt') -Encoding ascii }
 
 # 5. One zip.
 $zip = Join-Path $dist "DuelBot-$stamp.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Write-Host 'Zipping...'
-Compress-Archive -Path $out -DestinationPath $zip
+# .NET's zip, not Compress-Archive (Windows PowerShell's took over 10 minutes on the ~13,000 card scripts). The DuelBot
+# folder stays the zip's root, as the installer expects.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory($out, $zip, [System.IO.Compression.CompressionLevel]::Optimal, $true)
 $size = '{0:N0} MB' -f ((Get-Item $zip).Length / 1MB)
 Write-Host "Done: $zip ($size)"

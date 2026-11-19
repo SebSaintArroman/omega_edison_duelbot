@@ -4,17 +4,44 @@ A Yu-Gi-Oh! bot for [YGO Omega](https://omega.duelistsunite.org/) that plays the
 
 Each of its decisions is checked by a search: it plays thousands of short lines with a copy of the real rules engine, scores the positions they reach, and picks the move whose lines come out best.
 
-## What you need
+## Install (no build needed)
 
-- Windows 10 or 11
+You need Windows 10 or 11 (64-bit) and [YGO Omega](https://omega.duelistsunite.org/).
+
+1. Download **[DuelBot-Setup.exe](https://github.com/SebSaintArroman/omega_edison_duelbot/releases/latest/download/DuelBot-Setup.exe)** (the latest release).
+2. Double-click it. The installer isn't signed, so Windows may warn "Windows protected your PC": click **More info**, then **Run anyway**.
+3. The setup:
+   - installs the Microsoft Visual C++ runtime if it's missing (Windows may ask for permission);
+   - finds YGO Omega, or asks where `YGO Omega.exe` is;
+   - asks for a name to put on your log exports;
+   - puts two shortcuts on your desktop: **Duel Bot** and **Duel Bot - Export Logs**.
+
+The bot installs to `%LOCALAPPDATA%\Programs\DuelBot`. No admin rights or .NET install are needed.
+
+To play, double-click **Duel Bot** on your desktop, then follow steps 2 and 3 of [Play against it](#play-against-it).
+
+### Updates
+
+Every push to `main` builds a new release here on GitHub. When you start the **Duel Bot** shortcut, it checks for a newer release and offers to update. If you say yes, it downloads and installs the update (your settings, duel logs and comments are kept), then starts the bot. You can also download the latest `DuelBot-Setup.exe` from the link above and run it over your install.
+
+### Sending your logs back
+
+Double-click **Duel Bot - Export Logs**. It saves `DuelBot-logs-<your name>-<date>.zip` on your desktop, with your duel logs and comments.
+
+## Build from source
+
+You need:
+
+- Windows 10 or 11 (64-bit)
 - [YGO Omega](https://omega.duelistsunite.org/), installed in its default folder (`C:\Program Files (x86)\YGO Omega`)
-- The [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0), to build the bot
-
-## Build
+- The [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 
     git clone https://github.com/SebSaintArroman/omega_edison_duelbot.git
     cd omega_edison_duelbot
+    powershell -ExecutionPolicy Bypass -File DuelSim\setup.ps1
     dotnet build
+
+`DuelSim\setup.ps1` downloads the card database and card scripts that the search needs, once.
 
 A plain `dotnet build` makes the Release build (the fast one), which is what the launcher runs.
 
@@ -59,15 +86,18 @@ Each line has a short explanation. Restart the bot after editing.
 
 `DuelSim/` runs whole duels between two of the bots without Omega. It's useful for testing changes. See [DuelSim/README.md](DuelSim/README.md).
 
-## Sharing the bot without the SDK
+## Making the installer yourself
 
-`Packaging/Package-DuelBot.ps1` builds `dist/DuelBot-<date>.zip`: a self-contained copy (no .NET install needed) with a setup script, a start script, and a script that exports the duel logs to send back.
+- `Packaging/Build-Installer.ps1` builds `dist/DuelBot-Setup-<date>.exe`, the same one-click installer the releases have. A locally built installer never offers updates.
+- `Packaging/Package-DuelBot.ps1` builds only the zip inside it: `dist/DuelBot-<date>.zip`, a self-contained copy with a setup script, a start script and a log-export script.
+- `.github/workflows/release.yml` builds and publishes a release on every push to `main`.
 
 ## Project layout
 
 - `OmegaBotWrapper/`: the connection to YGO Omega's custom-AI API, the duel logger, and the wrapper the decks build on
 - `BotTest/`: the bot itself: the deck brains, the search, the AI Room page and its server
 - `DuelSim/`: the offline simulator, and the rules engine, card database and card scripts the search uses
+- `Packaging/`: the installer, the shareable package and its scripts
 - `Launch-DuelBot.ps1`: the launcher
 
 ## Known limits of Omega's bot API
@@ -80,4 +110,5 @@ Each line has a short explanation. Restart the bot after editing.
 
 - Built on the Duel Bot Wrapper from the [Duelists Unite](https://duelistsunite.org/) community, by Kunogi ([@Kunogi](https://gitlab.com/Kunogi)) and BBeretta ([@BPBCoding](https://gitlab.com/BPBCoding)).
 - Ideas and flow from [IceYGO/windbot](https://github.com/IceYGO/windbot).
+- The rules engine is [edo9300/ygopro-core](https://github.com/edo9300/ygopro-core) (AGPL-3.0), built unmodified for 64-bit from commit 9cd0936 (`DuelSim/vendor/ocgcore-x64/ocgcore.dll`). Card scripts and the card database are from [Project Ignis](https://github.com/ProjectIgnis).
 - YGO Omega is developed by the Duelists Unite community: [discord.gg/duelistsunite](https://discord.gg/duelistsunite).
