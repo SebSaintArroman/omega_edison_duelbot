@@ -1,0 +1,24 @@
+// Live 2026-11-18 Blackwing Hybrid #018-019 (turn 4, battle): Shura (1800) attacked their face-up Ryko (200) rather than Blue Thunder
+// T-45 (1700): Ryko 73.5, Blue Thunder 64.1. User: "it's better to attack the better monster. you should've got more points for killing it".
+{
+  "deck": "BlackwingHybrid",
+  "opponent": "MachinaControl",
+  "lp": [6100, 8000],
+  "turn": 4,
+  "phase": "battle",
+  "decision": "battle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 58820853, "zone": 2 } ],
+    "spells": [ { "id": 53567095, "zone": 1, "set": true } ],
+    "hand": [ 28985331, 58820853, 85215458, 70342110 ],
+    "grave": [ 55144522, 53582587 ],
+    "banished": [ 75498415 ]
+  },
+  "theirs": {
+    "monsters": [ { "id": 14089428, "zone": 2 }, { "id": 21502796, "zone": 3 } ],
+    "spells": [ { "zone": 3, "set": true }, { "zone": 4, "set": true } ],
+    "handCount": 2,
+    "grave": [ 29401950, 5556499, 42940404, 94192409 ]
+  }
+}

@@ -21,7 +21,7 @@ BlackwingBotBrain.HandToGraveChance = 0.35   # Chance a Vayu / partner in hand r
 BlackwingBotBrain.HandToGraveWithOutletChance = 0.8   # The same with a discard outlet (Dark Grepher in hand or on the field). Tune from logs.
 BlackwingBotBrain.HoldWhenClockAtMost = 2   # If the opponent is already on a clock of this many turns or fewer, hold resources unless they win now or answer a threat. 2 = only hold on a quick clock, 5 = also hold on a long clock (default), larger = hold on very long clocks too.
 BlackwingBotBrain.IcarusDoomedChance = 0.5   # Icarus Attack chained to save our Blackwing as its free tribute: from this chance that it's doomed anyway.
-BlackwingBotBrain.KalutHandValue = 0.6   # The search's value for Kalut in hand (its +1400 in battle), card units.
+BlackwingBotBrain.KalutHandValue = 1.0   # The search's value for Kalut in hand (its +1400 in battle), card units.
 BlackwingBotBrain.NormalSummonPlayCost = 0.5   # The turn planner's cost for using the Normal Summon in a play.
 BlackwingBotBrain.PushOpenBoost = 2
 BlackwingBotBrain.PushSetTrapFactor = 0.85
@@ -64,7 +64,7 @@ BlackwingBotBrain.HoldCost.blackwing.icarus-push = 1.5
 BlackwingBotBrain.HoldCost.blackwing.icarus-set-needs-wing = 1.5
 BlackwingBotBrain.HoldCost.blackwing.icarus-waits-for-their-turn = 1.5
 BlackwingBotBrain.HoldCost.blackwing.kalut-boost = 1.5
-BlackwingBotBrain.HoldCost.blackwing.kalut-stays-in-hand = 1.5
+BlackwingBotBrain.HoldCost.blackwing.kalut-stays-in-hand = 2   # user, 2026-11-19
 BlackwingBotBrain.HoldCost.blackwing.necro-for-last-moment = 1.5
 BlackwingBotBrain.HoldCost.blackwing.necro-gardna = 1.5
 BlackwingBotBrain.HoldCost.blackwing.necro-not-on-own-monster = 1.5

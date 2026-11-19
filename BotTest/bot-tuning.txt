@@ -425,7 +425,7 @@ MctsEvaluator.Scale = 3   # How many card units of difference move the score fro
 MctsEvaluator.SetFlipBase = 0.9   # A face-down monster that gains from being set (a flip, a floater, a graveyard effect): its base worth.
 MctsEvaluator.SetFlipEffectWeight = 0.25   # Weight of a set flip / floater monster's effect points (its effect still to be used), like FieldEffectWeight: using it costs that much. User, 2026-11-18.
 MctsEvaluator.SetQuickPlayBase = 0.9   # A set quick-play spell's base worth, before what it will do.
-MctsEvaluator.SetSpellBase = 0.3   # A set normal / continuous / field / equip spell's base worth, before what it will do: 0.5 below a hand card, so setting one costs that. User, 2026-11-18.
+MctsEvaluator.SetSpellBase = 0.8   # A set normal / continuous / field / equip spell's base worth, before what it will do. User, 2026-11-19: back to 0.8, plus LineTally.SetNormalSpellCost 0.5 for setting a normal spell.
 MctsEvaluator.SetTrapBase = 1.05   # A set trap's base worth, before what it will do.
 MctsEvaluator.SittingDuckWeight = 0.5   # The sitting-duck loss counts this share of the threatened monster's value (user, 2026-11-18: 0.5 so monsters still get used).
 MctsEvaluator.TaperScale = 1   # How slowly the taper bends: 1 puts Absolute Zero (5.25 points with the "all" factor) at 3.45, Stardust (9) at 4.1, Shura (10) at 4.2.
@@ -581,3 +581,7 @@ DeckBotBrain.HoldCost.deck.set-trap-dustshoot = 3
 MctsEvaluator.ClockBonus = 1.5   # A side's clock on the other, as part of the board: worth ClockBonus / turns (card units) for a clock of that many turns (1 turn = the full bonus; no clock = 0). The turns are the brain's own clock (BoardAssessment.TurnsToWin).
 MctsEvaluator.SetQuickPlayBonus = 0.1   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
 MctsEvaluator.SetTrapBonus = 0.25   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
+
+# added 2026-11-19 11:06 (new in the code since the file was written)
+# --- Search
+Search.LineValueAvailableShare = 0.9   # A follow-up answer counts for a move's value only when it was on offer at least this share of the times lines reached that decision (an answer that depends on a lucky draw isn't ours to pick).

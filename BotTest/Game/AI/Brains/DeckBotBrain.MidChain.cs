@@ -256,7 +256,7 @@ namespace BotTest.Game.AI.Brains
                 {
                     var planStep2 = sure;
                     context.Bot.LogNote($"search: chain window: nothing new revealed, playing the plan's step: {DescribeChainKey(chain, planStep2.Key)} " +
-                                        $"(score {planStep2.Mean * 100:0.0} over {planStep2.Visits} lines)");
+                                        $"(score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(planStep2.Mean, planStep2.StdErr)} over {planStep2.Visits} lines)");
                     return ChainIndexOf(chain, planStep2.Key) is var planIndex and >= -1 ? planIndex : null;
                 }
                 // The plan's node is thin (its best answer on fewer than MinPlayLines lines: seen 2026-11-15, Skill Successor on Bestiari
@@ -360,7 +360,7 @@ namespace BotTest.Game.AI.Brains
                 _trackedBot?.LogNote($"search: {what}: the plan's lines never reached this choice (PLAN GAP)");
                 return null;
             }
-            _trackedBot?.LogNote($"search: {what}: the plan's choice (score {step.Mean * 100:0.0} over {step.Visits} lines)");
+            _trackedBot?.LogNote($"search: {what}: the plan's choice (score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(step.Mean, step.StdErr)} over {step.Visits} lines)");
             return step.Key;
         }
 
@@ -393,13 +393,13 @@ namespace BotTest.Game.AI.Brains
         /// The plan's answer at its node among the real answers on offer: the best score among those with MinPlayLines+ lines (as at
         /// a main decision), else the most-visited. Null when none of its answers is on offer.
         /// </summary>
-        private (string Key, double Mean, int Visits)? PlanNodeStep(MctsNode node, IEnumerable<string> offered)
+        private (string Key, double Mean, int Visits, double StdErr)? PlanNodeStep(MctsNode node, IEnumerable<string> offered)
         {
             var byLoose = offered.GroupBy(NodeLoose).ToDictionary(g => g.Key, g => g.First());
-            List<(string Key, double Mean, int Visits)> tried;
+            List<(string Key, double Mean, int Visits, double StdErr)> tried;
             lock (node.Lock)
                 tried = node.Children.Where(kv => kv.Value.Visits > 0 && byLoose.ContainsKey(NodeLoose(kv.Key)))
-                    .Select(kv => (byLoose[NodeLoose(kv.Key)], kv.Value.LineValue(Mcts.LineValueVisits), kv.Value.Visits)).ToList();
+                    .Select(kv => (byLoose[NodeLoose(kv.Key)], kv.Value.LineValue(Mcts.LineValueVisits), kv.Value.Visits, kv.Value.StdErr)).ToList();
             if (tried.Count == 0)
                 return null;
             var sure = tried.Where(t => t.Visits >= StartLines).OrderByDescending(t => t.Mean).ToList();
@@ -487,7 +487,7 @@ namespace BotTest.Game.AI.Brains
                 }
                 var pick = picks.First(p => p.Key == chosen);
                 bot.LogNote($"search: {pick.Label} " + (best != null
-                    ? $"(score {best.Mean * 100:0.0} over {best.Visits} lines{(original != null && original != chosen ? ", over the original plan's pick" : "")})"
+                    ? $"(score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(best.Mean, best.StdErr)} over {best.Visits} lines{(original != null && original != chosen ? ", over the original plan's pick" : "")})"
                     : "(the original plan's pick: the search had no verdict)"));
                 return pick.Indexes.Select(i => (byte)i).ToList();
             }

@@ -373,7 +373,7 @@ namespace BotTest.Game.AI.Brains
                 var best = outcome == null ? null : BestByScore(outcome, list[0], list.ToHashSet());
                 if (best == null)
                     return null;
-                bot.LogNote($"search: {best.Key} (score {best.Mean * 100:0.0} over {best.Visits} lines, from the turn's start)");
+                bot.LogNote($"search: {best.Key} (score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(best.Mean, best.StdErr)} over {best.Visits} lines, from the turn's start)");
                 return best.Key;
             }
             catch (Exception ex)
@@ -413,7 +413,7 @@ namespace BotTest.Game.AI.Brains
             if (best == null || best.Key == "cancel")
                 return null;
             var pick = picks.First(p => p.Key == best.Key);
-            bot.LogNote($"search: {pick.Label} (score {best.Mean * 100:0.0} over {best.Visits} lines, from the turn's start)");
+            bot.LogNote($"search: {pick.Label} (score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(best.Mean, best.StdErr)} over {best.Visits} lines, from the turn's start)");
             return pick.Indexes.Select(i => (byte)i).ToList();
         }
 

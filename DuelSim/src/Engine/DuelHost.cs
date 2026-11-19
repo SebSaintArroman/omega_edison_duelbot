@@ -52,6 +52,28 @@ internal sealed partial class DuelHost : IDisposable
     private (LocInfo Attacker, LocInfo? Target)? _attack;
     private int _lastChainPlayer = -1;
     private int _lastSummonPlayer = -1;
+    private bool _summonWindow;
+    private readonly bool[] _wipeInChain = new bool[2];
+
+    /// <summary>The card at this place is about to go: a chain link of the other player targets it, or wipes the spells/traps.</summary>
+    public bool Doomed(int controller, int location, int sequence)
+    {
+        lock (_core)
+        {
+            if (location == Ocg.LocSZone && _wipeInChain[1 - controller])
+                return true;
+            foreach (var list in _chainTargets.Values)
+                if (list.Any(t => t.Controller == controller && t.Location == location && t.Sequence == sequence))
+                    return true;
+            return false;
+        }
+    }
+
+    /// <summary>A chain window opened by nothing: no chain to answer, no attack, no summon just made (their Draw Phase, an open
+    /// priority pass). A trap fired here could have waited (user, 2026-11-19: "a general 'last possible moment' rule for all traps").</summary>
+    public bool Attacking { get { lock (_core) return _attack != null; } }
+
+    public bool EventlessWindow { get { lock (_core) return _lastChainPlayer < 0 && _attack == null && !_summonWindow; } }
     private Prompt? _lastPrompt;
     private readonly DateTime _started = DateTime.UtcNow;
 
@@ -401,6 +423,7 @@ internal sealed partial class DuelHost : IDisposable
             }
             case Msg.NewPhase:
                 Phase = r.U16();
+                _summonWindow = false;
                 _attack = null;
                 return null;
             case Msg.Chaining:
@@ -412,6 +435,9 @@ internal sealed partial class DuelHost : IDisposable
                 ulong desc = r.U64();
                 uint chainCount = r.U32();
                 _lastChainPlayer = triggerController;
+                if (triggerController < 2 && _cards.Get(code)?.Text is { } wipeText &&
+                    System.Text.RegularExpressions.Regex.IsMatch(wipeText, @"destroy all (Spells?|Spell(/| and )Trap)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                    _wipeInChain[triggerController] = true;
                 _lastChainCard = card;
                 if (triggerController < 2)
                 {
@@ -445,6 +471,7 @@ internal sealed partial class DuelHost : IDisposable
             }
             case Msg.ChainEnd:
                 _chainTargets.Clear();
+                _wipeInChain[0] = _wipeInChain[1] = false;
                 _lastChainCard = null;
                 _lastChainPlayer = -1;
                 return null;
@@ -455,6 +482,7 @@ internal sealed partial class DuelHost : IDisposable
                 int code = r.I32();
                 var at = r.Loc();
                 _lastSummonPlayer = at.Controller;
+                _summonWindow = true;
                 string kind = id == Msg.Summoning ? "summons" : id == Msg.SpSummoning ? "special summons" : "flip summons";
                 Event?.Invoke($"  player {at.Controller} {kind} {CardName(code)}");
                 return null;

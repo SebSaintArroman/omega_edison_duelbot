@@ -130,6 +130,8 @@ namespace BotTest.Game.AI.Search
         /// continued tree never mixes in lines from before the real game moved on (2026-11-17: after Charge resolved, an old "Charge, then
         /// change position" node was merged under the new root, and its stale score and label stood in for the brain's Gorz summon).</summary>
         public MctsNode? Origin;
+        /// <summary>Its parent's visits when it was created: Available over the parent's visits since then is how often its answer was on offer.</summary>
+        public int ParentVisitsAtCreation;
         public double Mean => Visits == 0 ? 0 : Total / Visits;
         /// <summary>The sum of its lines' squared scores (for how settled its score is).</summary>
         public double SumSq;
@@ -158,7 +160,11 @@ namespace BotTest.Game.AI.Search
             {
                 if (ChildPlayer != 0 || Children.Count == 0)
                     return Mean;
-                explored = Children.Values.Where(c => c.Visits >= minVisits).ToList();
+                // Only answers on offer nearly every time a line got here (LineValueAvailableShare): one that exists only after a lucky draw
+                // (Jar of Greed drawing Future Fusion) isn't ours to choose, and taking the best of those read every draw as the best one
+                // (seen 2026-11-19: Jar of Greed 62, setting Ryko 70 in another run, end the turn 41, by which draws came up).
+                explored = Children.Values.Where(c => c.Visits >= minVisits &&
+                    c.Available >= Mcts.LineValueAvailableShare * Math.Max(1, Visits - c.ParentVisitsAtCreation)).ToList();
             }
             if (explored.Count == 0)
                 return Mean;
@@ -635,6 +641,11 @@ namespace BotTest.Game.AI.Search
         [Tunable("Lines a follow-up answer needs before a move's value is read through it (MctsNode.LineValue). Tune from logs.", Section = "Search")]
         public static int LineValueVisits = 30;
 
+        /// <summary>A follow-up answer counts for a move's value only when it was on offer at least this share of the times lines reached
+        /// that decision: an answer that depends on chance (a draw, a random effect) isn't ours to pick, so it counts through the average.</summary>
+        [Tunable("A follow-up answer counts for a move's value only when it was on offer at least this share of the times lines reached that decision (an answer that depends on a lucky draw isn't ours to pick).", Section = "Search")]
+        public static double LineValueAvailableShare = 0.9;
+
         /// <summary>This search's line totals per root key, averaged.</summary>
         private Dictionary<string, RootDetail> Details()
         {
@@ -769,6 +780,8 @@ namespace BotTest.Game.AI.Search
             {
                 if (rootReached && p.Player == 0 && host.Turn == SearchTurn)
                     penalty += tally.OnOurAnswer(p, packet, note);
+                else if (rootReached && p.Player == 0 && host.TurnPlayer != 0 && p.Data is SelectChainData theirTurnChain)
+                    penalty += tally.OnTheirTurnChain(theirTurnChain, packet, host.EventlessWindow, host.Attacking, (loc, seq) => host.Doomed(0, loc, seq), host.Phase, note);
             }
 
             // Overexposure along the line (user, 2026-11-15: part of the score): Torrential at each of our summons, Mirror Force at
@@ -891,7 +904,7 @@ namespace BotTest.Game.AI.Search
                         activatedInTurn = ActivatedInOurTurn();
                         heavyExposure = _evaluator.HeavyExposure(turnEnd.Value.Ours);
                         NoteLesser(turnEnd.Value.Ours, turnEnd.Value.Theirs);
-                        penalty += tally.OnOurTurnEnd(turnEnd.Value.Ours, note);
+                        penalty += tally.OnOurTurnEnd(turnEnd.Value.Ours, turnEnd.Value.Theirs, note);
                     }
                     if (host.Turn != lastTurn)
                     {
@@ -1321,7 +1334,7 @@ namespace BotTest.Game.AI.Search
                 }
             }
             if (trace != null && rootKey == _settings.TraceRoot && _traces.Count < _settings.TraceLines)
-                _traces.Enqueue(string.Join("\n", trace) + $"\n  => position score {value * 100:0}" + (penalty > 0 ? $" (suggestions cost {penalty:0.0})" : ""));
+                _traces.Enqueue(string.Join("\n", trace) + $"\n  => position score {MctsEvaluator.Cu(value)} card units" + (penalty > 0 ? $" (suggestions cost {penalty:0.0})" : ""));
             SearchTimings.Add(ref SearchTimings.Evaluate, Stopwatch.GetTimestamp() - scoring);
             lock (_start.Lock)
             {
@@ -1378,7 +1391,7 @@ namespace BotTest.Game.AI.Search
                         var pool = free.Count > 0 ? free : unexpanded;
                         pick = pool[rng.Next(pool.Count)];
                     }
-                    var fresh = new MctsNode { Label = pick.Label, Available = 1, Visits = 1, Total = loss };
+                    var fresh = new MctsNode { Label = pick.Label, Available = 1, Visits = 1, Total = loss, ParentVisitsAtCreation = node.Visits };
                     (node.ChildLabels ??= new Dictionary<string, string>())[pick.Key] = pick.Label;
                     node.Children[pick.Key] = fresh;
                     return (fresh, pick.Key, true, loss);
@@ -1802,7 +1815,10 @@ namespace BotTest.Game.AI.Search
                 case SelectTributeData tribute when (tribute.SelectableCards?.Length ?? 0) is var n && n > 0 && n <= MaxTreePickCards:
                     return Picks(SearchActions.CardPicks(tribute.SelectableCards!, tribute.Minimum, tribute.Maximum, false, rng, MaxPickOptions));
                 case SelectUnselectCardData unselect when (unselect.SelectableCards?.Length ?? 0) is var n && n > 0 && n <= MaxTreePickCards:
-                    return Picks(SearchActions.CardPicks(unselect.SelectableCards!, Math.Min(unselect.Minimum, 1), 1, unselect.Minimum == 0 || unselect.Cancelable));
+                    // Our own cost pick can't be cancelled in a line (seen 2026-11-18: "special summon Dark Grepher -> cancel" scored as ending the
+                    // turn and was played; Omega offered no cancel, so Sirocco was discarded): "cancel" only where it finishes a selection.
+                    return Picks(SearchActions.CardPicks(unselect.SelectableCards!, Math.Min(unselect.Minimum, 1), 1,
+                        unselect.Minimum == 0 || unselect.Cancelable && prompt.Player != 0));
                 // Our sum (Machina Fortress's discard, fusion materials): one option per card, keyed as Omega's one-card-at-a-time prompt keys
                 // it (the live decision is a SelectUnselectCard), answered with a valid sum that includes that card (seen 2026-11-18 live: the
                 // search could never stop at the discard).

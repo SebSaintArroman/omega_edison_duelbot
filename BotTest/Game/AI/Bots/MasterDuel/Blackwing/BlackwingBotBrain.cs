@@ -63,7 +63,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         public static double NormalSummonPlayCost = 0.5;
 
         [Tunable("The search's value for Kalut in hand (its +1400 in battle), card units.")]
-        public static double KalutHandValue = 0.6;
+        public static double KalutHandValue = 1.0; // user, 2026-11-19: raise it (was 0.6)
         [Tunable("The search's value for a face-up Black Whirlwind (a search per Blackwing summon), card units.")]
         public static double WhirlwindFieldValue = 0.8;
         [Tunable("Tribute order: a Vayu of ours.")]
@@ -263,6 +263,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             // into the 'save resources' category anyway": the brain chose Reinforcement of the Army first, so the Bora rule further down
             // never ran and the search's Bora summon on turn 1 paid nothing).
             BoraPurposeHold(context, state, botMonsters, enemyMonsters);
+            // Sirocco's effect with nothing to gain, whichever play the brain makes first (user, 2026-11-18: "why isn't the rule about not
+            // using sirocco's effect pointlessly stopping sirocco's effect being used pointlessly?").
+            if (TryGetActivable(state, BlackwingCardId.BlackwingSiroccoTheDawn, out var pointlessBoost) &&
+                pointlessBoost.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && SiroccoBoostPointless(botMonsters, enemyMonsters))
+                Hold(pointlessBoost.ID, MainAction.Activate, BlackwingRules.SiroccoBoostPointless);
 
             // 1. Free card advantage.
             // (Shared staple rule: Upstart Goblin, Charge of the Light Brigade, Reinforcement of the Army.)
@@ -2533,6 +2538,25 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         /// Summon, free bodies (Bora / Gale next to a Blackwing), Gale halving the monster in our way, Sirocco's ATK
         /// boost for lethal or to beat their best monster, Icarus Attack on our turn.
         /// </summary>
+        /// <summary>
+        /// Sirocco's boost has nothing to gain: it's the only Blackwing face-up (user, 2026-11-17: "never use sirocco's effect if it's the only
+        /// blackwing on the field. no point to do that ever"), or their field has no monster (2026-11-16: "using sirocco's effect is pointless
+        /// if I don't have a monster on the field": split attacks deal the same).
+        /// </summary>
+        private bool SiroccoBoostPointless(List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters) =>
+            (botMonsters.Count(card => card.IsFaceup() && IsBlackwing(card)) < 2 || enemyMonsters.Count == 0) && Rule(BlackwingRules.SiroccoBoostPointless);
+
+        /// <summary>The chain window after a summon offers Sirocco's boost too (seen 2026-11-18: chained with Sirocco the only monster): held there.</summary>
+        protected override async Task RecordDeckChainHoldsAsync(DecisionContext<SelectChainData> context)
+        {
+            var offered = context.StateData.SelectableCards ?? Array.Empty<DynamicCard>();
+            if (!offered.Any(card => card.IsCode(BlackwingCardId.BlackwingSiroccoTheDawn) && card.CurrentCoordinates is { Controller: 0, Location: (byte)CardLocation.MonsterZone }))
+                return;
+            if (SiroccoBoostPointless(await GetBotMonsterCardsAsync(), await GetEnemyMonsterCardsAsync()))
+                foreach (var card in offered.Where(card => card.IsCode(BlackwingCardId.BlackwingSiroccoTheDawn)))
+                    HoldKey(card.ID, "chain:", BlackwingRules.SiroccoBoostPointless);
+        }
+
         /// <summary>Bora special summonable from the hand that adds no kill and no direct hit this turn (or no battle is ahead): held
         /// (BlackwingRules.BodyNeedsPurpose), so a line that summons it anyway pays for it.</summary>
         private void BoraPurposeHold(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters)
@@ -2670,16 +2694,11 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 }
             }
 
-            // Sirocco's effect with nothing to gain: it's the only Blackwing (user, 2026-11-17: "never use sirocco's effect if it's the only
-            // blackwing on the field. no point to do that ever"), or their field has no monster (2026-11-16: "using sirocco's effect is
-            // pointless if I don't have a monster on the field": split attacks deal the same). Held, so the search's lines pay for it.
-            if (TryGetActivable(state, BlackwingCardId.BlackwingSiroccoTheDawn, out var idleBoost) &&
-                idleBoost.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone &&
-                (botMonsters.Count(card => card.IsFaceup() && IsBlackwing(card)) < 2 || enemyMonsters.Count == 0) && Rule(BlackwingRules.SiroccoBoostPointless))
-                Hold(idleBoost.ID, MainAction.Activate, BlackwingRules.SiroccoBoostPointless);
-            // ...and into a suspected Honest (user, 2026-11-17): the one boosted attacker battling a LIGHT monster of theirs (or a face-down one)
-            // hands Honest the whole boost.
-            else if (idleBoost.ID > 0 && idleBoost.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone &&
+            // Sirocco's effect with nothing to gain is held at the start of the decision (DecideMainPhaseAsync). Otherwise, into a suspected
+            // Honest (user, 2026-11-17): the one boosted attacker battling a LIGHT monster of theirs (or a face-down one) hands Honest the boost.
+            TryGetActivable(state, BlackwingCardId.BlackwingSiroccoTheDawn, out var idleBoost);
+            bool boostPointless = botMonsters.Count(card => card.IsFaceup() && IsBlackwing(card)) < 2 || enemyMonsters.Count == 0;
+            if (!boostPointless && idleBoost.ID > 0 && idleBoost.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone &&
                      enemyMonsters.Any(card => !card.IsFaceup() || (card.Attribute & 0x10) != 0) &&
                      HonestSuspected(((await CurrentField.GetBotField()).EnemySide.Hand ?? Array.Empty<int>()).Length) && Rule(BlackwingRules.SiroccoBoostIntoHonest))
                 Hold(idleBoost.ID, MainAction.Activate, BlackwingRules.SiroccoBoostIntoHonest);

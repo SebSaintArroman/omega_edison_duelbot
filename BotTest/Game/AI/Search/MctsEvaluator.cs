@@ -585,7 +585,7 @@ namespace BotTest.Game.AI.Search
         // happy with raising it a bit in line with the new hand scores"): each 0.3 up with a hand card (0.5 -> 0.8), the old set-trap /
         // set-quick-play bonuses (0.25 / 0.1) folded in, so setting a trap still beats holding it by 0.25.
         [Tunable("A set normal / continuous / field / equip spell's base worth, before what it will do: 0.5 below a hand card, so setting one costs that.")]
-        public static double SetSpellBase = 0.3; // user, 2026-11-18: 0.3, "cleaner": a set normal spell is worth 0.5 less than in hand (the old SpellInHandBonus0)
+        public static double SetSpellBase = 0.8; // user, 2026-11-19: back to 0.8, with LineTally.SetNormalSpellCost 0.5 for setting a normal spell (was 0.3 on 2026-11-18)
         [Tunable("A set quick-play spell's base worth, before what it will do.")]
         public static double SetQuickPlayBase = 0.9;
         [Tunable("A set trap's base worth, before what it will do.")]
@@ -640,6 +640,27 @@ namespace BotTest.Game.AI.Search
         /// <summary>The least a position still alive at the horizon scores (and 1 minus the most): survival over a loss.</summary>
         [Tunable("The least a position still alive at the horizon scores (and 1 minus the most): survival over a loss.")]
         public static double AliveFloor = 0.05;
+
+        /// <summary>A search score (0-1, squashed) back in card units against the decision's own position: what the user reads
+        /// (user, 2026-11-19: "everywhere it reaches me ... report these scores in raw card units"). Exact for one line; for an
+        /// average of lines it's the card units of that average score. A won line reads very high.</summary>
+        public static double CardUnits(double score)
+        {
+            double lo = AliveFloor, hi = 1 - AliveFloor, s = Math.Clamp(score, lo + 1e-6, hi - 1e-6);
+            return Scale * Math.Log((s - lo) / (hi - s));
+        }
+
+        /// <summary>A score's standard error (or margin) in card units, at that score.</summary>
+        public static double CardUnitsErr(double score, double err)
+        {
+            double lo = AliveFloor, hi = 1 - AliveFloor, s = Math.Clamp(score, lo + 1e-3, hi - 1e-3);
+            return err * (hi - lo) * Scale / ((s - lo) * (hi - s));
+        }
+
+        public static string Cu(double score) => CardUnits(score).ToString("+0.00;-0.00;0.00");
+        public static string CuErr(double score, double err) => CardUnitsErr(score, err).ToString("0.00");
+        /// <summary>A score with its uncertainty, in card units ("+1.25 +/-0.30"): an average over lines shows how sure it is.</summary>
+        public static string CuPm(double score, double err) => $"{Cu(score)} +/-{CuErr(score, err)}";
 
         // A monster's worth as a body (current ATK, or DEF in defence), as SideScore counts it.
         private static double Body((int Code, int Attack, int Defense, bool FaceUp, bool AttackPosition, int Level, int Type, bool Negated) m) =>

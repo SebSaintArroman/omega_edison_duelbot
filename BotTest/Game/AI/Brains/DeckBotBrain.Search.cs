@@ -1141,8 +1141,8 @@ namespace BotTest.Game.AI.Brains
                     bot.LogNote($"search: !!! TIME LIMIT ({MaxThinkMs / 1000} s) - deciding on what it has, NOT sure !!! {outcome.TreeVisits} lines in the tree; " +
                                 $"needed {need} lines on the best move and on the brain's, and {ScreenLines} on every move");
                     foreach (var s in outcome.Root.Where(s => legal.Contains(s.Key)).OrderByDescending(s => s.Mean))
-                        bot.LogNote($"search: !!! {s.Label}: score {s.Mean * 100:0.0} over {s.Visits} lines" +
-                                    (double.IsNaN(s.Average) ? "" : $" (lines average {s.Average * 100:0.0})") +
+                        bot.LogNote($"search: !!! {s.Label}: score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(s.Mean, s.StdErr)} over {s.Visits} lines" +
+                                    (double.IsNaN(s.Average) ? "" : $" (lines average {BotTest.Game.AI.Search.MctsEvaluator.CuPm(s.Average, s.StdErr)})") +
                                     (s.Key == brainKey ? " [the brain's move]" : "") + (s.Visits < ScreenLines ? " [never got a fair look]" : ""));
                     decidedBy = "time limit";
                     break;
@@ -1156,8 +1156,8 @@ namespace BotTest.Game.AI.Brains
                 {
                     nextNote += ProgressNoteMs;
                     string progress = $"search: still thinking ({elapsed / 1000.0:0} s): {outcome.TreeVisits} lines; best so far {top.Label} " +
-                                      $"(score {top.Mean * 100:0.0} over {top.Visits} lines)" +
-                                      (replaced != null ? $", the brain's {replaced.Label} {replaced.Mean * 100:0.0} over {replaced.Visits}" : "") +
+                                      $"(score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(top.Mean, top.StdErr)} over {top.Visits} lines)" +
+                                      (replaced != null ? $", the brain's {replaced.Label} {BotTest.Game.AI.Search.MctsEvaluator.CuPm(replaced.Mean, replaced.StdErr)} over {replaced.Visits}" : "") +
                                       $"; each needs {need} lines" + (unscreened.Count > 0 ? $", {unscreened.Count} move(s) still under {ScreenLines}" : "") +
                                       (challengers.Count(s => !Met(s)) is > 0 and var close ? $", {close} move(s) within error of the best still short" : "");
                     bot.LogNote(progress);
@@ -1211,7 +1211,7 @@ namespace BotTest.Game.AI.Brains
             if (outcome != null && !IsSearchTwin)
                 bot.LogNote($"search: settle stats: decided by {decidedBy} after {clock.ElapsedMilliseconds / 1000.0:0.0} s; " +
                             string.Join("; ", outcome.Root.Where(s => legal.Contains(s.Key)).OrderByDescending(s => s.Mean)
-                                .Select(s => $"{s.Label}{(s.Key == brainKey ? " [brain]" : "")} {s.Mean * 100:0.0} n={s.Visits} +/-{s.StdErr * 100:0.00}")));
+                                .Select(s => $"{s.Label}{(s.Key == brainKey ? " [brain]" : "")} {BotTest.Game.AI.Search.MctsEvaluator.CuPm(s.Mean, s.StdErr)} n={s.Visits}")));
             if (clock.ElapsedMilliseconds > SearchBudgetMs + 1000)
                 bot.LogNote($"search: thought {clock.ElapsedMilliseconds / 1000.0:0.#} s in all (best move needed {MinPlayLines} lines)");
             return outcome;
@@ -1287,10 +1287,11 @@ namespace BotTest.Game.AI.Brains
 
             // What the user reads (2026-11-12: "make them clearer, more relevant to me: what was the best line it didn't use"):
             // the verdict, the best move the brain didn't play with its line, and why it wasn't played. Scores are the
-            // search's 0-100 yardstick for the position the line ends in, centred on the decision's own position (50 = no better or worse than now; since 2026-11-18), not a win chance.
+            // card units the line ends ahead of or behind the decision's own position (0 = no better or worse than now; user, 2026-11-19:
+            // raw card units, not the squashed 0-100 the search works in).
             // The score is the move's line value (its best well-explored follow-ups); the plain average of its lines is shown when it differs.
-            double Score(RootStat s) => Math.Round(s.Mean * 100, 1);
-            string Avg(RootStat s) => !double.IsNaN(s.Average) && Math.Abs(s.Average - s.Mean) >= 0.005 ? $", lines average {s.Average * 100:0.0}" : "";
+            double Score(RootStat s) => Math.Round(BotTest.Game.AI.Search.MctsEvaluator.CardUnits(s.Mean), 2); // card units against the position now (user, 2026-11-19)
+            string Avg(RootStat s) => !double.IsNaN(s.Average) && Math.Abs(s.Average - s.Mean) >= 0.005 ? $", lines average {BotTest.Game.AI.Search.MctsEvaluator.CuPm(s.Average, s.StdErr)}" : "";
             string Line(RootStat s) => outcome.RootLines?.TryGetValue(s.Key, out var steps) == true && steps.Count > 1
                 ? string.Join(" -> ", steps.Select(step => step.Label))
                 : s.Label;
@@ -1298,8 +1299,8 @@ namespace BotTest.Game.AI.Brains
             string effort = $"{outcome.Elapsed.TotalSeconds:0.0} s, {outcome.Iterations} lines played out";
             if (overrides)
             {
-                bot.LogNote($"search: REPLACED the brain's {mine.Label} (score {Score(mine)} over {mine.Visits} lines{Avg(mine)}) with {best.Label} (score {Score(best)} over {best.Visits} lines{Avg(best)}, " +
-                            $"{Score(best) - Score(mine):0.0} better{Held(best)}); {effort}");
+                bot.LogNote($"search: REPLACED the brain's {mine.Label} (score {Score(mine)} +/-{BotTest.Game.AI.Search.MctsEvaluator.CuErr(mine.Mean, mine.StdErr)} over {mine.Visits} lines{Avg(mine)}) with {best.Label} (score {Score(best)} +/-{BotTest.Game.AI.Search.MctsEvaluator.CuErr(best.Mean, best.StdErr)} over {best.Visits} lines{Avg(best)}, " +
+                            $"{Score(best) - Score(mine):0.00} card units better{Held(best)}); {effort}");
                 bot.LogNote($"search: its line: {Line(best)}");
                 bot.LogNote($"search: its lines: {Detail(best)}");
                 bot.LogNote($"search: the brain's {mine.Label}: {Detail(mine)}; its line: {Line(mine)}");
@@ -1309,8 +1310,8 @@ namespace BotTest.Game.AI.Brains
                 double margin = 2 * Math.Sqrt(best.StdErr * best.StdErr + mine.StdErr * mine.StdErr);
                 if (best.Mean - mine.Mean <= margin)
                     FlagForReview(bot, "close-calls.jsonl",
-                        $"search: CLOSE CALL: {best.Label} ({Score(best)} over {best.Visits} lines) replaced the brain's {mine.Label} ({Score(mine)} over {mine.Visits} lines): " +
-                        $"{Score(best) - Score(mine):0.0} better, inside the uncertainty (+/-{margin * 100:0.0}). Its lines: {Detail(best)} | the brain's: {Detail(mine)}; " +
+                        $"search: CLOSE CALL: {best.Label} ({Score(best)} +/-{BotTest.Game.AI.Search.MctsEvaluator.CuErr(best.Mean, best.StdErr)} over {best.Visits} lines) replaced the brain's {mine.Label} ({Score(mine)} +/-{BotTest.Game.AI.Search.MctsEvaluator.CuErr(mine.Mean, mine.StdErr)} over {mine.Visits} lines): " +
+                        $"{Score(best) - Score(mine):0.00} card units better, inside the uncertainty (+/-{BotTest.Game.AI.Search.MctsEvaluator.CuErr(best.Mean, margin)}). Its lines: {Detail(best)} | the brain's: {Detail(mine)}; " +
                         $"its line: {Line(best)} | the brain's: {Line(mine)}");
                 if (rules.Count > 0)
                     bot.LogNote($"search: the brain's rules it went past: {string.Join(", ", rules)}");
@@ -1320,7 +1321,7 @@ namespace BotTest.Game.AI.Brains
                 // The best move other than the brain's: the search's own favourite, or (when that is the brain's) the runner-up.
                 var other = best.Key != brainKey ? best
                     : outcome.Root.Where(s => s.Key != brainKey && legal.Contains(s.Key)).OrderByDescending(s => s.Mean).FirstOrDefault();
-                bot.LogNote($"search: kept the brain's {mine.Label} (score {Score(mine)} over {mine.Visits} lines{Avg(mine)}); {effort}");
+                bot.LogNote($"search: kept the brain's {mine.Label} (score {Score(mine)} +/-{BotTest.Game.AI.Search.MctsEvaluator.CuErr(mine.Mean, mine.StdErr)} over {mine.Visits} lines{Avg(mine)}); {effort}");
                 if (other != null)
                 {
                     string why = other.Mean <= mine.Mean ? $"it scored {Score(mine) - Score(other):0.0} lower"
@@ -1407,11 +1408,11 @@ namespace BotTest.Game.AI.Brains
             if (best.Mean > mine.Mean && HasItsLines(best))
             {
                 AimAt(bot, target, AimKind.Search, $"attack target {name} in zone {sequence + 1}: the search's lines beat the brain's fallback target in {brainZone} " +
-                                                   $"(score {best.Mean * 100:0.0} over {best.Visits} lines vs {mine.Mean * 100:0.0} over {mine.Visits})");
+                                                   $"(score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(best.Mean, best.StdErr)} over {best.Visits} lines vs {BotTest.Game.AI.Search.MctsEvaluator.CuPm(mine.Mean, mine.StdErr)} over {mine.Visits})");
                 return;
             }
-            bot.LogNote($"search: it would attack {name} in zone {sequence + 1} (score {best.Mean * 100:0.0}, {best.Visits} lines); the brain's target in {brainZone} " +
-                        $"(score {mine.Mean * 100:0.0}, {mine.Visits} lines) stands: " +
+            bot.LogNote($"search: it would attack {name} in zone {sequence + 1} (score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(best.Mean, best.StdErr)}, {best.Visits} lines); the brain's target in {brainZone} " +
+                        $"(score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(mine.Mean, mine.StdErr)}, {mine.Visits} lines) stands: " +
                         (best.Mean <= mine.Mean ? "not better" : $"too few lines to count ({best.Visits}; {MinPlayLines} needed)"));
         }
 

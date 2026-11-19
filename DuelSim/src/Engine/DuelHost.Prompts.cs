@@ -36,8 +36,8 @@ internal sealed partial class DuelHost
     {
         switch (id)
         {
-            case Msg.SelectIdleCmd: return IdleCmd(r);
-            case Msg.SelectBattleCmd: return BattleCmd(r);
+            case Msg.SelectIdleCmd: _summonWindow = false; return IdleCmd(r);
+            case Msg.SelectBattleCmd: _summonWindow = false; return BattleCmd(r);
             case Msg.SelectEffectYn: return EffectYesNo(r);
             case Msg.SelectYesNo: return YesNo(r);
             case Msg.SelectOption: return Option(r);

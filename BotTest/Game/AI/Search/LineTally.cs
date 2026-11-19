@@ -101,6 +101,51 @@ namespace BotTest.Game.AI.Search
         internal static readonly int[] Lyla = { 22624373, 22624393 };
         internal static readonly int[] Unions = { 42940404, 42940424, 78349103, 78349123 };
         internal static readonly int[] MiracleFusion = { 45906428 };
+        internal static readonly int[] BrainControl = { 87910978 };
+
+        [Tunable("Setting a normal spell (it is worth less set than in hand, and shows a card): this line cost. User, 2026-11-19: \"put the set spell value back to 0.8 and add back the line penalty of 0.5 for setting one\".")]
+        public static double SetNormalSpellCost = 0.5;
+        [Tunable("Brain Control whose monster goes back to them at the end of our turn (not tributed, not Synchro material, no win): this small cost. User, 2026-11-19: \"the goal of it is to tribute or synchro with my monster, or win that turn\".")]
+        public static double BrainControlUnusedCost = 2; // user, 2026-11-19: "make it a 2-point hold"
+        [Tunable("A trap of ours fired on their turn in a window opened by nothing (no chain to answer, no attack, no summon just made; not their End Phase): it could have waited for the last possible moment. User, 2026-11-19.")]
+        public static double EarlyTrapCost = 1.5; // user, 2026-11-19: 1.5
+        [Tunable("Return from the Different Dimension fired on their turn, even against an attack, unless Return is about to be destroyed: this cost, instead of EarlyTrapCost. Not on our turn (plenty of plays there). User, 2026-11-19.")]
+        public static double ReturnTheirTurnCost = 1.5;
+        internal static readonly int[] ReturnFromTheDifferentDimension = { 27174286 };
+
+        private bool _brainControlPending;
+        private int _brainTarget, _brainTargetCopies;
+
+        private static bool IsNormalSpell(int code) =>
+            code > 0 && SearchHost.Cards.Get(code) is { } r && (r.Type & 0x2) != 0 && (r.Type & (0x80 | 0x10000 | 0x20000 | 0x40000 | 0x80000)) == 0;
+
+        private static bool IsTrap(int code) => code > 0 && SearchHost.Cards.Get(code) is { } r && (r.Type & 0x4) != 0;
+
+        /// <summary>Our chain answer on their turn: a trap fired in an eventless window (not their End Phase) costs EarlyTrapCost.</summary>
+        public double OnTheirTurnChain(SelectChainData chain, byte[] packet, bool eventless, bool attacking, Func<int, int, bool> doomed, int phase, Action<string>? note)
+        {
+            if (packet.Length < 4)
+                return 0;
+            int index = BitConverter.ToInt32(packet, 0);
+            var cards = chain.SelectableCards ?? Array.Empty<OmegaBotWrapper.Struct.DynamicCard>();
+            if (index < 0 || index >= cards.Length || cards[index].CurrentCoordinates.Controller != 0 || !IsTrap(Canonical(cards[index].ID)))
+                return 0;
+            // Return from the Different Dimension on their turn costs, unless it's about to be destroyed (user, 2026-11-19).
+            if (Is(cards[index].ID, ReturnFromTheDifferentDimension))
+            {
+                var at = cards[index].CurrentCoordinates;
+                // Even against an attack (user, 2026-11-19: "add the return their turn cost even if it is answering an attack too"): only a
+                // Return about to be destroyed is free.
+                if (doomed(at.Location, at.Sequence))
+                    return 0;
+                note?.Invoke($"  (Return from the Different Dimension on their turn, not about to be destroyed: -{ReturnTheirTurnCost:0.#})");
+                return ReturnTheirTurnCost;
+            }
+            if (!eventless || phase == (int)OmegaBotWrapper.Enum.DuelPhase.End)
+                return 0;
+            note?.Invoke($"  (a trap fired on their turn with nothing to answer: it could wait for the last moment: -{EarlyTrapCost:0.#})");
+            return EarlyTrapCost;
+        }
 
         private int _sets, _equips;
         private bool _battle, _lyla, _fusion, _turnOver, _battleInLine, _attackedInLine;
@@ -159,6 +204,17 @@ namespace BotTest.Game.AI.Search
                     }
                     return lockCost;
                 }
+                case SelectCardData pick when _brainControlPending && packet.Length >= 2 && packet[0] >= 1:
+                {
+                    _brainControlPending = false;
+                    var cards = pick.SelectableCards ?? Array.Empty<OmegaBotWrapper.Struct.DynamicCard>();
+                    if (packet[1] < cards.Length && cards[packet[1]].CurrentCoordinates.Controller == 1)
+                    {
+                        _brainTarget = Canonical(cards[packet[1]].ID);
+                        _brainTargetCopies = cards.Count(c => c.CurrentCoordinates.Controller == 1 && Canonical(c.ID) == _brainTarget);
+                    }
+                    return 0;
+                }
                 case SelectEffectYnData yn when packet[0] != 0:
                     _idleSummons.Remove(Canonical(yn.EffectCard.ID));
                     return 0;
@@ -200,8 +256,14 @@ namespace BotTest.Game.AI.Search
             }
             switch (action)
             {
-                case MainAction.SetSpell or MainAction.SetMonster when !_battle:
-                    _sets++;
+                case MainAction.SetSpell or MainAction.SetMonster:
+                    if (action == MainAction.SetSpell && IsNormalSpell(Canonical(code)))
+                    {
+                        cost += SetNormalSpellCost;
+                        note?.Invoke($"  (a normal spell set: -{SetNormalSpellCost:0.#})");
+                    }
+                    if (!_battle)
+                        _sets++;
                     break;
                 case MainAction.Summon or MainAction.SpSummon when code > 0:
                     _idleSummons.Add(code);
@@ -221,6 +283,8 @@ namespace BotTest.Game.AI.Search
                         _equips++;
                     if (Is(code, MiracleFusion))
                         _fusion = true;
+                    if (Is(code, BrainControl))
+                        _brainControlPending = true;
                     break;
                 case MainAction.ToBattlePhase when !_battle:
                     _riskAtBattle = BattleRemovalRisk?.Invoke() ?? -1;
@@ -245,7 +309,7 @@ namespace BotTest.Game.AI.Search
         }
 
         /// <summary>Our turn is over (ours: our side's board as it ended). Returns the cost of what never paid off.</summary>
-        public double OnOurTurnEnd(SideSummary ours, Action<string>? note)
+        public double OnOurTurnEnd(SideSummary ours, SideSummary theirs, Action<string>? note)
         {
             if (_turnOver)
                 return 0;
@@ -255,6 +319,12 @@ namespace BotTest.Game.AI.Search
             {
                 cost += EmptyBattleCost;
                 note?.Invoke($"  (the Battle Phase with no attack: -{EmptyBattleCost:0.##})");
+            }
+            // Brain Control's monster back with them, its copies all there: never tributed or used as material (a win ends the line first).
+            if (_brainTarget > 0 && theirs.Monsters.Count(m => Canonical(m.Code) == _brainTarget) >= _brainTargetCopies)
+            {
+                cost += BrainControlUnusedCost;
+                note?.Invoke($"  (Brain Control without a tribute, a Synchro or a win: -{BrainControlUnusedCost:0.#})");
             }
             if (_fusion)
             {

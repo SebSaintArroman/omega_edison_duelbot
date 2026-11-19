@@ -1,0 +1,24 @@
+// Live 2026-11-19 Machina Jinzo #029 (turn 4): our field empty but a set Jar of Greed, Ryko x2 / Plaguespreader / Armageddon Knight / DAD /
+// Heavy Storm in hand; their Machina Gearframe (1800) and one set card. The search ended the turn (41.5) over setting Ryko (38.0).
+// User: "why not set ryko?!"
+{
+  "deck": "MachinaJinzo",
+  "opponent": "MachinaControl",
+  "lp": [7900, 8000],
+  "turn": 4,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": false,
+  "ours": {
+    "monsters": [],
+    "spells": [ { "id": 83968380, "zone": 2, "set": true } ],
+    "hand": [ 21502796, 19613556, 33420078, 21502796, 28985331, 65192027 ],
+    "grave": [ 55144522, 70342110, 77565204, 44330098, 22624373 ]
+  },
+  "theirs": {
+    "monsters": [ { "id": 42940404, "zone": 4 } ],
+    "spells": [ { "zone": 2, "set": true } ],
+    "handCount": 6,
+    "grave": [ 7359741 ]
+  }
+}

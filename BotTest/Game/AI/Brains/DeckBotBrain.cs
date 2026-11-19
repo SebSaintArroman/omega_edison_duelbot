@@ -1122,7 +1122,11 @@ namespace BotTest.Game.AI.Brains
                     if (offered[i].IsCode(WabokuId) && offered[i].CurrentCoordinates.Controller == 0 && !await DoomedAsync(offered[i]))
                         HoldKey(offered[i].ID, "chain:", DeckRules.WabokuOwnTurn);
             }
+            await RecordDeckChainHoldsAsync(context);
         }
+
+        /// <summary>A deck's own holds for a chain window (its cards' effects offered there that its rules say not to use). Default: none.</summary>
+        protected virtual Task RecordDeckChainHoldsAsync(DecisionContext<SelectChainData> context) => Task.CompletedTask;
 
         /// <summary>Our set card is about to be removed anyway: their chain targets it, or they just activated Heavy Storm.</summary>
         private async Task<bool> DoomedAsync(DynamicCard ours)
