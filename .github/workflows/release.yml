@@ -19,9 +19,9 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '9.0.x'
 
@@ -43,5 +43,5 @@ jobs:
           $tag = "build-${{ github.run_number }}"
           $exe = Get-ChildItem dist -Filter 'DuelBot-Setup-*.exe' | Select-Object -First 1
           Copy-Item $exe.FullName dist\DuelBot-Setup.exe
-          $title = "$tag: " + (git log -1 --format=%s)
+          $title = "${tag}: " + (git log -1 --format=%s)
           gh release create $tag dist\DuelBot-Setup.exe --target $env:GITHUB_SHA --title $title --notes "Commit $env:GITHUB_SHA. Download DuelBot-Setup.exe and double-click it; installed bots offer this update when started." --latest

@@ -16,7 +16,9 @@ try {
 
     $updating = Test-Path (Join-Path $target 'settings.json')
     Write-Host 'Unpacking...'
-    Expand-Archive -Path $zip -DestinationPath $temp -Force
+    # .NET's unzip, not Expand-Archive (Windows PowerShell's took over 10 minutes on the ~21,000 files).
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $temp)
     $source = Join-Path $temp 'DuelBot'
 
     Write-Host "Installing to $target ..."
