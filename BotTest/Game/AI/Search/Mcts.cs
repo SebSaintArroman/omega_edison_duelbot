@@ -185,7 +185,25 @@ namespace BotTest.Game.AI.Search
                     c.Available >= Mcts.LineValueAvailableShare * Math.Max(1, Visits - c.ParentVisitsAtCreation)).ToList();
             }
             if (explored.Count == 0)
-                return Mean;
+            {
+                // None has its lines yet: the plain average would count every stupid branch our side of the lines tried deep down
+                // (user, 2026-11-19: "I don't want decisions penalised because the lines they draw play stupidly deep down the line";
+                // seen: every attack line went on into a Main Phase 2 Plaguespreader + Goyo, -2.5 each). Read it through the best
+                // follow-up with a few lines instead, one standard error down for its luck, never below the average.
+                List<MctsNode> tried;
+                lock (Lock)
+                    tried = Children.Values.Where(c => c.Visits >= Mcts.UnexploredMinVisits &&
+                        c.Available >= Mcts.LineValueAvailableShare * Math.Max(1, Visits - c.ParentVisitsAtCreation)).ToList();
+                double floor = Mean;
+                foreach (var child in tried)
+                {
+                    double v = child.LineValue(minVisits, memo) - Mcts.UnexploredErrors * child.StdErr;
+                    if (v >= 0 && v <= 1 && v > floor)
+                        floor = v;
+                }
+                memo[this] = floor;
+                return floor;
+            }
             double best = double.NegativeInfinity;
             foreach (var child in explored)
                 best = Math.Max(best, child.LineValue(minVisits, memo));
@@ -660,6 +678,8 @@ namespace BotTest.Game.AI.Search
         public static int LineValueVisits = 30;
         [Tunable("Lines a follow-up needs before UnexploredBest counts its mean: a move still scored on the average of its follow-ups, one of which already looks as good as the best move, keeps getting lines.")]
         public static int UnexploredMinVisits = 10;
+        [Tunable("While no follow-up of ours has LineValueVisits, a move is read through its best follow-up with UnexploredMinVisits, this many standard errors down (its luck), never below its plain average. User, 2026-11-19: decisions not penalised for the lines' bad play deep down.")]
+        public static double UnexploredErrors = 1;
 
         /// <summary>Brain holds that only exist for the Battle Phase: a line that never enters it doesn't pay them.</summary>
         internal static readonly HashSet<string> BattleOnlyHolds = new() { "deck.hold-sets-for-battle", "deck.hold-monster-sets-for-battle", "deck.sets-after-battle" };

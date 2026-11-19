@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OmegaBotWrapper", "OmegaBot
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BotTest", "BotTest\BotTest.csproj", "{9D8773EC-D577-49E2-BE5B-54153FCC878F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DuelSim", "DuelSim\DuelSim.csproj", "{2A72F7CA-03D4-4115-80CE-81D621E2CB13}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +43,18 @@ Global
 		{9D8773EC-D577-49E2-BE5B-54153FCC878F}.Release|x64.Build.0 = Release|Any CPU
 		{9D8773EC-D577-49E2-BE5B-54153FCC878F}.Release|x86.ActiveCfg = Release|Any CPU
 		{9D8773EC-D577-49E2-BE5B-54153FCC878F}.Release|x86.Build.0 = Release|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Debug|x64.Build.0 = Debug|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Debug|x86.Build.0 = Debug|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Release|x64.ActiveCfg = Release|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Release|x64.Build.0 = Release|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Release|x86.ActiveCfg = Release|Any CPU
+		{2A72F7CA-03D4-4115-80CE-81D621E2CB13}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

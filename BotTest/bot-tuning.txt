@@ -384,6 +384,7 @@ LineTally.PriorityWindowBonus = 0.3   # Bonus (card units) for a monster's effec
 # --- MctsEvaluator
 MctsEvaluator.AliveFloor = 0.05   # The least a position still alive at the horizon scores (and 1 minus the most): survival over a loss.
 MctsEvaluator.AtkTable = 0, 0.01, 0.011, 0.012, 0.013, 0.014, 0.015, 0.02, 0.021, 0.022, 0.03, 0.031, 0.04, 0.041, 0.3, 0.31, 0.4, 0.41, 0.5, 0.51, 1, 1.01, 1.1, 1.11, 1.2, 1.21, 1.25, 1.26, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7, 1.75, 1.8, 1.85, 1.9, 1.95, 2, 2.01, 2.1, 2.11, 2.2, 2.21, 2.25, 2.26, 2.4, 2.49, 2.5, 2.55, 2.6, 2.61, 2.62, 2.63, 2.7, 2.701, 2.702, 2.703, 2.8, 2.801, 2.802, 2.803, 2.804, 2.805, 2.806, 2.807, 2.808, 2.809, 2.81, 2.811, 2.812, 2.813, 2.814, 2.815, 2.816, 2.817, 2.818, 2.819, 2.82, 2.821, 2.822, 2.823, 2.824, 2.825, 2.826, 2.827, 2.828, 2.829, 2.83, 2.831, 2.832, 2.833, 2.834, 2.835, 2.836, 2.837, 2.838, 2.839, 2.84   # A monster's battle size in card units by ATK, one entry per 50 ATK from 0 to 5000 (above 5000 counts as 5000). Not linear: reshape it here.
+MctsEvaluator.AtkScale = 1.15   # Every ATK table value is multiplied by this. User, 2026-11-19: MonsterBase down to 0.3, stats scaled up to compensate (1.15 keeps 1800-2000 attackers where they were).
 MctsEvaluator.AttackerOddsStep = 100   # ATK steps of AttackerOdds: index i is "an attacker of at least i × 100 ATK".
 MctsEvaluator.BaitWeight = 0.5   # A set bait card gains this times our other sets' worth over the number of our sets (the share of a random pick).
 MctsEvaluator.DefenceShare = 1   # A monster in defence position counts this share of its DEF as its battle size (its ATK doesn't count there). User, 2026-11-18: 100%.
@@ -409,7 +410,7 @@ MctsEvaluator.LpHighWorth = 0   # Life points: everything from LpLowBand to 8000
 MctsEvaluator.LpLowBand = 2000   # Life points: the band that counts at LpLowWorth.
 MctsEvaluator.LpLowWorth = 0   # Life points: the first LpLowBand of them are worth this many card units in all (each point matters more when low).
 MctsEvaluator.Main2BoardShare = 0.5   # Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn) count this share of their board value; monster sets count in full. User, 2026-11-18.
-MctsEvaluator.MonsterBase = 0.6   # A face-up monster's base worth, before its ATK (the ATK table) and its effects.
+MctsEvaluator.MonsterBase = 0.3   # A face-up monster's base worth, before its ATK (the ATK table) and its effects. User, 2026-11-19: was 0.6, with AtkScale 1.15.
 MctsEvaluator.NoListNormalAttack = 1800   # Sitting duck without deck-list data: their assumed Level 4-or-lower attacker's ATK.
 MctsEvaluator.NoListTributeAttack = 2400   # Sitting duck without deck-list data: their assumed tribute attacker's ATK (user, 2026-11-18: 2400).
 MctsEvaluator.OversetCurve = 0.5   # The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).
@@ -508,8 +509,8 @@ DeckBotBrain.FairyFuelLimit = 4   # Against a Fairy deck: Fairies in their grave
 DeckBotBrain.FuelGoalDeckChance = 0.5   # The deck-read chance (their deck type, or their list running Dark Armed Dragon) from which a graveyard fuel goal applies.
 DeckBotBrain.HonestSuspectChance = 0.3   # Honest counts as suspected in their hand from this deck-read chance (or when known).
 # --- MctsEvaluator
-MctsEvaluator.DamageBonusPer1000 = 0.1   # A line that attacked gets this much extra (card units) per 1000 damage dealt in our turn, up to DamageBonusMax. Small: damage is mostly the clock's business.
-MctsEvaluator.OwnDamageShare = 0.5   # Our life points lost by the end of a line count against it at this share of DamageBonusPer1000 (continuous). User, 2026-11-18.
+MctsEvaluator.DamageBonusPer1000 = 0.12   # A line that attacked gets this much extra (card units) per 1000 damage dealt in our turn, up to DamageBonusMax. Small: damage is mostly the clock's business. User, 2026-11-19: +20% (was 0.1).
+MctsEvaluator.OwnDamageShare = 0.8333   # Our life points lost by the end of a line count against it at this share of DamageBonusPer1000 (continuous). User, 2026-11-18. 2026-11-19: taking damage doubled to 0.10 per 1000 (0.8333 x 0.12).
 
 # added 2026-11-17 16:20 (new in the code since the file was written)
 # --- EffectEvaluator
@@ -600,3 +601,4 @@ LineTally.JarTheirTurnCost = 1.5   # Jar of Greed fired on their turn when it is
 LineTally.OwnDestroyCost = 3   # Our own card picked for one of our effects that destroys (Mystical Space Typhoon on our own set card): this cost per card. User, 2026-11-19: "HUGE HUGE Error: mst destroy own card".
 # --- Mcts
 Mcts.UnexploredMinVisits = 10   # Lines a follow-up needs before UnexploredBest counts its mean: a move still scored on the average of its follow-ups, one of which already looks as good as the best move, keeps getting lines.
+Mcts.UnexploredErrors = 1   # While no follow-up of ours has LineValueVisits, a move is read through its best follow-up with UnexploredMinVisits, this many standard errors down, never below its plain average. User, 2026-11-19.

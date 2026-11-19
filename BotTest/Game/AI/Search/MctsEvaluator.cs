@@ -83,7 +83,7 @@ namespace BotTest.Game.AI.Search
         public int OurStartLp { get; init; }
 
         [Tunable("Our life points lost by the end of a line count against it at this share of DamageBonusPer1000 (continuous: 0.5 x 0.1 per 1000 = 0.05 per 1000 lost). User, 2026-11-18: \"make it count 50% of the opponent's one\".")]
-        public static double OwnDamageShare = 0.5;
+        public static double OwnDamageShare = 0.8333; // user, 2026-11-19: taking damage doubled to 0.10 per 1000 (0.8333 x 0.12); was 0.5 x 0.1
 
         /// <summary>Per card we draw in our turn, on top of the card itself: a drawn card counts as 1.01 cards (CSV S6, so free draws aren't
         /// skipped for a tie).</summary>
@@ -116,7 +116,7 @@ namespace BotTest.Game.AI.Search
         public double OtherStopChance { get; init; }
 
         [Tunable("A line that attacked gets this much extra (card units) per 1000 damage dealt in our turn, in proportion (no cap). Small: damage is mostly the clock's business.")]
-        public static double DamageBonusPer1000 = 0.1;
+        public static double DamageBonusPer1000 = 0.12; // user, 2026-11-19: +20% (was 0.1)
 
         [Tunable("A side's clock on the other, as part of the board (card units), by its length: entry 1 for a 1-turn clock, 2 for 2 turns, and so on; the last entry for that many turns or more (no clock = 0). The turns are the brain's own clock (BoardAssessment.TurnsToWin). User, 2026-11-18: 1.5 / 1 / 0.5 / 0.25 (4-5) / 0.1 (6-7) / 0.1 (8+, its own bracket).")]
         public static double[] ClockByTurns = { 1.5, 1, 0.5, 0.25, 0.25, 0.1, 0.1, 0.1 };
@@ -421,7 +421,10 @@ namespace BotTest.Game.AI.Search
         };
 
         /// <summary>The table value for this ATK (rounded down to its 50 step; beyond 5000, the last).</summary>
-        public static double AtkValue(double power) => AtkTable[Math.Clamp((int)(Math.Max(0, power) / 50), 0, AtkTable.Length - 1)];
+        public static double AtkValue(double power) => AtkScale * AtkTable[Math.Clamp((int)(Math.Max(0, power) / 50), 0, AtkTable.Length - 1)];
+
+        [Tunable("Every ATK table value is multiplied by this. User, 2026-11-19: MonsterBase down to 0.3 (a 200-ATK Ryko was worth 0.61), stats scaled up to compensate: 1.15 keeps 1800-2000 attackers where they were.")]
+        public static double AtkScale = 1.15;
 
         /// <summary>A monster's battle size: only the stat of the position it's in, ATK in attack, DEF (DefenceShare of it) in defence (user,
         /// 2026-11-18: "only give them the position they're in in that calc"; a defence-position Bora counted its 1700 ATK, so switching it to
@@ -567,7 +570,7 @@ namespace BotTest.Game.AI.Search
         // ------------------------------------------------------------------ what each card is worth where it is (card units)
 
         [Tunable("A face-up monster's base worth, before its ATK (the ATK table) and its effects.")]
-        public static double MonsterBase = 0.6;
+        public static double MonsterBase = 0.3; // user, 2026-11-19 (was 0.6), with AtkScale 1.15
         [Tunable("A monster in defence position counts this share of its DEF as its battle size (its ATK doesn't count there). User, 2026-11-18: 100%.")]
         public static double DefenceShare = 1.0;
         [Tunable("A face-down monster that gains from being set (a flip, a floater, a graveyard effect): its base worth.")]

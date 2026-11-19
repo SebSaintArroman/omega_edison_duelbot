@@ -19,6 +19,8 @@ namespace DuelSim.Match;
 internal static class SearchScenario
 {
     private sealed class Card { public int Id { get; set; } public int Zone { get; set; } public string? Pos { get; set; } public bool Set { get; set; } public bool Attacked { get; set; } public bool Improper { get; set; } public int? EquippedTo { get; set; }
+        /// <summary>Ours: summoned / set this turn (no position change; a set trap can't be activated yet).</summary>
+        public bool ThisTurn { get; set; }
         /// <summary>Their unknown face-down monster: the deck read's likely cards, [[id, chance], ...] (as live EnemySetMonsterOdds).</summary>
         public List<double[]>? Likely { get; set; } }
     private sealed class Side
@@ -58,7 +60,7 @@ internal static class SearchScenario
         static ViewCard ToView(Card c, bool monster, int owner) =>
             new(c.Id, c.Zone, Position(c, monster), owner, c.Attacked,
                 // "equippedTo": the zone of the monster on the same side it's equipped to (a union, an Equip Spell).
-                c.EquippedTo is int zone ? (owner, (int)SearchPosition.LocMZone, zone) : null, new(), new(), c.Improper);
+                c.EquippedTo is int zone ? (owner, (int)SearchPosition.LocMZone, zone) : null, new(), new(), c.Improper, ThisTurn: c.ThisTurn);
 
         var view = new SearchView();
         view.LifePoints[0] = file.Lp[0];

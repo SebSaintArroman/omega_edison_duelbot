@@ -478,6 +478,24 @@ namespace BotTest.Game.AI.Brains
                 _deckSearched = view.OwnDeck.Count;
                 _deckPickedSinceSearch = 0;
                 var best = outcome == null ? null : BestByScore(outcome, original ?? options[0], options.ToHashSet());
+                // A re-search that beats the plan's pick only inside the scores' uncertainty keeps the plan's pick, and is flagged for review
+                // (user, 2026-11-19: Plaguespreader's cost re-searched, Sirocco over the plan's Jar of Greed by 0.10 +/-0.6, and the plan's
+                // Grepher discard of Sirocco was lost; "keeping a plan's choice *if* the re-search is within uncertainty ... flagging these as close calls").
+                if (!news && original != null && best != null && best.Key != original && outcome!.Stat(original) is { } planned)
+                {
+                    double margin = 2 * Math.Sqrt(best.StdErr * best.StdErr + planned.StdErr * planned.StdErr);
+                    if (best.Mean - planned.Mean <= margin)
+                    {
+                        string label(RootStat s) => picks.FirstOrDefault(p => p.Key == s.Key)?.Label ?? s.Label;
+                        string note = $"search: CLOSE CALL at a pick: {label(best)} ({BotTest.Game.AI.Search.MctsEvaluator.CuPm(best.Mean, best.StdErr)} over {best.Visits} lines) " +
+                                      $"over the plan's {label(planned)} ({BotTest.Game.AI.Search.MctsEvaluator.CuPm(planned.Mean, planned.StdErr)} over {planned.Visits} lines): " +
+                                      $"{BotTest.Game.AI.Search.MctsEvaluator.CardUnits(best.Mean) - BotTest.Game.AI.Search.MctsEvaluator.CardUnits(planned.Mean):0.00} card units better, " +
+                                      $"inside the uncertainty (+/-{BotTest.Game.AI.Search.MctsEvaluator.CuErr(best.Mean, margin)}): the plan's pick kept";
+                        bot.LogNote(note);
+                        FlagForReview(bot, "close-calls.jsonl", note);
+                        best = planned;
+                    }
+                }
                 string? chosen = best?.Key ?? original;
                 if (chosen == null || chosen == "cancel")
                 {

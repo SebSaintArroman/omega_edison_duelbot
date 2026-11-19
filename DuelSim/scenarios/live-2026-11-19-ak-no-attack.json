@@ -13,13 +13,14 @@
   "decision": "idle",
   "normalSummonUsed": true,
   "ours": {
-    "monsters": [ { "id": 28985331, "zone": 2 } ],
-    "spells": [ { "id": 29401950, "zone": 2, "set": true } ],
+    "monsters": [ { "id": 28985331, "zone": 2, "thisTurn": true } ],
+    "spells": [ { "id": 29401950, "zone": 2, "set": true, "thisTurn": true } ],
     "hand": [ 65192027, 83968380, 14536035, 75498415, 53582587 ],
     "grave": [ 55144522, 33420078 ]
   },
   "theirs": {
-    "monsters": [ { "zone": 2, "pos": "set" } ],
+    // The live deck read at the time (log line 24): Ryko 10%, Dupe Frog 6%, Dandylion 5% (the top 3 of the 12 the search dealt from).
+    "monsters": [ { "zone": 2, "pos": "set", "likely": [ [21502796, 0.10], [46239604, 0.06], [15341821, 0.05] ] } ],
     "handCount": 5,
     "grave": []
   }
