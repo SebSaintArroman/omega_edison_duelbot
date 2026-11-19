@@ -220,7 +220,29 @@ namespace BotTest.Game.AI.Brains
         public static Task<(double Score, string Why)> PressureAsync(int cardId, IReadOnlyCollection<int> ownerGraveIds, int ourBestBlocker) =>
             ScoreCoreAsync(cardId, ownerGraveIds, ourBestBlocker, pressureOnly: true, depth: 0);
 
+        // Scores by everything they depend on (2026-11-19 profile: the search's brain twins and card values re-read the same card texts with ~30
+        // regexes per call, about 2% of the search). The owner's graveyard is part of the key only for a card whose text mentions it.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int Card, int? Blocker, bool Pressure, int Depth, bool OnField, bool Destroying, bool InGrave, string Grave),
+            (double Score, string Why)> ScoreCache = new();
+        private static readonly Regex MentionsGrave = new(@"graveyard|gy", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         private static async Task<(double Score, string Why)> ScoreCoreAsync(int cardId, IReadOnlyCollection<int> ownerGraveIds, int? enemyBestBlocker, bool pressureOnly, int depth, bool onField = false,
+            bool destroying = false, bool inGrave = false)
+        {
+            if (await CardDatabase.GetAsync(cardId) is not DBCardInfo card)
+                return (0, "unknown card");
+            string grave = MentionsGrave.IsMatch(card.CardText ?? "") ? string.Join(",", ownerGraveIds.OrderBy(id => id)) : "";
+            var key = (cardId, enemyBestBlocker, pressureOnly, depth, onField, destroying, inGrave, grave);
+            if (ScoreCache.TryGetValue(key, out var cached))
+                return cached;
+            var scored = await ScoreCoreUncachedAsync(cardId, ownerGraveIds, enemyBestBlocker, pressureOnly, depth, onField, destroying, inGrave);
+            if (ScoreCache.Count > 100_000)
+                ScoreCache.Clear();
+            ScoreCache[key] = scored;
+            return scored;
+        }
+
+        private static async Task<(double Score, string Why)> ScoreCoreUncachedAsync(int cardId, IReadOnlyCollection<int> ownerGraveIds, int? enemyBestBlocker, bool pressureOnly, int depth, bool onField = false,
             bool destroying = false, bool inGrave = false)
         {
             var info = await CardDatabase.GetAsync(cardId);

@@ -88,6 +88,14 @@ namespace BotTest.Game.AI.Search
         /// attacked in the lines).</summary>
         public int OnlyAttackerZone { get; set; } = -1;
 
+        /// <summary>Our monsters summoned in this turn's Main Phase 2 so far (by card): they don't count toward our clock (user, 2026-11-18:
+        /// "waaaaaay too much overextending on mp2. lets take off monsters summoned in mp2 from the clock bonus").</summary>
+        public List<int> Main2Summoned { get; } = new();
+
+        /// <summary>The cards whose effects we activated this turn so far (DeckBotBrain's record): a deck's next-turn value can depend on
+        /// them (Black Whirlwind triggered).</summary>
+        public List<int> ActivatedThisTurn { get; } = new();
+
         /// <summary>Cards drawn from our deck into the hand when a line starts (a projected next turn whose draw we don't know).</summary>
         public int DrawsAtStart { get; set; }
 
@@ -158,6 +166,8 @@ namespace BotTest.Game.AI.Search
             v.KnownTop.AddRange(KnownTop);
             v.ForcedDraws.AddRange(ForcedDraws);
             v.RandomPicks.AddRange(RandomPicks);
+            v.Main2Summoned.AddRange(Main2Summoned);
+            v.ActivatedThisTurn.AddRange(ActivatedThisTurn);
             v.LifePoints[0] = LifePoints[0];
             v.LifePoints[1] = LifePoints[1];
             v.OwnHand.AddRange(OwnHand); v.OwnDeck.AddRange(OwnDeck); v.OwnGrave.AddRange(OwnGrave);

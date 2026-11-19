@@ -57,6 +57,13 @@ internal sealed partial class DuelHost : IDisposable
 
     public DeckList[] Decks { get; }
     public int Turn { get; private set; }
+
+    // The cards each player activated, by turn (a card's code per activation; Black Whirlwind's trigger for the search's next-turn value).
+    private readonly Dictionary<int, HashSet<int>>[] _activatedByTurn = { new(), new() };
+
+    /// <summary>The cards this player activated (effects, spells, traps) in that turn.</summary>
+    public IReadOnlyCollection<int> ActivatedInTurn(int player, int turn) =>
+        _activatedByTurn[player & 1].TryGetValue(turn, out var codes) ? codes : (IReadOnlyCollection<int>)Array.Empty<int>();
     public int TurnPlayer { get; private set; }
     public int Phase { get; private set; } = (int)DuelPhase.Draw;
     public DuelResult? Result { get; private set; }
@@ -406,6 +413,12 @@ internal sealed partial class DuelHost : IDisposable
                 uint chainCount = r.U32();
                 _lastChainPlayer = triggerController;
                 _lastChainCard = card;
+                if (triggerController < 2)
+                {
+                    if (!_activatedByTurn[triggerController].TryGetValue(Turn, out var activated))
+                        _activatedByTurn[triggerController][Turn] = activated = new HashSet<int>();
+                    activated.Add(code);
+                }
                 Event?.Invoke($"  chain {chainCount}: player {triggerController} activates {CardName(code)}");
                 // Loop guard: same player, same card, same effect, N activations with no other activation in between. (By effect:
                 // Indomitable Gladiator Beast from the hand, then its recycle from the GY, alternating, is a plan, not a loop;

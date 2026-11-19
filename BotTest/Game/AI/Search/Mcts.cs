@@ -94,6 +94,13 @@ namespace BotTest.Game.AI.Search
         public readonly object Lock = new();
         public readonly Dictionary<string, MctsNode> Children = new();
         public string Label = "";
+        /// <summary>Each child's move as named at this node (its own Label can belong to another parent after a transposition merge: seen
+        /// 2026-11-18, "change position of Bora" logged as "set Reinforcement of the Army", the move the merged node was first reached by).</summary>
+        public Dictionary<string, string>? ChildLabels;
+
+        /// <summary>The name of the move to this child here (call under this node's lock).</summary>
+        public string LabelOf(string key, MctsNode child) => ChildLabels != null && ChildLabels.TryGetValue(key, out var label) ? label : child.Label;
+
         public int Visits;
         public double Total;
         /// <summary>Times this node was a legal answer when its parent was visited (ISMCTS availability).</summary>
@@ -650,7 +657,7 @@ namespace BotTest.Game.AI.Search
             int rootVisits;
             lock (_start.Lock)
             {
-                stats = _start.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, kv.Value.Label, kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
+                stats = _start.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, _start.LabelOf(kv.Key, kv.Value), kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
                     .OrderByDescending(s => s.Visits).ThenByDescending(s => s.Mean).ToList();
                 rootVisits = _start.Visits;
             }
@@ -668,7 +675,7 @@ namespace BotTest.Game.AI.Search
                 if (_start.Children.TryGetValue(s.Key, out var child))
                     lock (child.Lock)
                         if (child.ChildState is BotState.SelectCard && child.ChildPlayer == 0)
-                            followUps[s.Key] = child.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, kv.Value.Label, kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
+                            followUps[s.Key] = child.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, child.LabelOf(kv.Key, kv.Value), kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr))
                                 .OrderByDescending(v => v.Visits).ToList();
             return new SearchOutcome(stats, iterations, failures, elapsed, firstFailure, followUp, _mismatch, Plans(stats), _traces.ToList(),
                 rootVisits, _maxDepth, BestLine(), rootHolds, _start.PriorKey,
@@ -738,6 +745,10 @@ namespace BotTest.Game.AI.Search
             // The sequence penalties of our turn (LineTally), starting from what the real turn has already done (TurnRecord).
             var tally = new LineTally(_view.Record, _view.InBattlePhase || _view.BattlePhaseDone, _view.FirstTurnOfDuel)
             {
+                // Their board can remove a monster of ours in our battle: a face-down monster, or a face-up one with a "destroyed by battle" effect.
+                BattleRemovalRisk = () => host.Summary(1).Monsters.Count(m => !m.FaceUp ||
+                    SearchHost.Available && SearchHost.Cards.Get(m.Code)?.Text is { } text &&
+                    System.Text.RegularExpressions.Regex.IsMatch(text, @"destroyed by battle", System.Text.RegularExpressions.RegexOptions.IgnoreCase)),
                 // A DARK monster in our hand (Allure of Darkness banishes one instead of the whole hand).
                 DarkInHand = () => host.Summary(0).HandCodes.Any(c => (SearchHost.Type(c) & 0x1) != 0 && (SearchHost.Attribute(c) & 0x20) != 0),
                 // Our other face-up attack-position monsters, while the Battle Phase is still to come or under way (#135).
@@ -786,6 +797,12 @@ namespace BotTest.Game.AI.Search
             int ourMonsters = -1, ourSpells = -1, ourDeck = -1, ourHand = -1, drawn = 0;
             int OurCards() => host.CountIn(0, SearchPosition.LocHand) + host.CountIn(0, SearchPosition.LocMZone) + host.CountIn(0, SearchPosition.LocSZone);
             int ourCardsAtRoot = -1; // CSV S15: a won line's cards spent
+            var main2Codes = new List<int>(_view.Main2Summoned); // our Main Phase 2 summons (the real turn's, then the line's)
+            IReadOnlyCollection<int> activatedInTurn = Array.Empty<int>(); // as our turn ended: the cards we activated in it
+            List<int>? lastOwnCodes = null;
+            // Our activations in our turn: the line's (the engine's record), and before a direct rebuild the real turn's (the view's).
+            IReadOnlyCollection<int> ActivatedInOurTurn() =>
+                host.ActivatedInTurn(0, SearchTurn).Concat(FromTurnStart == null ? _view.ActivatedThisTurn : Enumerable.Empty<int>()).ToHashSet();
             int DustshootsGone() => host.Summary(0).GraveCodes.Count(c => SearchHost.Is(c, TrapDustshootId));
             int dustshootsAtRoot = -1; // our Trap Dustshoots in the graveyard at the decision
             int? rootAdvantage = null; // our cards minus theirs at the decision (the +1 bonus)
@@ -800,6 +817,18 @@ namespace BotTest.Game.AI.Search
             }
             void NoteSummons()
             {
+                // Our monsters that turned up in our Main Phase 2: out of our clock (SearchView.Main2Summoned).
+                if (host.Turn == SearchTurn)
+                {
+                    var codesNow = host.Summary(0).Monsters.Select(m => m.Code).ToList();
+                    // (The duel's first turn counts as Main Phase 2: no battle possible; user, 2026-11-18.)
+                    if ((host.Phase == (int)DuelPhase.Main2 || _view.FirstTurnOfDuel && host.Phase == (int)DuelPhase.Main1) && lastOwnCodes != null)
+                    {
+                        var before = lastOwnCodes.ToList();
+                        main2Codes.AddRange(codesNow.Where(c => !before.Remove(c)));
+                    }
+                    lastOwnCodes = codesNow;
+                }
                 int now = host.CountIn(0, SearchPosition.LocMZone);
                 if (ourMonsters >= 0 && now > ourMonsters)
                 {
@@ -859,6 +888,7 @@ namespace BotTest.Game.AI.Search
                     if (host.Turn != lastTurn && lastTurn == SearchTurn && rootReached && turnEnd == null)
                     {
                         turnEnd = (host.Summary(0), host.Summary(1), attacked); // our turn just ended: the board their backrow would have hit
+                        activatedInTurn = ActivatedInOurTurn();
                         heavyExposure = _evaluator.HeavyExposure(turnEnd.Value.Ours);
                         NoteLesser(turnEnd.Value.Ours, turnEnd.Value.Theirs);
                         penalty += tally.OnOurTurnEnd(turnEnd.Value.Ours, note);
@@ -902,7 +932,7 @@ namespace BotTest.Game.AI.Search
                         ourCardsAtRoot = OurCards();
                         dustshootsAtRoot = DustshootsGone();
                         rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
-                        if (double.IsNaN(_tree.Center)) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
+                        if (double.IsNaN(Volatile.Read(ref _tree.Center))) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                         long at = Stopwatch.GetTimestamp();
                         SearchTimings.Add(ref SearchTimings.ToRoot, at - phaseStart);
                         phaseStart = at;
@@ -980,7 +1010,7 @@ namespace BotTest.Game.AI.Search
                                 ourCardsAtRoot = OurCards();
                                 dustshootsAtRoot = DustshootsGone();
                                 rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
-                                if (double.IsNaN(_tree.Center)) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
+                                if (double.IsNaN(Volatile.Read(ref _tree.Center))) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                                 long reachedAt = Stopwatch.GetTimestamp();
                                 SearchTimings.Add(ref SearchTimings.ToRoot, reachedAt - phaseStart);
                                 phaseStart = reachedAt;
@@ -995,7 +1025,7 @@ namespace BotTest.Game.AI.Search
                             ourCardsAtRoot = OurCards();
                             dustshootsAtRoot = DustshootsGone();
                             rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1));
-                            if (double.IsNaN(_tree.Center)) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
+                            if (double.IsNaN(Volatile.Read(ref _tree.Center))) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
                             CheckPosition(host);
                             long now = Stopwatch.GetTimestamp();
                             SearchTimings.Add(ref SearchTimings.ToRoot, now - phaseStart);
@@ -1242,6 +1272,7 @@ namespace BotTest.Game.AI.Search
             if (turnEnd == null && host.Turn == SearchTurn)
             {
                 turnEnd = (host.Summary(0), host.Summary(1), attacked);
+                activatedInTurn = ActivatedInOurTurn();
                 heavyExposure = _evaluator.HeavyExposure(turnEnd.Value.Ours);
                 NoteLesser(turnEnd.Value.Ours, turnEnd.Value.Theirs);
             }
@@ -1274,7 +1305,7 @@ namespace BotTest.Game.AI.Search
             }
             double value = _evaluator.Evaluate(host, penalty - advantage + exposure * _evaluator.RiskDiscount - drawn * MctsEvaluator.DrawBonus, turnEnd,
                 winRisk: exposure, cardsSpent: ourCardsAtRoot >= 0 ? Math.Max(0, ourCardsAtRoot - OurCards()) : 0, length: prompts,
-                center: double.IsNaN(_tree.Center) ? 0 : _tree.Center);
+                center: double.IsNaN(_tree.Center) ? 0 : _tree.Center, noClock: main2Codes, activatedThisTurn: activatedInTurn);
             if (rootKey != null)
             {
                 var ours = host.Summary(0);
@@ -1348,6 +1379,7 @@ namespace BotTest.Game.AI.Search
                         pick = pool[rng.Next(pool.Count)];
                     }
                     var fresh = new MctsNode { Label = pick.Label, Available = 1, Visits = 1, Total = loss };
+                    (node.ChildLabels ??= new Dictionary<string, string>())[pick.Key] = pick.Label;
                     node.Children[pick.Key] = fresh;
                     return (fresh, pick.Key, true, loss);
                 }
@@ -1467,6 +1499,7 @@ namespace BotTest.Game.AI.Search
                 while (node != null)
                 {
                     KeyValuePair<string, MctsNode> next;
+                    string planLabel = "";
                     BotState state;
                     lock (node.Lock)
                     {
@@ -1476,10 +1509,11 @@ namespace BotTest.Game.AI.Search
                             break;
                         next = step;
                         state = node.ChildState;
+                        planLabel = node.LabelOf(next.Key, next.Value);
                     }
                     // Chain decisions stay with the brain's chain rules: walk past them, don't plan them.
                     if (state != BotState.SelectChain)
-                        steps.Add(new PlanStep(state, next.Key, next.Value.Label));
+                        steps.Add(new PlanStep(state, next.Key, planLabel));
                     node = next.Value;
                 }
                 plans[stat.Key] = steps;
@@ -1496,6 +1530,7 @@ namespace BotTest.Game.AI.Search
             for (int guard = 0; guard < 64; guard++)
             {
                 KeyValuePair<string, MctsNode> next;
+                string lineLabel = "";
                 BotState state;
                 int player;
                 lock (node.Lock)
@@ -1514,10 +1549,11 @@ namespace BotTest.Game.AI.Search
                         break;
                     state = node.ChildState;
                     player = node.ChildPlayer;
+                    lineLabel = node.LabelOf(next.Key, next.Value);
                 }
                 // Our chains are in the line too (not passes): a real chain the chosen line didn't have is logged as unplanned.
                 if (player == 0 && (state != BotState.SelectChain || next.Key != "pass"))
-                    steps.Add(new PlanStep(state, next.Key, next.Value.Label));
+                    steps.Add(new PlanStep(state, next.Key, lineLabel));
                 // Our turn ends where we pass to the End Phase.
                 if (player == 0 && next.Key == "end")
                     break;

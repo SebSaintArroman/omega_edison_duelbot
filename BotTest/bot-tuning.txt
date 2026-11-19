@@ -372,6 +372,7 @@ EffectEvaluator.RepeatableSummonBonus = 1.5   # Bonus for a Special Summon effec
 EffectEvaluator.ReviveTargetShare = 0.5   # Share of the best graveyard target's own score a reviver adds (Kinka-byo bringing back Moja, which in turn brings out King of the Beasts): reviving is only as good as what it revives.
 
 # --- LineTally
+LineTally.EffectAfterBattleCost = 0.5   # A monster effect of ours on offer in Main Phase 1, used only in Main Phase 2 after a Battle Phase while their board could remove that monster in the battle (a face-down flip, Fortress's battle trigger): this cost. User, 2026-11-18.
 LineTally.AttackLockCost = 0.4   # Per other monster of ours that could still attack, for an effect of ours that stops them attacking (Sirocco's boost, Chaos Sorcerer's banish): the downside of the effect, which a big enough gain (the boost winning a battle) overcomes. User, 2026-11-16: "stopping your things attacking is a negative part of an effect, it should have that".
 LineTally.DrawLaterCost = 0.5   # was 0.2 (CSV S4: too small to put draws first)
 LineTally.EquipBeforeBattleCost = 1.5
@@ -385,7 +386,7 @@ MctsEvaluator.AliveFloor = 0.05   # The least a position still alive at the hori
 MctsEvaluator.AtkTable = 0, 0.01, 0.011, 0.012, 0.013, 0.014, 0.015, 0.02, 0.021, 0.022, 0.03, 0.031, 0.04, 0.041, 0.3, 0.31, 0.4, 0.41, 0.5, 0.51, 1, 1.01, 1.1, 1.11, 1.2, 1.21, 1.25, 1.26, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7, 1.75, 1.8, 1.85, 1.9, 1.95, 2, 2.01, 2.1, 2.11, 2.2, 2.21, 2.25, 2.26, 2.4, 2.49, 2.5, 2.55, 2.6, 2.61, 2.62, 2.63, 2.7, 2.701, 2.702, 2.703, 2.8, 2.801, 2.802, 2.803, 2.804, 2.805, 2.806, 2.807, 2.808, 2.809, 2.81, 2.811, 2.812, 2.813, 2.814, 2.815, 2.816, 2.817, 2.818, 2.819, 2.82, 2.821, 2.822, 2.823, 2.824, 2.825, 2.826, 2.827, 2.828, 2.829, 2.83, 2.831, 2.832, 2.833, 2.834, 2.835, 2.836, 2.837, 2.838, 2.839, 2.84   # A monster's battle size in card units by ATK, one entry per 50 ATK from 0 to 5000 (above 5000 counts as 5000). Not linear: reshape it here.
 MctsEvaluator.AttackerOddsStep = 100   # ATK steps of AttackerOdds: index i is "an attacker of at least i × 100 ATK".
 MctsEvaluator.BaitWeight = 0.5   # A set bait card gains this times our other sets' worth over the number of our sets (the share of a random pick).
-MctsEvaluator.DefenceShare = 0.6   # A monster in defence position counts this share of its DEF as its battle size.
+MctsEvaluator.DefenceShare = 1   # A monster in defence position counts this share of its DEF as its battle size (its ATK doesn't count there). User, 2026-11-18: 100%.
 MctsEvaluator.DominanceBonus = 0.1   # Bonus for the single largest face-up monster on the whole field, to its side (user, 2026-11-13: "move the dominance score down to just 0.1 for now, and only apply it if its the largest on both sides of the field ... nominal - a lever we can pull later"; the ATK table does most of the work).
 MctsEvaluator.DrawBonus = 0.01   # Per card we draw in our turn, on top of the card itself: a drawn card counts as 1.01 cards (CSV S6, so free draws aren't skipped for a tie).
 MctsEvaluator.ExplosivenessBase = 0.5   # Their unknown cards' risk scales with this plus their deck's explosiveness (0.5 + explosiveness).
@@ -407,6 +408,7 @@ MctsEvaluator.LowLpScale = 1500   # How fast that value falls as our LP rise abo
 MctsEvaluator.LpHighWorth = 0   # Life points: everything from LpLowBand to 8000 is worth this many card units in all.
 MctsEvaluator.LpLowBand = 2000   # Life points: the band that counts at LpLowWorth.
 MctsEvaluator.LpLowWorth = 0   # Life points: the first LpLowBand of them are worth this many card units in all (each point matters more when low).
+MctsEvaluator.Main2BoardShare = 0.5   # Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn) count this share of their board value; monster sets count in full. User, 2026-11-18.
 MctsEvaluator.MonsterBase = 0.6   # A face-up monster's base worth, before its ATK (the ATK table) and its effects.
 MctsEvaluator.NoListNormalAttack = 1800   # Sitting duck without deck-list data: their assumed Level 4-or-lower attacker's ATK.
 MctsEvaluator.NoListTributeAttack = 2400   # Sitting duck without deck-list data: their assumed tribute attacker's ATK (user, 2026-11-18: 2400).

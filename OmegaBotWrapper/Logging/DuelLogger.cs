@@ -155,6 +155,19 @@ namespace OmegaBotWrapper.Logging
                     chosen = $"PASS (no chain to {chainedTo})";
                 _previousPhase = phase;
 
+                // What we drew, once at the start of our turn (user, 2026-11-18: "please show informationally at the start of the turn what it
+                // drew. keep it looking nice (also small like the passes)"): the cards our hand gained since the last decision (their turn).
+                string? drew = null;
+                if (board != null && _previous != null && header.CurrentPlayer == 0 && header.CurrentTurn > 1 && header.CurrentTurn != _drawShownTurn)
+                {
+                    var left = _previous.Bot.Hand.ToList();
+                    var gained = board.Bot.Hand.Where(id => !left.Remove(id)).ToList();
+                    if (gained.Count > 0)
+                        drew = string.Join(", ", gained.Select(CardNames.Get));
+                }
+                if (header.CurrentPlayer == 0)
+                    _drawShownTurn = header.CurrentTurn;
+
                 // Readable log
                 var sb = new StringBuilder();
                 sb.AppendLine();
@@ -163,6 +176,8 @@ namespace OmegaBotWrapper.Logging
                                   ? $" | LP bot {board.Bot.LifePoints} / opp {board.Opponent.LifePoints}" +
                                     $" | hands bot {board.Bot.HandCount} / opp {board.Opponent.HandCount}"
                                   : ""));
+                if (drew != null)
+                    sb.AppendLine($"  Drew: {drew}");
                 if (changes.Count > 0)
                     sb.AppendLine($"  Since last: {string.Join("; ", changes)}");
                 if (board != null && (_previous == null || BoardText(board) != BoardText(_previous)))
@@ -210,6 +225,10 @@ namespace OmegaBotWrapper.Logging
                 };
 
                 Write(sb.ToString(), record);
+
+                // The draw as its own small line in the terminal, before this decision (styled like a pass on the page).
+                if (drew != null)
+                    DecisionNarrated?.Invoke($"[{Stamp(now)} T{header.CurrentTurn} Draw] DREW {drew}");
 
                 // Short "what and why" summary for the terminal: the chosen action plus the brain's reasons.
                 var reasons = notes.Where(IsReason).ToList();
@@ -783,6 +802,8 @@ namespace OmegaBotWrapper.Logging
         private static string BoardText(BoardSnapshot b) => SideText(b.Bot, true) + "\n" + SideText(b.Opponent, false);
 
         private string? _previousPhase;
+        // The turn whose draw was shown (once per turn of ours).
+        private int _drawShownTurn = -1;
 
         /// <summary>What a chain window just opened on: the newest face-up spell/trap or monster (either side), else a phase change.</summary>
         private static string? ChainedTo(BoardSnapshot? before, BoardSnapshot? after, string? previousPhase, string phase)

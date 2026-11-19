@@ -240,8 +240,8 @@ function buildDecision(match) {
   if (verbMatch && actionTone(verbMatch[1]) === "quiet") {
     entry.dataset.quiet = "true";
   }
-  // "PASS (no chain)": a thin, dark line (still expandable).
-  if (verbMatch && verbMatch[1] === "PASS") {
+  // "PASS (no chain)": a thin, dark line (still expandable). The turn's draw ("DREW <card>") too: small and informational.
+  if (verbMatch && (verbMatch[1] === "PASS" || verbMatch[1] === "DREW")) {
     entry.dataset.pass = "true";
   }
   return { entry, turn: Number(turn) };

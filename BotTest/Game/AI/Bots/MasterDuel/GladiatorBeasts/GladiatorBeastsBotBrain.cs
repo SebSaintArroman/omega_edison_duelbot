@@ -270,7 +270,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 return 0;
             return -own.Monsters
                 .Where(m => m.FaceUp && m.Negated && GladCardId.Glads.Any(id => Search.SearchHost.Is(m.Code, id)))
-                .Sum(m => GladBodyBase + GladBodyPerThousand * Math.Max(m.Attack, m.AttackPosition ? 0 : m.Defense * Search.MctsEvaluator.DefenceShare) / 1000);
+                .Sum(m => GladBodyBase + GladBodyPerThousand * (m.AttackPosition ? m.Attack : m.Defense * Search.MctsEvaluator.DefenceShare) / 1000);
         }
 
         // (No deck graveyard values: Shield Warrior, Skill Successor and Indomitable have their own graveyard readings; user, 2026-11-17.)

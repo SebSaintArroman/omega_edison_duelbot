@@ -53,9 +53,13 @@ internal sealed class PuzzleEngine : IDisposable
     /// <remarks>2000 since 2026-11-10 (no leak seen from wipes); the warm-up rebuilds engines past half of it in idle time.</remarks>
     public const int RebuildEvery = 2000;
 
-    // Re-arms the card scripts' once-per-duel setup (s.global_check, see aux.GlobalCheck in utility.lua).
-    private const string Rearm =
-        "for k,v in pairs(_G) do if type(k)=='string' and type(v)=='table' and k:match('^c%d+$') then v.global_check=nil end end\n";
+    // Re-arms the card scripts' once-per-duel setup (s.global_check, see aux.GlobalCheck in utility.lua): each line is a new epoch, and the
+    // helper runs a script's setup once per epoch. The old re-arm walked every global table each line (2026-11-19 profile: loading a line's
+    // position was 14% of the search).
+    private const string RearmSetup =
+        "_st_epoch=1\n" +
+        "function Auxiliary.GlobalCheck(s,func) if s.global_check~=_st_epoch then s.global_check=_st_epoch func() end end\n";
+    private const string Rearm = "_st_epoch=(_st_epoch or 0)+1\n";
 
     private readonly CardStore _cards;
     private readonly ScriptStore _scripts;
@@ -97,7 +101,7 @@ internal sealed class PuzzleEngine : IDisposable
         long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
         SearchTimings.Add(ref SearchTimings.Create, t1 - t0);
         _engineError = null;
-        if (!_duel.LoadScriptText("search-position.lua", fresh ? puzzle : Rearm + puzzle))
+        if (!_duel.LoadScriptText("search-position.lua", (fresh ? RearmSetup : Rearm) + puzzle))
         {
             error = _engineError ?? "the engine rejected the position script";
             // Don't reuse a duel in an unknown state.

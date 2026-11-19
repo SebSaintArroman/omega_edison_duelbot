@@ -76,6 +76,9 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>Their life points as the search began: gains above this count for nothing (CSV S6). 0: not set.</summary>
         public int TheirStartLp { get; init; }
+        /// <summary>The deck brain's next-turn value of our side at the end of a line, given the cards we activated in our turn
+        /// (DeckBotBrain.SearchNextTurnValue).</summary>
+        public Func<SideSummary, IReadOnlyCollection<int>, double>? NextTurnValue { get; init; }
         /// <summary>Our life points at the decision: the life points we lose by the end of a line count against it (OwnDamageShare).</summary>
         public int OurStartLp { get; init; }
 
@@ -194,7 +197,7 @@ namespace BotTest.Game.AI.Search
         /// <param name="cardsSpent">For a won line: our cards it used up, ranked second.</param>
         /// <param name="length">For a won line: its length (prompts), ranked last.</param>
         public double Evaluate(DuelHost host, double penalty = 0, (SideSummary Ours, SideSummary Theirs, bool Attacked)? ourTurnEnd = null,
-            double winRisk = 0, int cardsSpent = 0, int length = 0, double center = 0)
+            double winRisk = 0, int cardsSpent = 0, int length = 0, double center = 0, IReadOnlyList<int>? noClock = null, IReadOnlyCollection<int>? activatedThisTurn = null)
         {
             // A loss is 0. A win in the line is scored like any other line, plus a large bonus scaled down by the chance it really works: the
             // lines never fire their unknown cards, so a "win" through their set cards is only as sure as those cards being blanks (user,
@@ -221,7 +224,17 @@ namespace BotTest.Game.AI.Search
                 diff -= OwnDamageShare * DamageBonusPer1000 * (OurStartLp - ours.LifePoints) / 1000.0;
             // Each side's clock on the other at the end of the line, as part of the board: ours on them counts for us, theirs on us against.
             if (!won)
-                diff += ClockValue(ours, theirs) - TheirClockShare * ClockValue(theirs, ours, TheirNextAttack(theirs));
+                diff += ClockValue(WithoutMonsters(ours, noClock), theirs) - TheirClockShare * ClockValue(theirs, ours, TheirNextAttack(theirs));
+            // Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn, no battle possible) count only Main2BoardShare of
+            // their board value (user, 2026-11-18: "yes, but mp2 sets get full value"): they can't attack this turn and stay exposed.
+            diff -= Main2BodyDiscount(ours, noClock);
+            // The deck's next-turn setups that depend on what we activated this turn (Black Whirlwind triggered: a good Normal Summon kept for
+            // next turn).
+            if (!won && NextTurnValue != null)
+            {
+                try { diff += NextTurnValue(ours, activatedThisTurn ?? Array.Empty<int>()); }
+                catch { /* a deck goal that fails counts nothing */ }
+            }
             // Gorz in our hand with our field empty: it can come out when they hit us directly (user, 2026-11-17: "if you have a gorz in hand,
             // you should get a small bonus for ending on an empty field because it'll let you use gorz").
             if (!won && ours.Monsters.Count == 0 && ours.SpellCodes.Count == 0 && ours.HandCodes.Any(c => SearchHost.Is(c, GorzCode)))
@@ -269,8 +282,22 @@ namespace BotTest.Game.AI.Search
         /// <summary>ATK steps of <see cref="AttackerOdds"/>: index i is "an attacker of at least i × 100 ATK".</summary>
         [Tunable("ATK steps of AttackerOdds: index i is \"an attacker of at least i × 100 ATK\".")]
         public static int AttackerOddsStep = 100;
-        // A property, so it follows AttackerOddsStep as the tuning file sets it (a readonly field was built before the file loaded).
-        public static int[] AttackerThresholds => Enumerable.Range(0, 41).Select(i => i * AttackerOddsStep).ToArray();
+        // Follows AttackerOddsStep as the tuning file sets it (a readonly field was built before the file loaded), but one array per step: the
+        // deck read caches its attacker odds by this array's identity (seen 2026-11-19 profile: a new array per call missed the cache every
+        // time, and the odds were recomputed at every brain decision of every line, 14% of the search).
+        public static int[] AttackerThresholds
+        {
+            get
+            {
+                var cached = _thresholds;
+                if (cached.Step == AttackerOddsStep && cached.Values != null)
+                    return cached.Values;
+                var built = (AttackerOddsStep, Enumerable.Range(0, 41).Select(i => i * AttackerOddsStep).ToArray());
+                _thresholds = built;
+                return built.Item2;
+            }
+        }
+        private static (int Step, int[]? Values) _thresholds;
 
         /// <summary>
         /// The chance their unknown cards (hand plus the next draw) hold a monster they can attack with of at least each
@@ -396,9 +423,11 @@ namespace BotTest.Game.AI.Search
         /// <summary>The table value for this ATK (rounded down to its 50 step; beyond 5000, the last).</summary>
         public static double AtkValue(double power) => AtkTable[Math.Clamp((int)(Math.Max(0, power) / 50), 0, AtkTable.Length - 1)];
 
-        /// <summary>A monster's battle size: ATK, or DEF at 60% in defence.</summary>
+        /// <summary>A monster's battle size: only the stat of the position it's in, ATK in attack, DEF (DefenceShare of it) in defence (user,
+        /// 2026-11-18: "only give them the position they're in in that calc"; a defence-position Bora counted its 1700 ATK, so switching it to
+        /// attack gained nothing).</summary>
         private static double Power((int Code, int Attack, int Defense, bool FaceUp, bool AttackPosition, int Level, int Type, bool Negated) m) =>
-            Math.Max(m.Attack, m.AttackPosition ? 0 : m.Defense * DefenceShare);
+            m.AttackPosition ? m.Attack : m.Defense * DefenceShare;
 
         /// <summary>Bonus for the single largest face-up monster on the whole field, to its side (user, 2026-11-13: "move the
         /// dominance score down to just 0.1 for now, and only apply it if its the largest on both sides of the field ... nominal -
@@ -479,6 +508,35 @@ namespace BotTest.Game.AI.Search
             return SittingDuckWeight * worst;
         }
 
+        [Tunable("Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn) count this share of their board value; monster sets count in full. User, 2026-11-18.")]
+        public static double Main2BoardShare = 0.5;
+
+        /// <summary>What our face-up Main Phase 2 summons (by card) lose of their board value: (1 - Main2BoardShare) of each one's worth.</summary>
+        private double Main2BodyDiscount(SideSummary ours, IReadOnlyList<int>? codes)
+        {
+            if (codes == null || codes.Count == 0 || Main2BoardShare >= 1)
+                return 0;
+            var left = codes.ToList();
+            double discount = 0;
+            foreach (var m in ours.Monsters.Where(m => m.FaceUp))
+                if (left.Remove(m.Code))
+                {
+                    var card = _values.Get(m.Code, 0);
+                    discount += (1 - Main2BoardShare) * (MonsterBase + AtkValue(Power(m)) + (m.Negated ? 0 : FieldEffectWeight * Taper(card.Field)));
+                }
+            return discount;
+        }
+
+        /// <summary>This side without one monster per listed card (our Main Phase 2 summons, left out of our clock).</summary>
+        private static SideSummary WithoutMonsters(SideSummary side, IReadOnlyList<int>? codes)
+        {
+            if (codes == null || codes.Count == 0)
+                return side;
+            var left = codes.ToList();
+            var kept = side.Monsters.Where(m => !left.Remove(m.Code)).ToList();
+            return side with { Monsters = kept };
+        }
+
         /// <summary>
         /// The attacker they're assumed to summon next (as for the sitting duck): the biggest Level 4-or-lower left in their deck, or with a monster
         /// of theirs to tribute the biggest Level 5-6, plus a known hand boost (Kalut). Part of their clock on us (user, 2026-11-18: "assume they'll
@@ -510,8 +568,8 @@ namespace BotTest.Game.AI.Search
 
         [Tunable("A face-up monster's base worth, before its ATK (the ATK table) and its effects.")]
         public static double MonsterBase = 0.6;
-        [Tunable("A monster in defence position counts this share of its DEF as its battle size.")]
-        public static double DefenceShare = 0.6;
+        [Tunable("A monster in defence position counts this share of its DEF as its battle size (its ATK doesn't count there). User, 2026-11-18: 100%.")]
+        public static double DefenceShare = 1.0;
         [Tunable("A face-down monster that gains from being set (a flip, a floater, a graveyard effect): its base worth.")]
         public static double SetFlipBase = 0.9;
         // A set flip monster's effect is on the field already, ready to go: weighed like a field effect, so using it costs what it's worth

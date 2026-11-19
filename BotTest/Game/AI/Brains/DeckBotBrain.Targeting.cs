@@ -116,7 +116,7 @@ namespace BotTest.Game.AI.Brains
 
             // Face-up monsters on the field: their effects plus their size, both by the user's tables (user, 2026-11-13: "use
             // that table for all atk and def scoring"): the scorer's printed-ATK part is swapped for the table value of the
-            // current ATK (DEF x0.6 in defence, as the search counts it).
+            // current ATK (only the stat of its position: DEF in defence, as the search counts it).
             if (!fromHand)
             {
                 var enemyGrave = (await CurrentField.GetBotField()).EnemySide.Grave ?? Array.Empty<int>();
@@ -128,7 +128,7 @@ namespace BotTest.Game.AI.Brains
                     // Destroying it with an effect: its own "when destroyed" rewards (Sangan's search) count against it.
                     var (score, why) = await EffectEvaluator.ScoreOnFieldAsync(x.Card.ID, enemyGrave, destroying: hint == DHint.DESTROY);
                     int printed = await CardDatabase.GetAsync(x.Card.ID) is DBCardInfo info ? info.Attack : x.Card.Attack;
-                    score += BotTest.Game.AI.Search.MctsEvaluator.AtkValue(x.Card.IsAttack() ? x.Card.Attack : Math.Max(x.Card.Attack, x.Card.Defense * BotTest.Game.AI.Search.MctsEvaluator.DefenceShare)) - BotTest.Game.AI.Search.MctsEvaluator.AtkValue(printed);
+                    score += BotTest.Game.AI.Search.MctsEvaluator.AtkValue(x.Card.IsAttack() ? x.Card.Attack : x.Card.Defense * BotTest.Game.AI.Search.MctsEvaluator.DefenceShare) - BotTest.Game.AI.Search.MctsEvaluator.AtkValue(printed);
                     var (bonus, bonusWhy) = await RemovalValueBonusAsync(x.Card.ID);
                     // Banishing denies a destruction reward (Card Trooper's draw, a floater's replacement) that
                     // battle or destruction would hand them: that's what banish removal is for.

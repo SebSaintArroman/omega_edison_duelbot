@@ -192,6 +192,7 @@ namespace BotTest.Game.AI.Brains
                 RiskPress = RiskPressNow,
                 TheirStartLp = view.LifePoints[1],
                 OurStartLp = view.LifePoints[0],
+                NextTurnValue = SearchNextTurnValue,
                 BaitCodes = BaitCardIds.ToArray(),
                 DominantAtStart = (DominantCode(view.OwnMonsters, view.EnemyMonsters), DominantCode(view.EnemyMonsters, view.OwnMonsters)),
             };

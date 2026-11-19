@@ -58,6 +58,17 @@ namespace BotTest.Game.AI.Search
         /// <summary>Whether a DARK monster is in our hand right now (set by the search, which sees the board).</summary>
         public Func<bool>? DarkInHand { get; set; }
 
+        /// <summary>Their monsters that can remove one of ours in our Battle Phase: face-down ones (a flip: Ryko), face-up ones with a
+        /// "destroyed by battle" effect (Machina Fortress). More sources can join this count later.</summary>
+        public Func<int>? BattleRemovalRisk { get; set; }
+
+        [Tunable("A monster effect of ours on offer in Main Phase 1, used only in Main Phase 2 after a Battle Phase while their board could remove that monster in the battle (a face-down flip, Fortress's battle trigger): this cost. User, 2026-11-18: \"if a monster's effect could be used in mp1 or mp2 with no difference, it should be done in mp1\".")]
+        public static double EffectAfterBattleCost = 0.5;
+
+        // Our monsters' effects on offer before the Battle Phase (by card), and whether their board could remove a monster in it then.
+        private readonly HashSet<int> _effectsBeforeBattle = new();
+        private int _riskAtBattle = -1; // their removal-risk monsters as our Battle Phase began
+
         /// <summary>Allure of Darkness activated with a DARK in hand to banish: this small bonus (user, 2026-11-18: "give allure a small activation
         /// bonus"). Without a DARK it takes the whole hand: no bonus (the brain holds it then).</summary>
         [Tunable("Allure of Darkness activated with a DARK in hand to banish: this small bonus (card units).")]
@@ -164,6 +175,23 @@ namespace BotTest.Game.AI.Search
             // A draw effect on offer that this move isn't: draws come first, so the rest of the turn is played with the new
             // cards (user, 2026-11-13: "prioritise effects that draw earlier in the turn, so that the lines can play out as
             // early as possible"). Small: a rule holding a draw back (Upstart Goblin waiting for lethal) still wins.
+            // Main Phase 1: our monsters' effects on offer now (Grepher's discard, a Blackwing's ignition), and their battle-removal threat.
+            if (!_battle)
+            {
+                foreach (var card in data.ActivableCards ?? Array.Empty<OmegaBotWrapper.Struct.DynamicCard>())
+                    if (card.CurrentCoordinates is { Controller: 0, Location: (byte)OmegaBotWrapper.Enum.CardLocation.MonsterZone })
+                        _effectsBeforeBattle.Add(Canonical(card.ID));
+            }
+            // Main Phase 2: such an effect used only now, after a battle that could have removed its monster (user, 2026-11-18: their Fortress's
+            // trigger, a face-down): it should have gone first.
+            // Only in genuine danger (user, 2026-11-18: "only when that monster is in genuine danger of being removed. dont start firing everything
+            // willy nilly"): one of their risky monsters was fought in the battle (gone, or flipped face-up since it began).
+            else if (action == MainAction.Activate && key != null && key.Contains("@0.4.") && _effectsBeforeBattle.Contains(Canonical(code)) &&
+                     _riskAtBattle > 0 && BattleRemovalRisk != null && BattleRemovalRisk() < _riskAtBattle)
+            {
+                cost += EffectAfterBattleCost;
+                note?.Invoke($"  (a monster effect on offer before the battle used only after it, with their board able to remove it: -{EffectAfterBattleCost:0.#})");
+            }
             bool isDraw = action == MainAction.Activate && Draws(code);
             if (!isDraw && (data.ActivableCards ?? Array.Empty<OmegaBotWrapper.Struct.DynamicCard>()).Any(card => Draws(Canonical(card.ID))))
             {
@@ -195,6 +223,7 @@ namespace BotTest.Game.AI.Search
                         _fusion = true;
                     break;
                 case MainAction.ToBattlePhase when !_battle:
+                    _riskAtBattle = BattleRemovalRisk?.Invoke() ?? -1;
                     _battle = true;
                     _battleInLine = true;
                     _fusion = false;

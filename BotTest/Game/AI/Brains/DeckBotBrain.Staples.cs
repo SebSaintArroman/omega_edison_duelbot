@@ -1086,6 +1086,23 @@ namespace BotTest.Game.AI.Brains
         protected async Task<List<(DynamicCard Card, double Chance, string How)>> DoomedMonstersAsync(BotStateHeader header)
         {
             var result = new List<(DynamicCard, double, string)>();
+            // Their attack declared at a monster of ours that loses the battle: doomed too (user, 2026-11-18: "would blizzard have been marked as
+            // doomed if an attack was declared at it? it should have been").
+            var phase = (DuelPhase)header.CurrentPhase;
+            if (!IsOwnTurn(header) && phase is DuelPhase.BattleStart or DuelPhase.BattleStep or DuelPhase.Damage or DuelPhase.DamageCal or DuelPhase.Battle)
+            {
+                var attacker = await CurrentField.GetBotBattlingMonster(isOwnSide: false);
+                var defender = await CurrentField.GetBotBattlingMonster(isOwnSide: true);
+                if (attacker.ID > 0 && defender.ID > 0 && defender.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && defender.IsFaceup())
+                {
+                    int power = defender.IsAttack() ? defender.Attack : defender.Defense;
+                    if (defender.IsAttack() ? attacker.Attack >= power : attacker.Attack > power)
+                    {
+                        result.Add((defender, 1.0, $"{CardNames.Get(attacker.ID)} ({attacker.Attack}) attacks it ({power}): it loses the battle"));
+                        return result;
+                    }
+                }
+            }
             if (header.LastChainPlayer != 1)
                 return result;
             var ours = (await GetBotMonsterCardsAsync()).Where(card => card.ID > 0).ToList();

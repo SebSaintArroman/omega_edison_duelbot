@@ -57,6 +57,10 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         internal virtual double SearchSetupValue(DuelSim.Engine.SideSummary own) => 0;
 
+        /// <summary>The deck's value for next turn at the end of a line, given the cards we activated this turn (Black Whirlwind's kept
+        /// Normal Summon). Card units; 0 by default.</summary>
+        internal virtual double SearchNextTurnValue(DuelSim.Engine.SideSummary own, IReadOnlyCollection<int> activatedThisTurn) => 0;
+
         /// <summary>The search plays Master Duel rules (Master Rule 5 field): Speed and Rush brains turn it off.</summary>
         protected virtual bool PlaySearchSupported => true;
 
@@ -1120,7 +1124,16 @@ namespace BotTest.Game.AI.Brains
                 // more lines wouldn't move it, so they're better spent elsewhere (user, 2026-11-17: "end the turn" lines all come out
                 // alike; a settled move meets the requirement even below the count).
                 bool Met(RootStat s) => HasItsLines(s);
-                bool enough = Met(top) && (replaced == null || Met(replaced)) && unscreened.Count == 0;
+                // Moves within error of the best (the close-call margin: 2 x sqrt(se1^2 + se2^2)) need their lines too, and get a share of the
+                // focus until they have them (user, 2026-11-19: "if one line is within error of being the best line it should get a share of
+                // which lines are being checked"; seen 2026-11-18: Bora to attack 1.0 behind on 230 lines, the best move on 4523). Two orders
+                // of the same play aren't a doubt.
+                var transposed = outcome.Transposed ?? Array.Empty<(string A, string B)>();
+                var challengers = outcome.Root.Where(s => legal.Contains(s.Key) && s.Key != top.Key && (replaced == null || s.Key != replaced.Key) &&
+                        top.Mean - s.Mean <= 2 * Math.Sqrt(top.StdErr * top.StdErr + s.StdErr * s.StdErr) &&
+                        !transposed.Any(p => p.A == top.Key && p.B == s.Key || p.A == s.Key && p.B == top.Key))
+                    .ToList();
+                bool enough = Met(top) && (replaced == null || Met(replaced)) && unscreened.Count == 0 && challengers.All(Met);
                 // The time limit (user, 2026-11-16: "if it gets to 30s, just take the best move available whatever it is and flag it really
                 // loudly in the logs ... give a full breakdown as to what went wrong").
                 if (!enough && elapsed >= MaxThinkMs)
@@ -1145,7 +1158,8 @@ namespace BotTest.Game.AI.Brains
                     string progress = $"search: still thinking ({elapsed / 1000.0:0} s): {outcome.TreeVisits} lines; best so far {top.Label} " +
                                       $"(score {top.Mean * 100:0.0} over {top.Visits} lines)" +
                                       (replaced != null ? $", the brain's {replaced.Label} {replaced.Mean * 100:0.0} over {replaced.Visits}" : "") +
-                                      $"; each needs {need} lines" + (unscreened.Count > 0 ? $", {unscreened.Count} move(s) still under {ScreenLines}" : "");
+                                      $"; each needs {need} lines" + (unscreened.Count > 0 ? $", {unscreened.Count} move(s) still under {ScreenLines}" : "") +
+                                      (challengers.Count(s => !Met(s)) is > 0 and var close ? $", {close} move(s) within error of the best still short" : "");
                     bot.LogNote(progress);
                     // Live too (user, 2026-11-16: "I would still like to see more information about how the search is progressing
                     // here while I'm waiting"): notes reach the log only when the decision is made.
@@ -1156,6 +1170,7 @@ namespace BotTest.Game.AI.Brains
                 var short_ = new List<string>();
                 if (!Met(top)) short_.Add(top.Key);
                 if (replaced != null && !Met(replaced)) short_.Add(replaced.Key);
+                short_.AddRange(challengers.Where(s => !Met(s)).Select(s => s.Key));
                 // The unscreened moves first, up to ScreenLines each; then the two being compared, up to the requirement.
                 _focusRoot = unscreened.Count > 0 ? (unscreened, ScreenLines) : short_.Count > 0 ? (short_, need) : null;
                 SearchOutcome? more;
@@ -1444,6 +1459,9 @@ namespace BotTest.Game.AI.Brains
                 view.FirstTurnOfDuel = turn == 1;
                 view.RealTurn = turn;
                 view.OnlyAttackerZone = _siroccoTarget.Turn == turn ? _siroccoTarget.Zone : -1;
+                if (_main2Summons.Turn == turn)
+                    view.Main2Summoned.AddRange(_main2Summons.Codes);
+                view.ActivatedThisTurn.AddRange(_activatedThisTurn);
                 view.Record = await BuildTurnRecordAsync();
                 // The board a mid-chain replay rebuilds (DeckBotBrain.MidChain): this decision, and our answers from here on.
                 if (IsOwnTurn(_currentHeader))

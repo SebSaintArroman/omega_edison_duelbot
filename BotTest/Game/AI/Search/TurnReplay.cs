@@ -630,7 +630,18 @@ namespace BotTest.Game.AI.Search
                     if (activate != null)
                         return (SearchActions.Packet(activate.Response), null);
                     bool matched = Key(BotState.SelectChain, host) == Key(BotState.SelectChain, cp.View);
-                    string? phaseKey = (DuelPhase)(matched ? PhaseAhead(next, host.Phase) : cp.Phase) switch
+                    // Our window in their Battle Phase with nothing on the board to show for it: their attack declaration (live Omega never
+                    // marks their attackers; seen 2026-11-18: Mirror Force offered as Blue Thunder T-45 attacked, the replay never attacked).
+                    // The first attacker by zone (Omega's attack order); its target as the real game came out (OutcomePick).
+                    if (matched && cp.State == BotState.SelectChain && IsBattle(cp.Phase) &&
+                        SearchActions.Battle(battle).FirstOrDefault(o => o.Key.StartsWith("attack:") &&
+                            attacked.GetValueOrDefault(Canon(SearchActions.KeyCardId(o.Key))) == 0) is { } declared)
+                    {
+                        int code = Canon(SearchActions.KeyCardId(declared.Key));
+                        attacked[code] = attacked.GetValueOrDefault(code) + 1;
+                        return (SearchActions.Packet(declared.Response), null);
+                    }
+                    string? phaseKey =(DuelPhase)(matched ? PhaseAhead(next, host.Phase) : cp.Phase) switch
                     {
                         DuelPhase.Main2 => "main2",
                         DuelPhase.End => options.Any(o => o.Key == "end") ? "end" : "main2",

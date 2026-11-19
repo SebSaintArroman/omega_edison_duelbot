@@ -259,6 +259,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             // No pointless small-Blackwing summons and no Blackwing sets, whichever step would pick them.
             state = await WithoutPointlessSummonsAsync(context, state, hand, botMonsters, enemyMonsters);
             context = context with { StateData = state };
+            // A free Bora with no purpose this turn is held whichever play the brain makes first (user, 2026-11-18: "bora should've fallen
+            // into the 'save resources' category anyway": the brain chose Reinforcement of the Army first, so the Bora rule further down
+            // never ran and the search's Bora summon on turn 1 paid nothing).
+            BoraPurposeHold(context, state, botMonsters, enemyMonsters);
 
             // 1. Free card advantage.
             // (Shared staple rule: Upstart Goblin, Charge of the Light Brigade, Reinforcement of the Army.)
@@ -1279,6 +1283,32 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
 place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.BlackwingKalutTheMoonShadow) ? KalutHandValue
             : place == Search.CardPlace.Field && Search.SearchHost.Is(code, BlackwingCardId.BlackWhirlwind) ? WhirlwindFieldValue
             : 0;
+
+        /// <summary>
+        /// Black Whirlwind ours (face-up, or in hand) and triggered this turn (its search already used on this turn's Normal Summon): a good
+        /// Blackwing Normal Summon kept in hand for next turn is worth WhirlwindNextSummonValue (its summon then searches a smaller Blackwing).
+        /// User, 2026-11-18: "you should get a bonus for keeping a good normal summon in hand for the next turn, but only if you've already
+        /// normal summoned that turn"; "I want this only to apply if we did trigger blackwhirlwind this turn".
+        /// </summary>
+        internal override double SearchNextTurnValue(DuelSim.Engine.SideSummary own, IReadOnlyCollection<int> activatedThisTurn)
+        {
+            if (!activatedThisTurn.Any(c => Search.SearchHost.Is(c, BlackwingCardId.BlackWhirlwind)))
+                return 0;
+            bool whirlwind = own.SpellCodes.Any(s => s.FaceUp && Search.SearchHost.Is(s.Code, BlackwingCardId.BlackWhirlwind)) ||
+                             own.HandCodes.Any(c => Search.SearchHost.Is(c, BlackwingCardId.BlackWhirlwind));
+            if (!whirlwind)
+                return 0;
+            bool goodSummon = own.HandCodes.Any(c => Search.SearchHost.Available && Search.SearchHost.Cards.Get(c) is { } r &&
+                (r.Type & 0x1) != 0 && r.Level <= 4 && r.Attack >= WhirlwindGoodSummonAtk && (r.Name ?? "").StartsWith("Blackwing - ") &&
+                !Search.SearchHost.Is(c, BlackwingCardId.BlackwingVayuTheEmblemOfHonor));
+            return goodSummon ? WhirlwindNextSummonValue : 0;
+        }
+
+        [Tunable("Black Whirlwind ours and triggered this turn: a Level 4-or-lower Blackwing of at least WhirlwindGoodSummonAtk ATK kept in hand for next turn is worth this (card units). User, 2026-11-18.")]
+        public double WhirlwindNextSummonValue { get; set; } = 0.5;
+
+        [Tunable("The ATK from which a Blackwing in hand is a good Normal Summon for Black Whirlwind next turn (it searches a smaller Blackwing).")]
+        public int WhirlwindGoodSummonAtk { get; set; } = 1700; // user, 2026-11-18: "at least 1700 attack ... bora and above count"
 
         internal override double SearchSetupValue(DuelSim.Engine.SideSummary own)
         {
@@ -2503,6 +2533,22 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         /// Summon, free bodies (Bora / Gale next to a Blackwing), Gale halving the monster in our way, Sirocco's ATK
         /// boost for lethal or to beat their best monster, Icarus Attack on our turn.
         /// </summary>
+        /// <summary>Bora special summonable from the hand that adds no kill and no direct hit this turn (or no battle is ahead): held
+        /// (BlackwingRules.BodyNeedsPurpose), so a line that summons it anyway pays for it.</summary>
+        private void BoraPurposeHold(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters)
+        {
+            if (!TryGetSpecialSummon(state, BlackwingCardId.BlackwingBoraTheSpear, out var body) || body.CurrentCoordinates.Location != (byte)CardLocation.Hand ||
+                !Rule(BlackwingRules.BodyNeedsPurpose))
+                return;
+            bool battleAhead = (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 && state.CanBattlePhase && context.Header.CurrentTurn > 1;
+            var up = botMonsters.Where(card => card.IsFaceup() && card.IsAttack() && !card.Attacked).ToList();
+            var theirs = enemyMonsters.Where(card => card.ID != 0 || !card.IsFaceup()).ToList();
+            bool addsKill = Kills(up.Append(body).ToList(), theirs) > Kills(up, theirs);
+            bool directHit = ClearsTheirBoard(up, theirs) && DirectHitMatters(body, up);
+            if (!battleAhead || !addsKill && !directHit)
+                Hold(BlackwingCardId.BlackwingBoraTheSpear, MainAction.SpSummon, BlackwingRules.BodyNeedsPurpose);
+        }
+
         private async Task<IdleCmdResponse?> TryBlackwingPlaysAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> hand,
             List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters, List<DynamicCard> enemySpells)
         {

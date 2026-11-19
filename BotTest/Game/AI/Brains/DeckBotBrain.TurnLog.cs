@@ -55,8 +55,9 @@ namespace BotTest.Game.AI.Brains
                     AuditTurn(bot, last, _checkpoints.ToList());
             }
             _currentHeader = header;
-            // Our hand at our last prompt of the last turn: what this turn's draw is measured against (UndoDraw).
-            var lastHand = _checkpoints.Count > 0 ? _checkpoints[^1].View.OwnHand.ToList() : null;
+            // Our hand / their hand size as last seen (the last snapshot or prompt): what this turn's draw is measured against (UndoDraw).
+            var lastHand = _lastSeenOwnHand?.ToList();
+            int lastTheirHand = _lastSeenTheirHand;
             _checkpoints.Clear();
             SearchView view;
             try { view = await BuildSearchViewAsync(bot); }
@@ -76,9 +77,12 @@ namespace BotTest.Game.AI.Brains
                 bool oursNow = header.CurrentPlayer == 0;
                 if (_ownTurnParity < 0)
                     _ownTurnParity = oursNow ? header.CurrentTurn % 2 : 1 - header.CurrentTurn % 2;
-                bot.LogNote($"turn log: turn {header.CurrentTurn}: snapshot in the Draw Phase; {UndoDraw(view, oursNow, lastHand)}");
+                (_lastSeenOwnHand, _lastSeenTheirHand) = (view.OwnHand.ToList(), view.EnemyHandCount);
+                bot.LogNote($"turn log: turn {header.CurrentTurn}: snapshot in the Draw Phase; {UndoDraw(view, oursNow, lastHand, lastTheirHand)}");
                 beforeDraw = true;
             }
+            if ((DuelPhase)header.CurrentPhase != DuelPhase.Draw)
+                (_lastSeenOwnHand, _lastSeenTheirHand) = (view.OwnHand.ToList(), view.EnemyHandCount);
             _turnStart = new TurnStartSnapshot(header.CurrentTurn, beforeDraw, header.CurrentPhase, view);
             bot.LogNote($"turn log: turn {header.CurrentTurn} ({TurnOwnerWord(header.CurrentTurn)}) starts; snapshot {SnapshotWhen(_turnStart)}: " +
                         $"our hand {view.OwnHand.Count}, field {view.OwnMonsters.Count}+{view.OwnSpells.Count}; " +
@@ -89,10 +93,14 @@ namespace BotTest.Game.AI.Brains
         /// A Draw Phase snapshot made into one from before the draw: their hand one card smaller on their turn; on ours, the card our hand
         /// gained since our last prompt (else the newest hand card) back into our deck, where the replay finds it as the turn's draw.
         /// </summary>
-        private static string UndoDraw(SearchView view, bool ours, List<int>? lastHand)
+        private static string UndoDraw(SearchView view, bool ours, List<int>? lastHand, int lastTheirHand)
         {
+            // Omega's first view of the Draw Phase can come before the draw itself (seen 2026-11-18 live: the snapshot still had 5 cards, a card
+            // not drawn was taken back, and every replay of the turn was a card short): only a hand that grew since we last saw it has drawn.
             if (!ours)
             {
+                if (lastTheirHand >= 0 && view.EnemyHandCount <= lastTheirHand)
+                    return "their hand hasn't grown since we last saw it: not drawn yet";
                 view.EnemyHandCount = Math.Max(0, view.EnemyHandCount - 1);
                 return "their draw taken back (their hand one smaller)";
             }
@@ -103,6 +111,8 @@ namespace BotTest.Game.AI.Brains
             {
                 var left = lastHand.ToList();
                 var gained = view.OwnHand.Where(id => !left.Remove(id)).ToList();
+                if (gained.Count == 0)
+                    return "our hand hasn't grown since we last saw it: not drawn yet";
                 if (gained.Count == 1)
                     drawn = gained[0];
             }
@@ -126,6 +136,8 @@ namespace BotTest.Game.AI.Brains
                 catch { /* tracking is best effort */ }
                 try { await TrackLylasAsync(header.CurrentTurn); }
                 catch { /* tracking is best effort */ }
+                try { await TrackMain2SummonsAsync(header); }
+                catch { /* tracking is best effort */ }
             }
             if (IsSearchTwin || _turnStart is not { } start || start.Turn != header.CurrentTurn)
                 return;
@@ -137,6 +149,7 @@ namespace BotTest.Game.AI.Brains
             try { view = await BuildSearchViewAsync(bot); }
             catch { return; }
             _checkpoints.Add(new TurnCheckpoint { State = state, Phase = header.CurrentPhase, View = view, Generation = generation });
+            (_lastSeenOwnHand, _lastSeenTheirHand) = (view.OwnHand.ToList(), view.EnemyHandCount);
         }
 
         // ------------------------------------------------------------------ temporary monsters (user, 2026-11-18)
@@ -169,6 +182,10 @@ namespace BotTest.Game.AI.Brains
                                        (darius.TargetCards ?? Array.Empty<CardCoordinate>()).Any(t => t.Location == (byte)CardLocation.MonsterZone &&
                                            t.Controller == 0 && t.Sequence == card.CurrentCoordinates.Sequence));
 
+        // Our hand and their hand size as last seen (a snapshot or a prompt of ours; -1 / null: not yet): UndoDraw's evidence of a draw.
+        private List<int>? _lastSeenOwnHand;
+        private int _lastSeenTheirHand = -1;
+
         // Face-up Lylas (controller, zone): in attack position at the last prompt, and the real turn whose End Phase ends her position lock
         // (0: none). Her effect turns her to defence, then "this card cannot change its battle position until the end of your next turn".
         private readonly Dictionary<(int Controller, int Zone), (bool Attack, int LockEnds)> _lylas = new();
@@ -195,6 +212,31 @@ namespace BotTest.Game.AI.Brains
             }
             foreach (var gone in _lylas.Keys.Where(k => !seen.Contains(k)).ToList())
                 _lylas.Remove(gone);
+        }
+
+        // Our monsters at the last prompt (by card), and those that turned up in this turn's Main Phase 2 (SearchView.Main2Summoned).
+        private List<int>? _ownMonsterCodes;
+        private (int Turn, List<int> Codes) _main2Summons = (-1, new List<int>());
+
+        /// <summary>At each prompt of our turn: a monster of ours that turned up since the last prompt, in Main Phase 2, is a Main Phase 2 summon.</summary>
+        private async Task TrackMain2SummonsAsync(BotStateHeader header)
+        {
+            if (!IsOwnTurn(header))
+            {
+                _ownMonsterCodes = null;
+                return;
+            }
+            var now = (await GetBotMonsterCardsAsync(onlyFaceUp: true)).Where(c => c.ID > 0).Select(c => c.ID).ToList();
+            if (_main2Summons.Turn != header.CurrentTurn)
+                _main2Summons = (header.CurrentTurn, new List<int>());
+            // (The duel's first turn counts too: no battle possible; user, 2026-11-18.)
+            if (((DuelPhase)header.CurrentPhase == DuelPhase.Main2 || header.CurrentTurn == 1 && (DuelPhase)header.CurrentPhase == DuelPhase.Main1) &&
+                _ownMonsterCodes != null)
+            {
+                var before = _ownMonsterCodes.ToList();
+                _main2Summons.Codes.AddRange(now.Where(c => !before.Remove(c)));
+            }
+            _ownMonsterCodes = now;
         }
 
         /// <summary>The real turn whose End Phase ends this monster's position lock (Lyla's), or 0.</summary>
@@ -470,7 +512,9 @@ namespace BotTest.Game.AI.Brains
                     ["deck"] = bot.DeckName,
                     ["turn"] = _currentHeader.CurrentTurn,
                     ["log"] = bot.DuelLog?.CurrentLogPath,
-                    ["decision"] = bot.DuelLog?.DecisionCount,
+                    // The decision being made: the log numbers it when it's answered, one after the last (seen 2026-11-18: every flag pointed at
+                    // the decision before).
+                    ["decision"] = bot.DuelLog?.DecisionCount + 1,
                     ["issue"] = note,
                 };
                 string line = System.Text.Json.JsonSerializer.Serialize(entry) + "\n";
