@@ -1,6 +1,5 @@
-# On every push to main: builds the one-click installer (Packaging\Build-Installer.ps1) and publishes it as a GitHub
-# Release tagged build-<run number>. Installed bots check the latest release when started and offer to update
-# (Packaging\package\Start-DuelBot.ps1).
+
+# On every push to main: builds, signs and publishes the installer.
 name: Release installer
 
 on:
@@ -35,13 +34,85 @@ jobs:
           DUELBOT_TAG: build-${{ github.run_number }}
         run: powershell -NoProfile -ExecutionPolicy Bypass -File Packaging\Build-Installer.ps1
 
+      - name: Sign installer
+        shell: pwsh
+        env:
+          SIGNING_CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # Restore the signing certificate
+          $pfxPath = "$env:RUNNER_TEMP\OmegaEdison.pfx"
+          $pfxBytes = [Convert]::FromBase64String($env:SIGNING_CERTIFICATE)
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+
+          $password = ConvertTo-SecureString `
+            $env:SIGNING_PASSWORD -AsPlainText -Force
+
+          Import-PfxCertificate `
+            -FilePath $pfxPath `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -Password $password | Out-Null
+
+          Remove-Item $pfxPath
+
+          # Find the certificate
+          $cert = Get-ChildItem Cert:\CurrentUser\My |
+            Where-Object {
+              $_.Subject -eq "CN=Omega Edison Duelbot" -and $_.HasPrivateKey
+            } |
+            Select-Object -First 1
+
+          if (-not $cert) {
+            throw "Signing certificate could not be imported."
+          }
+
+          # Find the installer
+          $exe = Get-ChildItem dist -Filter 'DuelBot-Setup-*.exe' |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            throw "Installer EXE not found in dist."
+          }
+
+          # Sign the installer
+          Set-AuthenticodeSignature `
+            -FilePath $exe.FullName `
+            -Certificate $cert `
+            -HashAlgorithm SHA256 `
+            -TimestampServer "http://timestamp.digicert.com"
+
+          # Verify that the signature exists and belongs to our certificate
+          $signature = Get-AuthenticodeSignature $exe.FullName
+
+          if (-not $signature.SignerCertificate -or
+              $signature.SignerCertificate.Thumbprint -ne $cert.Thumbprint) {
+            throw "Installer signing failed."
+          }
+
+          Write-Host "Installer successfully signed."
+
+          # Create the standard download filename
+          Copy-Item $exe.FullName dist\DuelBot-Setup.exe
+
+          # Export the public certificate for users
+          Export-Certificate `
+            -Cert $cert `
+            -FilePath dist\OmegaEdison.cer | Out-Null
+
       - name: Publish the release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "build-${{ github.run_number }}"
-          $exe = Get-ChildItem dist -Filter 'DuelBot-Setup-*.exe' | Select-Object -First 1
-          Copy-Item $exe.FullName dist\DuelBot-Setup.exe
           $title = "${tag}: " + (git log -1 --format=%s)
-          gh release create $tag dist\DuelBot-Setup.exe --target $env:GITHUB_SHA --title $title --notes "Commit $env:GITHUB_SHA. Download DuelBot-Setup.exe and double-click it; installed bots offer this update when started." --latest
+
+          gh release create $tag `
+            dist\DuelBot-Setup.exe `
+            dist\OmegaEdison.cer `
+            --target $env:GITHUB_SHA `
+            --title $title `
+            --notes "Commit $env:GITHUB_SHA. Download DuelBot-Setup.exe and double-click it; install OmegaEdison.cer as a trusted certificate if you haven't already. Installed bots offer this update when started." `
+            --latest
