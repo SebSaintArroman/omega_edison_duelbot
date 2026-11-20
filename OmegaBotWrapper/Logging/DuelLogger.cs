@@ -88,7 +88,15 @@ namespace OmegaBotWrapper.Logging
         // Brain notes are written as "<lower-case source>: <reason>" ("vayu: ...", "deck brain: ...").
         private static readonly System.Text.RegularExpressions.Regex ReasonNote = new(@"^[a-z][a-z ]*: ", System.Text.RegularExpressions.RegexOptions.Compiled);
         private static bool IsReason(string note) =>
-            ReasonNote.IsMatch(note) && !note.StartsWith("brain score", StringComparison.Ordinal);
+            ReasonNote.IsMatch(note) && !note.StartsWith("brain score", StringComparison.Ordinal) && !HiddenFromPage.IsMatch(note);
+
+        // Kept in the .log, left off the AI Room page (user, 2026-11-20: "remove the 'turn log' entries and the 'tuning' entry. keep the
+        // deck brain where it says what it thinks my set cards are, but remove the one where it clarifies the move it's taking (because
+        // I'll see that below anyway now)"): the turn log's bookkeeping, the tuning file, and the deck brain's note naming its own move.
+        private static readonly System.Text.RegularExpressions.Regex HiddenFromPage = new(
+            @"^(turn log|tuning): |^deck brain: (activate|normal summon|special summon|summon|tribute summon|set( trap| spell| monster)?|flip summon|flip|" +
+            @"attack|chain|tribute|change position|change|pass|end the turn|go to the battle phase|go to main phase 2) ",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
 
         /// <summary>
         /// Adds a free-text note to the next recorded decision (brain reasoning, scores, console messages).
@@ -193,9 +201,16 @@ namespace OmegaBotWrapper.Logging
                 }
                 sb.AppendLine($"  Options: {options}");
                 // The generic fallback's "brain score" lines are noise in the readable log (still kept in the .jsonl).
+                // Score breakdowns: the played move and the next one in full (table and line), the other moves on offer one line each.
+                int breakdowns = 0;
                 for (int i = 0; i < notes.Count; i++)
                     // (Rule events are machine data for DuelSim's analyze command: JSONL only.)
-                    if (!notes[i].StartsWith("brain score", StringComparison.Ordinal) && !notes[i].StartsWith("rule-event|", StringComparison.Ordinal))
+                    if (ScoreBreakdown.Parse(notes[i]) is { } breakdown)
+                    {
+                        string head = $"  . [{Stamp(i < noteTimes.Count ? noteTimes[i] : now)}] ";
+                        sb.Append(breakdowns++ < 2 ? breakdown.ToText(head, "      ") : breakdown.ToShortText(head));
+                    }
+                    else if (!notes[i].StartsWith("brain score", StringComparison.Ordinal) && !notes[i].StartsWith("rule-event|", StringComparison.Ordinal))
                         sb.AppendLine($"  . [{Stamp(i < noteTimes.Count ? noteTimes[i] : now)}] {notes[i]}");
                 sb.AppendLine($"  => [{Stamp(now)}] {chosen}");
                 if (sent != null)
@@ -286,6 +301,10 @@ namespace OmegaBotWrapper.Logging
                     }
                     if (TidyOptions(options) is string tidy)
                         narration.Append($"{Environment.NewLine}    detail could have: {tidy}");
+                    // The score breakdown of the move played (user, 2026-11-20): the page draws it as a table in the expanded entry.
+                    foreach (var note in notes)
+                        if (note.StartsWith(ScoreBreakdown.Prefix, StringComparison.Ordinal))
+                            narration.Append($"{Environment.NewLine}    breakdown: {note.Substring(ScoreBreakdown.Prefix.Length)}");
                     // (Not every note: the deck brain's and the search's bookkeeping stays in the .log file, user 2026-11-16.)
                     DecisionNarrated?.Invoke(narration.ToString());
                 }

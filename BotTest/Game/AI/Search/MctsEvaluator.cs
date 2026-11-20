@@ -197,8 +197,17 @@ namespace BotTest.Game.AI.Search
         /// <param name="cardsSpent">For a won line: our cards it used up, ranked second.</param>
         /// <param name="length">For a won line: its length (prompts), ranked last.</param>
         public double Evaluate(DuelHost host, double penalty = 0, (SideSummary Ours, SideSummary Theirs, bool Attacked)? ourTurnEnd = null,
-            double winRisk = 0, int cardsSpent = 0, int length = 0, double center = 0, IReadOnlyList<int>? noClock = null, IReadOnlyCollection<int>? activatedThisTurn = null)
+            double winRisk = 0, int cardsSpent = 0, int length = 0, double center = 0, IReadOnlyList<int>? noClock = null, IReadOnlyCollection<int>? activatedThisTurn = null,
+            IDictionary<string, double>? parts = null, IReadOnlyDictionary<string, double>? centerParts = null)
         {
+            // The score breakdown (parts, card units): each term of the line's board difference by name, the position terms against the
+            // decision's own (centerParts), so the parts add up to the line's difference from the position now (penalty aside: the caller
+            // records its own parts of it). Lethal exposure scales the squashed score and isn't a card-unit part: Lethal holds it.
+            void Part(string name, double value)
+            {
+                if (parts != null && value != 0)
+                    parts[name] = (parts.TryGetValue(name, out var had) ? had : 0) + value;
+            }
             // A loss is 0. A win in the line is scored like any other line, plus a large bonus scaled down by the chance it really works: the
             // lines never fire their unknown cards, so a "win" through their set cards is only as sure as those cards being blanks (user,
             // 2026-11-17: "if the win isn't a sure thing, it shouldn't be counted as a win for the line. why not keep the win as a large line
@@ -208,8 +217,30 @@ namespace BotTest.Game.AI.Search
                 return 0;
             var ours = host.Summary(0);
             var theirs = host.Summary(1);
-            double diff = SideScore(ours, 0, theirs) - SideScore(theirs, 1, ours) + Dominance(ours, theirs, 0) - Dominance(theirs, ours, 1) - Threat(ours) - penalty -
-                          (ourTurnEnd is { } end ? Backrow(end.Ours, end.Theirs, end.Attacked) : 0);
+            // With a breakdown: each side's categories as sub-rows of its part (their side negated, as it counts against us).
+            double ourSide = parts == null ? SideScore(ours, 0, theirs) : SideScore(ours, 0, theirs, (c, v) => Part(OurCardsPart + SubPart + c, v));
+            double theirSide = parts == null ? SideScore(theirs, 1, ours) : SideScore(theirs, 1, ours, (c, v) => Part(TheirCardsPart + SubPart + c, -v));
+            double dominance = Dominance(ours, theirs, 0) - Dominance(theirs, ours, 1), threat = Threat(ours);
+            double backrow = ourTurnEnd is { } end ? Backrow(end.Ours, end.Theirs, end.Attacked) : 0;
+            double diff = ourSide - theirSide + dominance - threat - penalty - backrow;
+            if (parts != null)
+            {
+                double Root(string name) => centerParts != null && centerParts.TryGetValue(name, out var v) ? v : 0;
+                // The sub-rows against the decision's own (a category there and gone at the line's end shows as its loss).
+                if (centerParts != null)
+                    foreach (var (name, v) in centerParts)
+                        if (name.Contains(SubPart))
+                            Part(name, -v);
+                Part(OurCardsPart, ourSide - Root(OurCardsPart));
+                Part(TheirCardsPart, -theirSide - Root(TheirCardsPart));
+                Part(DominancePart, dominance - Root(DominancePart));
+                Part(ThreatPart, -threat - Root(ThreatPart));
+                // The clocks as the decision stands: a line adds its own below (a won line none).
+                Part(OurClockPart, -Root(OurClockPart));
+                Part(TheirClockPart, -Root(TheirClockPart));
+                Part("Their backrow on our board", -backrow);
+            }
+            double before = diff;
             if (ourTurnEnd is { Attacked: true } attackedEnd)
             {
                 // Damage dealt in our turn: a little extra, more for more (user, 2026-11-16: "a small bonus for dealing direct damage"; 2026-11-17:
@@ -218,16 +249,27 @@ namespace BotTest.Game.AI.Search
                 if (TheirStartLp > 0 && attackedEnd.Theirs.LifePoints < TheirStartLp)
                     diff += DamageBonusPer1000 * (TheirStartLp - attackedEnd.Theirs.LifePoints) / 1000.0;
             }
+            Part("Damage dealt", diff - before);
+            before = diff;
             // Our own life points lost by the end of the line, at half the damage bonus (user, 2026-11-18: Super-Nimble Mega Hamster switched to
             // attack position took 1600 more damage from Gorz for nothing, the loss inside the same clock count costing nothing).
             if (!won && OurStartLp > 0 && ours.LifePoints < OurStartLp)
                 diff -= OwnDamageShare * DamageBonusPer1000 * (OurStartLp - ours.LifePoints) / 1000.0;
+            Part("Our life points lost", diff - before);
             // Each side's clock on the other at the end of the line, as part of the board: ours on them counts for us, theirs on us against.
             if (!won)
-                diff += ClockValue(WithoutMonsters(ours, noClock), theirs) - TheirClockShare * ClockValue(theirs, ours, TheirNextAttack(theirs));
+            {
+                double ourClock = ClockValue(WithoutMonsters(ours, noClock), theirs), theirClock = TheirClockShare * ClockValue(theirs, ours, TheirNextAttack(theirs));
+                diff += ourClock - theirClock;
+                Part(OurClockPart, ourClock);
+                Part(TheirClockPart, -theirClock);
+            }
             // Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn, no battle possible) count only Main2BoardShare of
             // their board value (user, 2026-11-18: "yes, but mp2 sets get full value"): they can't attack this turn and stay exposed.
-            diff -= Main2BodyDiscount(ours, noClock);
+            double main2 = Main2BodyDiscount(ours, noClock);
+            diff -= main2;
+            Part("Monsters summoned in Main Phase 2", -main2);
+            before = diff;
             // The deck's next-turn setups that depend on what we activated this turn (Black Whirlwind triggered: a good Normal Summon kept for
             // next turn).
             if (!won && NextTurnValue != null)
@@ -235,10 +277,15 @@ namespace BotTest.Game.AI.Search
                 try { diff += NextTurnValue(ours, activatedThisTurn ?? Array.Empty<int>()); }
                 catch { /* a deck goal that fails counts nothing */ }
             }
+            Part("Deck's next-turn setup", diff - before);
             // Gorz in our hand with our field empty: it can come out when they hit us directly (user, 2026-11-17: "if you have a gorz in hand,
             // you should get a small bonus for ending on an empty field because it'll let you use gorz").
             if (!won && ours.Monsters.Count == 0 && ours.SpellCodes.Count == 0 && ours.HandCodes.Any(c => SearchHost.Is(c, GorzCode)))
+            {
                 diff += GorzReadyBonus;
+                Part("Gorz ready (empty field)", GorzReadyBonus);
+            }
+            before = diff;
             // A won line: what it spent, not the board it leaves (user, 2026-11-18: "yes, on that change to winning lines": a superfluous Bora
             // summoned on the way to a win scored higher for the extra board). As an expected value, so a risky win compares like for like
             // with lines that don't win: if the win works (its chance), the decision's own position plus the win bonus, less WinCardCost per
@@ -251,6 +298,7 @@ namespace BotTest.Game.AI.Search
                 // wrong because you overspend"): WinBonus only for a sure win, RiskyWinBonus for any other.
                 double bonus = chance >= 1 ? WinBonus : RiskyWinBonus;
                 diff = chance * (center + bonus - WinCardCost * Math.Max(0, cardsSpent) - penalty) + (1 - chance) * diff; // the rules it broke cost in both
+                Part("Win (by its chance, in place of the board)", diff - before);
             }
             // A position still alive sits clearly between a loss and a win: far behind, the squashed score is ~0 and a line that
             // survives (the Dupe lock at 300 LP) looked no better than one that dies (seen 2026-11-11: every option scored 0-2
@@ -263,8 +311,48 @@ namespace BotTest.Game.AI.Search
             // draw (300 LP, a 400-ATK Plaguespreader stuck in attack position: seen 2026-11-12, they drew Card Trooper) scored
             // as safe. Weigh the line by the chance they kill us from what we left as our turn ended.
             if (ourTurnEnd is { } turnEnd && !won)
-                score *= 1 - LethalExposure(turnEnd.Ours);
+            {
+                double lethal = LethalExposure(turnEnd.Ours);
+                score *= 1 - lethal;
+                if (parts != null && lethal > 0)
+                    parts[LethalPart] = lethal;
+            }
             return score;
+        }
+
+        // The breakdown's position parts (named alike at the decision and at a line's end).
+        internal const string OurCardsPart = "Our cards (hand, field, graveyard)";
+        internal const string TheirCardsPart = "Their cards";
+        internal const string DominancePart = "Board dominance";
+        internal const string ThreatPart = "Their threat to our board";
+        internal const string OurClockPart = "Our clock on them";
+        internal const string TheirClockPart = "Their clock on us";
+        /// <summary>Not a card-unit part: the chance they kill us from the board we left, which scales the line's score down.</summary>
+        internal const string LethalPart = "~lethal";
+
+        /// <summary>PositionDiff's terms by name (the breakdown's starting point): the top-level ones add up to PositionDiff; the names with
+        /// SubPart in them are the two sides' categories, a split of their cards' parts.</summary>
+        public Dictionary<string, double> PositionParts(DuelHost host)
+        {
+            var ours = host.Summary(0);
+            var theirs = host.Summary(1);
+            // Each side's categories too, as sub-rows (theirs negated): not added into PositionDiff, only the breakdown's yardstick.
+            var subRows = new Dictionary<string, double>();
+            void Sub(string name, double v) => subRows[name] = (subRows.TryGetValue(name, out var had) ? had : 0) + v;
+            double ourSide = SideScore(ours, 0, theirs, (c, v) => Sub(OurCardsPart + SubPart + c, v));
+            double theirSide = SideScore(theirs, 1, ours, (c, v) => Sub(TheirCardsPart + SubPart + c, -v));
+            var result = new Dictionary<string, double>
+            {
+                [OurCardsPart] = ourSide,
+                [TheirCardsPart] = -theirSide,
+                [DominancePart] = Dominance(ours, theirs, 0) - Dominance(theirs, ours, 1),
+                [ThreatPart] = -Threat(ours),
+                [OurClockPart] = ClockValue(ours, theirs),
+                [TheirClockPart] = -TheirClockShare * ClockValue(theirs, ours, TheirNextAttack(theirs)),
+            };
+            foreach (var (name, v) in subRows)
+                result[name] = v;
+            return result;
         }
 
         /// <summary>
@@ -956,15 +1044,27 @@ namespace BotTest.Game.AI.Search
             return best >= SolemnGuardMinWorth ? SolemnGuardWeight * Math.Min(SolemnGuardCap, best) : 0;
         }
 
-        public double SideScore(SideSummary s, int side, SideSummary? other = null)
+        /// <summary>
+        /// A side's worth in card units. <paramref name="into"/> (the log's breakdown; user, 2026-11-20: "I don't quite understand the
+        /// 'our cards' and 'their cards' - please add a breakdown for how these are generated") gets each category's share by name; they
+        /// add up to the returned value.
+        /// </summary>
+        public double SideScore(SideSummary s, int side, SideSummary? other = null, Action<string, double>? into = null)
         {
             double Effect(double points, double weight) => weight * Taper(points);
+            double value = 0;
+            void Add(string category, double v)
+            {
+                value += v;
+                if (into != null && v != 0)
+                    into(category, v);
+            }
             double lp = Math.Max(0, s.LifePoints);
             // Their life point gains count for nothing (CSV S6, user: "it's fine if they gain life points, who cares"): only damage counts.
             if (side == 1 && TheirStartLp > 0)
                 lp = Math.Min(lp, TheirStartLp);
-            double value = (LpLowWorth * Math.Min(lp, LpLowBand) / LpLowBand + LpHighWorth * Math.Max(0, Math.Min(lp, 8000) - LpLowBand) / (8000.0 - LpLowBand)) *
-                           (side == 1 ? 1 + Math.Clamp(RiskPress, 0, 1) : 1); // their LP count for more when we must press (S13)
+            Add(SideLifePoints, (LpLowWorth * Math.Min(lp, LpLowBand) / LpLowBand + LpHighWorth * Math.Max(0, Math.Min(lp, 8000) - LpLowBand) / (8000.0 - LpLowBand)) *
+                                (side == 1 ? 1 + Math.Clamp(RiskPress, 0, 1) : 1)); // their LP count for more when we must press (S13)
 
             // Monsters: body (current ATK, or DEF in defence) plus what their effects can still do on the field (nothing when
             // negated: a Synchro summoned by Vayu is only its body).
@@ -973,12 +1073,16 @@ namespace BotTest.Game.AI.Search
                 var card = _values.Get(m.Code, side);
                 // Lyla's effect destroys a spell/trap: with none on the other side it's worth nothing (user, 2026-11-18).
                 bool idle = SearchHost.Is(m.Code, LylaCode) && other != null && other.SpellCodes.Count == 0;
-                value += m.FaceUp
-                    ? MonsterBase + AtkValue(Power(m)) + (m.Negated || idle ? 0 : Effect(card.Field, FieldEffectWeight))
-                    : card.LikesSet
+                if (m.FaceUp)
+                {
+                    Add(SideMonsterBodies, MonsterBase + AtkValue(Power(m)));
+                    Add(SideMonsterEffects, m.Negated || idle ? 0 : Effect(card.Field, FieldEffectWeight));
+                }
+                else
+                    Add(SideSetMonsters, card.LikesSet
                         ? SetFlipBase + Effect(card.Held, SetFlipEffectWeight) // a flip or a floater, still to be used
-                        : WallValue; // just a wall: walls are worth little
-                value += Bonus(m.Code, m.FaceUp ? CardPlace.Field : CardPlace.Set, side);
+                        : WallValue); // just a wall: walls are worth little
+                Add(SideOverrides, Bonus(m.Code, m.FaceUp ? CardPlace.Field : CardPlace.Set, side));
             }
             // Spells/traps: set ones by what they'll do (a set Mirror Force beats a bluff), face-up ones by their lasting effect.
             // Our set cards' situational worth (user, 2026-11-16): protecting a monster worth protecting, removing a monster when our LP
@@ -988,17 +1092,21 @@ namespace BotTest.Game.AI.Search
             foreach (var (code, faceUp) in s.SpellCodes.Where(c => c.Code != SearchView.InertCard)) // stand-ins count in Threat
             {
                 var card = _values.Get(code, side);
-                value += faceUp ? FaceUpSpellBase + Effect(card.Field, FieldEffectWeight) : SetBase(code) + Effect(card.Held, HeldEffectWeight);
+                if (faceUp)
+                    Add(SideFaceUpSpells, FaceUpSpellBase + Effect(card.Field, FieldEffectWeight));
+                else
+                    Add(SideSetSpells, SetBase(code) + Effect(card.Held, HeldEffectWeight));
                 if (!faceUp && side == 0)
-                    value += SetCardSituational(code, card, protectNeed, lpNeed, ourSets, other) + (SearchHost.Is(code, SolemnJudgmentCode) ? SolemnGuardsHand(s) : 0);
-                value += Bonus(code, faceUp ? CardPlace.Field : CardPlace.Set, side);
+                    Add(SideSetSituational, SetCardSituational(code, card, protectNeed, lpNeed, ourSets, other) + (SearchHost.Is(code, SolemnJudgmentCode) ? SolemnGuardsHand(s) : 0));
+                Add(SideOverrides, Bonus(code, faceUp ? CardPlace.Field : CardPlace.Set, side));
             }
             // Hand: every card is an option; strong effects and big bodies more so.
             foreach (int code in s.HandCodes.Where(c => c != SearchView.InertCard))
             {
                 var card = _values.Get(code, side);
                 int atk = SearchHost.Cards.Get(code) is { } r && (r.Type & 0x1) != 0 ? r.Attack : 0;
-                value += HandCardBase + Effect(card.Held + atk / HandAtkScale, HeldEffectWeight) + Bonus(code, CardPlace.Hand, side);
+                Add(SideHand, HandCardBase + Effect(card.Held + atk / HandAtkScale, HeldEffectWeight));
+                Add(SideOverrides, Bonus(code, CardPlace.Hand, side));
             }
             // Graveyard: setups (cards that work from there: Vayu, Plaguespreader, Treeborn, Necro Gardna).
             // Graveyard: the grave scorer's value as it is (user, 2026-11-18: "graveyard weights should be their weight according to the grave
@@ -1010,19 +1118,39 @@ namespace BotTest.Game.AI.Search
                 double grave = card.Grave;
                 if (grave <= 0 && SearchHost.Cards.Get(code) is { } r && (r.Type & 0x1) != 0)
                     grave = GraveMonsterShare * (MonsterBase + AtkValue(Math.Max(0, r.Attack)) + Effect(card.Field, FieldEffectWeight));
-                value += grave + Bonus(code, CardPlace.Grave, side);
+                Add(SideGraveyard, grave);
+                Add(SideOverrides, Bonus(code, CardPlace.Grave, side));
             }
-            value += TributeSetup(s, side);
+            Add(SideTributeSetup, TributeSetup(s, side));
             if (side == 0 && _setup != null)
             {
-                try { value += _setup(s); }
+                double goal = 0;
+                try { goal = _setup(s); }
                 catch { /* a deck goal that fails counts nothing */ }
+                Add(SideDeckGoals, goal);
             }
 
             if (s.Deck < LowDeckFrom)
-                value -= (LowDeckFrom - s.Deck) * LowDeckCostPerCard;
+                Add(SideLowDeck, -(LowDeckFrom - s.Deck) * LowDeckCostPerCard);
             return value;
         }
+
+        // SideScore's categories (the breakdown's sub-rows of "Our cards" / "Their cards").
+        internal const string SideLifePoints = "Life points";
+        internal const string SideMonsterBodies = "Face-up monsters: bodies (ATK/DEF)";
+        internal const string SideMonsterEffects = "Face-up monsters: effects";
+        internal const string SideSetMonsters = "Set monsters";
+        internal const string SideFaceUpSpells = "Face-up spells/traps";
+        internal const string SideSetSpells = "Set spells/traps";
+        internal const string SideSetSituational = "Set cards' situational worth";
+        internal const string SideOverrides = "Card value overrides";
+        internal const string SideHand = "Hand";
+        internal const string SideGraveyard = "Graveyard";
+        internal const string SideTributeSetup = "Tribute summon ready";
+        internal const string SideDeckGoals = "Deck goals (setups)";
+        internal const string SideLowDeck = "Low deck";
+        /// <summary>Joins a part and its sub-row in the breakdown's names: "Our cards (hand, field, graveyard) :: Hand".</summary>
+        internal const string SubPart = " :: ";
 
         /// <summary>
         /// A tribute monster in hand (a Monarch) with enough monsters on the field to tribute for it: it can come out

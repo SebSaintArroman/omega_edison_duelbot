@@ -75,6 +75,18 @@ namespace BotTest.Game.AI.Search
         public static double AllureBonus = 0.3;
         internal static readonly int[] Allure = { 1475311 };
 
+        /// <summary>
+        /// Each cost (positive) or bonus (negative) this tally adds to a line, by the rule's name: the score breakdown in the log (user,
+        /// 2026-11-20: "a complete breakdown of what went into the main decision"). Null: nothing recorded.
+        /// </summary>
+        public Action<string, double>? Charged { get; set; }
+
+        private double Charge(string rule, double cost)
+        {
+            Charged?.Invoke(rule, cost);
+            return cost;
+        }
+
         /// <summary>How many of our monsters other than this card could still attack this turn (set by the search, which sees the board).</summary>
         public Func<int, int>? OtherAttackers { get; set; }
 
@@ -86,7 +98,7 @@ namespace BotTest.Game.AI.Search
             if (blocked <= 0)
                 return 0;
             note?.Invoke($"  ({blocked} other monster(s) of ours can't attack after this effect: -{AttackLockCost * blocked:0.#})");
-            return AttackLockCost * blocked;
+            return Charge("Stops our other monsters attacking", AttackLockCost * blocked);
         }
 
         private static readonly System.Text.RegularExpressions.Regex DrawText = new(
@@ -133,7 +145,7 @@ namespace BotTest.Game.AI.Search
             if (own == 0)
                 return 0;
             note?.Invoke($"  ({own} of our own card(s) picked to destroy: -{OwnDestroyCost * own:0.#})");
-            return OwnDestroyCost * own;
+            return Charge("Destroys our own card", OwnDestroyCost * own);
         }
 
         private bool _brainControlPending;
@@ -163,7 +175,7 @@ namespace BotTest.Game.AI.Search
                 if (doomed(at.Location, at.Sequence))
                     return 0;
                 note?.Invoke($"  (Return from the Different Dimension on their turn, not about to be destroyed: -{ReturnTheirTurnCost:0.#})");
-                return ReturnTheirTurnCost;
+                return Charge("Return from the Different Dimension on their turn", ReturnTheirTurnCost);
             }
             // Jar of Greed (user, 2026-11-19): on their turn only when it's about to be destroyed, or against an attack with Jar our only card
             // and Gorz in hand (clearing the field for Gorz).
@@ -173,13 +185,13 @@ namespace BotTest.Game.AI.Search
                 if (doomed(at.Location, at.Sequence) || attacking && ourFieldCards?.Invoke() == 1 && gorzInHand?.Invoke() == true)
                     return 0;
                 note?.Invoke($"  (Jar of Greed on their turn, not about to be destroyed nor clearing the field for Gorz: -{JarTheirTurnCost:0.#})");
-                return JarTheirTurnCost;
+                return Charge("Jar of Greed on their turn", JarTheirTurnCost);
             }
             // Trap Dustshoot fires at the earliest chance (its own rule and DustshootBonus): never charged for being early.
             if (!eventless || phase == (int)OmegaBotWrapper.Enum.DuelPhase.End || Is(cards[index].ID, TrapDustshoot))
                 return 0;
             note?.Invoke($"  (a trap fired on their turn with nothing to answer: it could wait for the last moment: -{EarlyTrapCost:0.#})");
-            return EarlyTrapCost;
+            return Charge("Trap fired with nothing to answer", EarlyTrapCost);
         }
 
         private int _sets, _equips;
@@ -235,7 +247,7 @@ namespace BotTest.Game.AI.Search
                         cards[index].CurrentCoordinates.Controller == 0 && !Is(code, Lyla) && !Is(code, Unions))
                     {
                         note?.Invoke($"  (a monster effect used in its chain window: +{PriorityWindowBonus:0.#})");
-                        return lockCost - PriorityWindowBonus;
+                        return lockCost + Charge("Monster effect used in its chain window", -PriorityWindowBonus);
                     }
                     return lockCost;
                 }
@@ -280,13 +292,13 @@ namespace BotTest.Game.AI.Search
             else if (action == MainAction.Activate && key != null && key.Contains("@0.4.") && _effectsBeforeBattle.Contains(Canonical(code)) &&
                      _riskAtBattle > 0 && BattleRemovalRisk != null && BattleRemovalRisk() < _riskAtBattle)
             {
-                cost += EffectAfterBattleCost;
+                cost += Charge("Monster effect left until after the battle", EffectAfterBattleCost);
                 note?.Invoke($"  (a monster effect on offer before the battle used only after it, with their board able to remove it: -{EffectAfterBattleCost:0.#})");
             }
             bool isDraw = action == MainAction.Activate && Draws(code);
             if (!isDraw && (data.ActivableCards ?? Array.Empty<OmegaBotWrapper.Struct.DynamicCard>()).Any(card => Draws(Canonical(card.ID))))
             {
-                cost += DrawLaterCost;
+                cost += Charge("Draw effect left for later", DrawLaterCost);
                 note?.Invoke($"  (a draw effect was on offer and this move came first: -{DrawLaterCost:0.#})");
             }
             switch (action)
@@ -294,7 +306,7 @@ namespace BotTest.Game.AI.Search
                 case MainAction.SetSpell or MainAction.SetMonster:
                     if (action == MainAction.SetSpell && IsNormalSpell(Canonical(code)))
                     {
-                        cost += SetNormalSpellCost;
+                        cost += Charge("Normal spell set", SetNormalSpellCost);
                         note?.Invoke($"  (a normal spell set: -{SetNormalSpellCost:0.#})");
                     }
                     if (!_battle)
@@ -307,7 +319,7 @@ namespace BotTest.Game.AI.Search
                     _idleSummons.Remove(code);
                     if (Is(code, Allure) && DarkInHand?.Invoke() == true)
                     {
-                        cost -= AllureBonus;
+                        cost += Charge("Allure of Darkness with a DARK to banish", -AllureBonus);
                         note?.Invoke($"  (Allure of Darkness with a DARK to banish: +{AllureBonus:0.#})");
                     }
                     cost += AttackLock(code, note);
@@ -330,12 +342,12 @@ namespace BotTest.Game.AI.Search
                     // circumstance; user, 2026-11-18: "why do we have two holds of set for battle phase? we should only have one".)
                     if (_lyla)
                     {
-                        cost += LylaBeforeBattleCost;
+                        cost += Charge("Lyla's effect before the Battle Phase", LylaBeforeBattleCost);
                         note?.Invoke($"  (Lyla's effect in Main Phase 1, then the Battle Phase: -{LylaBeforeBattleCost:0.#})");
                     }
                     if (_equips > 0)
                     {
-                        cost += EquipBeforeBattleCost * _equips;
+                        cost += Charge("Union equip before the Battle Phase", EquipBeforeBattleCost * _equips);
                         note?.Invoke($"  ({_equips} union equip(s) in Main Phase 1, then the Battle Phase: -{EquipBeforeBattleCost * _equips:0.#})");
                     }
                     break;
@@ -352,18 +364,18 @@ namespace BotTest.Game.AI.Search
             double cost = 0;
             if (_battleInLine && !_attackedInLine)
             {
-                cost += EmptyBattleCost;
+                cost += Charge("Battle Phase with no attack", EmptyBattleCost);
                 note?.Invoke($"  (the Battle Phase with no attack: -{EmptyBattleCost:0.##})");
             }
             // Brain Control's monster back with them, its copies all there: never tributed or used as material (a win ends the line first).
             if (_brainTarget > 0 && theirs.Monsters.Count(m => Canonical(m.Code) == _brainTarget) >= _brainTargetCopies)
             {
-                cost += BrainControlUnusedCost;
+                cost += Charge("Brain Control's monster not used", BrainControlUnusedCost);
                 note?.Invoke($"  (Brain Control without a tribute, a Synchro or a win: -{BrainControlUnusedCost:0.#})");
             }
             if (_fusion)
             {
-                cost += FusionWithoutBattleCost;
+                cost += Charge("Miracle Fusion with no Battle Phase", FusionWithoutBattleCost);
                 note?.Invoke($"  (Miracle Fusion with no Battle Phase after it: -{FusionWithoutBattleCost:0.#})");
             }
             if (!_noBattlePossible)
@@ -375,7 +387,7 @@ namespace BotTest.Game.AI.Search
                         idle++;
                 if (idle > 0)
                 {
-                    cost += IdleSummonCost * idle;
+                    cost += Charge("Summoned monster left idle", IdleSummonCost * idle);
                     note?.Invoke($"  ({idle} monster(s) summoned that never attacked, used an effect or left the field: -{IdleSummonCost * idle:0.#})");
                 }
             }

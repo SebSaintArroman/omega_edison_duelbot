@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Omega Bot AI Room</title>
-  <link rel="stylesheet" href="/styles.css?v=9">
+  <link rel="stylesheet" href="/styles.css?v=12">
 </head>
 <body>
   <div class="scene scene-left"></div>
@@ -14,17 +14,15 @@
   <main class="shell">
     <section class="grid main-grid">
       <article class="panel panel-selection">
-        <div class="panel-head">
+        <div class="panel-head setup-head">
           <span class="panel-kicker">Setup</span>
           <h2>Choose Your Duel</h2>
         </div>
 
-        <div class="field-group">
-          <label for="deckSelect">Deck</label>
+        <!-- Compact (deck, pause and status in two rows) so the problem report fits in the same panel height. -->
+        <div class="setup-row">
+          <label class="sr-only" for="deckSelect">Deck</label>
           <select id="deckSelect"></select>
-        </div>
-
-        <div class="actions">
           <button id="startButton" class="button button-secondary" type="button">Pause auto-start</button>
         </div>
 
@@ -32,6 +30,31 @@
           <span id="statusBadge" class="status-badge">Ready</span>
           <span id="statusDetail" class="status-meta">Fetching the current panel state.</span>
         </div>
+
+        <aside class="comment-panel" aria-label="Duel comments">
+          <form id="commentForm" class="comment-form">
+            <div class="comment-panel-head">
+              <h3>Report a problem</h3>
+              <span class="comment-anchor">Pinned to the current decision</span>
+            </div>
+            <label class="sr-only" for="commentText">Comment on this duel</label>
+            <textarea id="commentText" rows="2" placeholder="What did the bot do wrong, and what should it have done?"></textarea>
+            <div class="comment-row">
+              <span class="comment-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> saves</span>
+              <span id="commentStatus" class="comment-status" role="status"></span>
+              <button id="commentButton" class="button button-primary" type="submit">Save comment</button>
+            </div>
+          </form>
+
+          <!-- Saved comments: folded by default. -->
+          <details class="comment-history">
+            <summary class="comment-panel-head">
+              <h3>Saved comments</h3>
+              <span id="commentCount" class="count-pill">0</span>
+            </summary>
+            <ul id="commentList" class="comment-list"></ul>
+          </details>
+        </aside>
       </article>
 
       <article class="panel panel-carousel">
@@ -72,30 +95,6 @@
             <div id="terminal" class="terminal" role="log" aria-live="off"></div>
             <button id="jumpButton" class="jump-latest" type="button" hidden>New output ↓</button>
           </div>
-
-          <aside class="comment-panel" aria-label="Duel comments">
-            <form id="commentForm" class="comment-form">
-              <div class="comment-panel-head">
-                <h3>Report a problem</h3>
-                <span class="comment-anchor">Pinned to the current decision</span>
-              </div>
-              <label class="sr-only" for="commentText">Comment on this duel</label>
-              <textarea id="commentText" rows="4" placeholder="What did the bot do wrong, and what should it have done?"></textarea>
-              <div class="comment-row">
-                <span class="comment-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> saves</span>
-                <button id="commentButton" class="button button-primary" type="submit">Save comment</button>
-              </div>
-              <span id="commentStatus" class="comment-status" role="status"></span>
-            </form>
-
-            <div class="comment-history">
-              <div class="comment-panel-head">
-                <h3>Saved comments</h3>
-                <span id="commentCount" class="count-pill">0</span>
-              </div>
-              <ul id="commentList" class="comment-list"></ul>
-            </div>
-          </aside>
         </div>
       </article>
     </section>
@@ -107,6 +106,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=10" defer></script>
+  <script src="/app.js?v=12" defer></script>
 </body>
 </html>

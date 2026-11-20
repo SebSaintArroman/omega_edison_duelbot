@@ -170,6 +170,9 @@ const REASON_LINE = /^\s+because ([a-z][a-z ]*?): (.*)$/;
 const VALIDATOR_LINE = /^\s+\(validator changed it to: (.*)\)$/;
 const OFFER_LINE = /^\s+monsters on offer: (.*)$/;
 const DETAIL_LINE = /^\s+detail ([a-z ]+): (.*)$/;
+// A move's score breakdown, one line per move on offer (the played one first): "breakdown: move|score|lines|loss|lethal|parts|role|
+// interval|line" (see addBreakdown).
+const BREAKDOWN_LINE = /^\s+breakdown: (.*)$/;
 const CHATTER_LINE = /^(OnSelectCard|Selecting defender|No specific defender|No advantageous attack|\[Random deck\]|\[Bot \d+\] \[(?!DuelLog)|\[DECK BOT BRAIN\]|OnBattleCmd|OnIdleCmd|Direct Attack with Card ID|Attack with Card ID|No attackable cards)/;
 // ASP.NET's own startup lines ("info: Microsoft.Hosting.Lifetime[14]", "Now listening on ...").
 const HOSTING_LINE = /^\s*(warn|info|dbug|fail|crit|trce): Microsoft\.|^\s*(Now listening on|Application started|Hosting environment|Content root path|The ASP\.NET Core developer certificate)/;
@@ -299,9 +302,297 @@ function addReason(source, text, validator) {
       body.append(table);
     }
     item.append(tag, body);
+    // The search's notes go in their own fold, closed by default (user, 2026-11-20: "hide all the search comments under another
+    // expandable section (default unexpanded)"). An override or an unplanned chain still flags the summary line.
+    if (source === "mcts" || source === "search") {
+      searchNotes(list).append(item);
+      return item;
+    }
   }
   list.append(item);
   return item;
+}
+
+// The current entry's folded "Search" section (inside its reasons, after the brain's own), made on first use.
+function searchNotes(list) {
+  let fold = list.querySelector(":scope > li.search-fold");
+  if (!fold) {
+    fold = document.createElement("li");
+    fold.className = "search-fold";
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Search notes";
+    const count = document.createElement("span");
+    count.className = "search-fold-count";
+    summary.append(count);
+    const inner = document.createElement("ul");
+    inner.className = "entry-reasons search-fold-list";
+    details.append(summary, inner);
+    fold.append(details);
+  }
+  // Always last in the reasons: the brain's own reasons stay on top.
+  list.append(fold);
+  const inner = fold.querySelector(".search-fold-list");
+  fold.querySelector(".search-fold-count").textContent = ` (${inner.childElementCount + 1})`;
+  return inner;
+}
+
+// Score breakdowns (user, 2026-11-20: "a complete breakdown of what went into the main decision ... nice and visual in a table";
+// "the full 'best' line it's following, with a confidence interval on each score"; "show the second best one to the right of the
+// best one, and give me a dropdown to replace viewing the second best one with any of the other options"). One "breakdown:" line
+// per move on offer, the played move first, then the others by score. Each card: positive parts, negative parts and the net (card
+// units, averaged over the move's lines, against the position at the decision), then the move's best line with a 95% interval on
+// each step's score, drawn as a range on one shared scale so the widening deeper down shows.
+function signed(value) {
+  const rounded = Math.round(value * 100) / 100;
+  return `${rounded > 0 ? "+" : rounded < 0 ? "−" : ""}${Math.abs(rounded).toFixed(2)}`;
+}
+
+const SUB_PART = " :: ";
+
+function parseBreakdown(payload) {
+  const fields = payload.split("|");
+  if (fields.length < 6) {
+    return null;
+  }
+  const num = (text) => (Number.isFinite(Number(text)) ? Number(text) : 0);
+  const parts = fields[5].split(";").filter(Boolean).map((row) => {
+    const at = row.lastIndexOf("=");
+    return { name: row.slice(0, at), value: Number(row.slice(at + 1)) };
+  }).filter((part) => part.name && Number.isFinite(part.value) && part.value !== 0);
+  // "part :: category" names split a part (how the two sides' cards are worked out): sub-rows, not counted in the totals.
+  const subRows = {};
+  for (const part of parts.filter((p) => p.name.includes(SUB_PART))) {
+    const at = part.name.indexOf(SUB_PART);
+    const parent = part.name.slice(0, at);
+    (subRows[parent] = subRows[parent] || []).push({ name: part.name.slice(at + SUB_PART.length), value: part.value });
+  }
+  const line = (fields[8] || "").split("^").filter(Boolean).map((step) => {
+    const f = step.split("~");
+    return f.length >= 6
+      ? { label: f[0], ours: f[1] === "us", theirTurn: f[2] === "next", score: num(f[3]), interval: num(f[4]), lines: num(f[5]),
+          rollout: f[6] === "rollout" }
+      : null;
+  }).filter(Boolean);
+  return {
+    move: fields[0], score: num(fields[1]), lines: num(fields[2]), lossRate: num(fields[3]), lethal: num(fields[4]),
+    parts: parts.filter((p) => !p.name.includes(SUB_PART)), subRows,
+    played: fields.length < 7 || fields[6] === "played", interval: num(fields[7]), line
+  };
+}
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function renderBreakdownCard(b) {
+  const card = element("div", "breakdown-card");
+  card.dataset.role = b.played ? "played" : "alternative";
+  const title = element("div", "breakdown-title");
+  title.append(element("span", "breakdown-role", b.played ? "Played" : "Alternative"));
+  const name = element("span", "breakdown-move");
+  renderWithCardCodes(name, b.move);
+  title.append(name);
+  card.append(title);
+  card.append(element("div", "breakdown-meta",
+    `score ${signed(b.score)} ±${b.interval.toFixed(2)} (95%) · ${b.lines} lines · card units vs. the position now`));
+
+  const positive = b.parts.filter((p) => p.value > 0).sort((x, y) => y.value - x.value);
+  const negative = b.parts.filter((p) => p.value < 0).sort((x, y) => x.value - y.value);
+  const sum = (list) => list.reduce((total, p) => total + p.value, 0);
+  const largest = Math.max(0.01, ...b.parts.map((p) => Math.abs(p.value)));
+
+  const sectionHead = (label, tone, total, extra) => {
+    const head = element("div", `breakdown-section${extra ? ` ${extra}` : ""}`);
+    head.dataset.tone = tone;
+    head.append(element("span", "", label), element("span", "breakdown-total", signed(total)));
+    return head;
+  };
+  const section = (label, tone, list) => {
+    card.append(sectionHead(label, tone, sum(list)));
+    const table = element("table", "breakdown-table");
+    const header = element("tr");
+    for (const text of ["Rule", "", "Contribution"]) header.append(element("th", "", text));
+    table.append(header);
+    if (!list.length) {
+      const tr = element("tr");
+      const td = element("td", "breakdown-none", "none");
+      td.colSpan = 3;
+      tr.append(td);
+      table.append(tr);
+    }
+    for (const part of list) {
+      const tr = element("tr");
+      const rule = element("td");
+      renderWithCardCodes(rule, part.name);
+      const barCell = element("td", "breakdown-bar-cell");
+      const bar = element("span", "breakdown-bar");
+      bar.dataset.tone = tone;
+      bar.style.width = `${Math.max(2, (Math.abs(part.value) / largest) * 100)}%`;
+      barCell.append(bar);
+      const value = element("td", "breakdown-value", signed(part.value));
+      value.dataset.tone = tone;
+      tr.append(rule, barCell, value);
+      table.append(tr);
+      // How the part is made up (our cards / their cards: life points, monsters, sets, hand, graveyard...): folded rows under it,
+      // a click on the part opens them. Each is that category's change from the position now (their side counted against us).
+      const subs = (b.subRows[part.name] || []).filter((s) => Math.abs(s.value) >= 0.005)
+        .sort((x, y) => Math.abs(y.value) - Math.abs(x.value));
+      if (subs.length) {
+        tr.classList.add("breakdown-has-subs");
+        rule.prepend(element("span", "breakdown-sub-caret", "›"));
+        const subRows = subs.map((sub) => {
+          const subTr = element("tr", "breakdown-sub");
+          subTr.hidden = true;
+          const subName = element("td", "breakdown-sub-name");
+          renderWithCardCodes(subName, sub.name);
+          const subBarCell = element("td", "breakdown-bar-cell");
+          const subBar = element("span", "breakdown-bar breakdown-sub-bar");
+          subBar.dataset.tone = sub.value >= 0 ? "positive" : "negative";
+          subBar.style.width = `${Math.max(2, Math.min(100, (Math.abs(sub.value) / largest) * 100))}%`;
+          subBarCell.append(subBar);
+          const subValue = element("td", "breakdown-value", signed(sub.value));
+          subValue.dataset.tone = sub.value >= 0 ? "positive" : "negative";
+          subTr.append(subName, subBarCell, subValue);
+          table.append(subTr);
+          return subTr;
+        });
+        tr.addEventListener("click", () => {
+          const open = tr.dataset.open !== "true";
+          tr.dataset.open = String(open);
+          for (const row of subRows) row.hidden = !open;
+        });
+      }
+    }
+    card.append(table);
+  };
+  if (b.parts.length) {
+    section("Positive contributions", "positive", positive);
+    section("Negative contributions", "negative", negative);
+    const net = sum(b.parts);
+    card.append(sectionHead("Net contribution", net >= 0 ? "positive" : "negative", net, "breakdown-net"));
+  } else {
+    card.append(element("div", "breakdown-foot", "No scored lines through this move in this search."));
+  }
+  if (b.lossRate > 0 || b.lethal > 0) {
+    const bits = [];
+    if (b.lossRate > 0) bits.push(`${Math.round(b.lossRate * 100)}% of its lines lost outright (scored 0, not in the table)`);
+    if (b.lethal > 0) bits.push(`lethal risk from the board left: ${Math.round(b.lethal * 100)}% on average (scales a line's score down)`);
+    card.append(element("div", "breakdown-foot", bits.join(" · ")));
+  }
+
+  if (b.line.length) {
+    card.append(element("div", "breakdown-section breakdown-line-head", "Best line"));
+    // The scale covers the scored (tree) steps; rollout steps past the tree's end have no score.
+    const scored = b.line.filter((s) => !s.rollout);
+    const low = Math.min(0, ...scored.map((s) => s.score - s.interval));
+    const high = Math.max(0, ...scored.map((s) => s.score + s.interval));
+    const span = Math.max(0.01, high - low);
+    const at = (v) => `${((v - low) / span) * 100}%`;
+    const table = element("table", "breakdown-line");
+    const header = element("tr");
+    for (const text of ["#", "Step", "", "Score", "±95%", "Lines"]) header.append(element("th", "", text));
+    table.append(header);
+    let theirTurnShown = false;
+    b.line.forEach((step, index) => {
+      if (step.theirTurn && !theirTurnShown) {
+        theirTurnShown = true;
+        const divider = element("tr", "breakdown-line-turn");
+        const cell = element("td", "", "their turn");
+        cell.colSpan = 6;
+        divider.append(cell);
+        table.append(divider);
+      }
+      const tr = element("tr");
+      tr.dataset.side = step.ours ? "us" : "them";
+      const label = element("td", "breakdown-step");
+      label.append(element("span", "breakdown-who", step.ours ? "us" : "them"));
+      renderWithCardCodes(label, ` ${step.label}`);
+      if (step.rollout) {
+        // Past the search tree: the brain's own play in the line that made the last tree step, unscored.
+        tr.dataset.rollout = "true";
+        tr.title = "Past the search tree's end: the brain's own play in its line (no score of its own)";
+        const note = element("td", "breakdown-rollout-note", "rollout");
+        note.colSpan = 4;
+        tr.append(element("td", "breakdown-index", String(index + 1)), label, note);
+        table.append(tr);
+        return;
+      }
+      const range = element("td", "breakdown-range-cell");
+      const track = element("span", "breakdown-range");
+      const band = element("span", "breakdown-range-band");
+      band.style.left = at(step.score - step.interval);
+      band.style.width = `${Math.max(1, ((2 * step.interval) / span) * 100)}%`;
+      const dot = element("span", "breakdown-range-dot");
+      dot.style.left = at(step.score);
+      track.append(band, dot);
+      range.append(track);
+      tr.append(element("td", "breakdown-index", String(index + 1)), label, range,
+        element("td", "breakdown-value", signed(step.score)), element("td", "breakdown-interval", `±${step.interval.toFixed(2)}`),
+        element("td", "breakdown-lines", String(step.lines)));
+      table.append(tr);
+    });
+    card.append(table);
+  }
+  return card;
+}
+
+function addBreakdown(payload) {
+  if (!currentEntry) {
+    return false;
+  }
+  const b = parseBreakdown(payload);
+  if (!b) {
+    return false;
+  }
+  let box = currentEntry.querySelector(":scope > .entry-breakdown");
+  if (!box) {
+    box = element("section", "entry-breakdown");
+    const left = element("div", "breakdown-column breakdown-left");
+    // A header row as tall as the dropdown's, so the two cards line up.
+    const leftHead = element("div", "breakdown-picker breakdown-picker-static");
+    leftHead.append(element("span", "", "Played move"));
+    left.append(leftHead, element("div", "breakdown-slot"));
+    const right = element("div", "breakdown-column breakdown-right");
+    const picker = element("label", "breakdown-picker");
+    picker.append(element("span", "", "Compare with"));
+    const select = element("select");
+    picker.append(select);
+    const slot = element("div", "breakdown-slot");
+    right.append(picker, slot);
+    right.hidden = true;
+    box.append(left, right);
+    box.alternatives = [];
+    // The dropdown sits inside the clickable entry: its clicks mustn't fold the entry.
+    picker.addEventListener("click", (event) => event.stopPropagation());
+    select.addEventListener("change", () => {
+      const chosen = box.alternatives[Number(select.value)];
+      if (chosen) slot.replaceChildren(renderBreakdownCard(chosen));
+    });
+    // Under the reasons, above the details.
+    currentEntry.insertBefore(box, currentEntry.querySelector(":scope > .entry-more"));
+    currentEntry.dataset.quiet = "false";
+  }
+  if (b.played) {
+    box.querySelector(".breakdown-left .breakdown-slot").replaceChildren(renderBreakdownCard(b));
+    return true;
+  }
+  // An alternative: listed in the dropdown by score (they arrive best first); the first one shows to the right.
+  const right = box.querySelector(".breakdown-right");
+  const select = right.querySelector("select");
+  box.alternatives.push(b);
+  const option = element("option", "", `${signed(b.score)}  ${b.move}`);
+  option.value = String(box.alternatives.length - 1);
+  select.append(option);
+  if (box.alternatives.length === 1) {
+    right.hidden = false;
+    select.value = "0";
+    right.querySelector(".breakdown-slot").replaceChildren(renderBreakdownCard(b));
+  }
+  return true;
 }
 
 // A "detail <label>: <value>" line of the current decision: into its expandable detail block.
@@ -387,6 +678,10 @@ function appendTerminalLines(lines) {
     }
     const detail = text.match(DETAIL_LINE);
     if (detail && addDetail(detail[1], detail[2])) {
+      continue;
+    }
+    const breakdown = text.match(BREAKDOWN_LINE);
+    if (breakdown && addBreakdown(breakdown[1])) {
       continue;
     }
     const reason = text.match(REASON_LINE);

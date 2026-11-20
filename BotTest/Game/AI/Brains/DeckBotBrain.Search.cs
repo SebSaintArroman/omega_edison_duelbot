@@ -1263,6 +1263,62 @@ namespace BotTest.Game.AI.Brains
         /// <summary>Cards that take a monster of theirs until the End Phase: Brain Control, Mind Control, Change of Heart.</summary>
         private static readonly int[] TemporaryControlIds = { BrainControlId, 37520316, 4031928 };
 
+        /// <summary>Two runs' score breakdowns of one move, combined (weighted by the lines behind each: Mcts.PartLines).</summary>
+        private static IReadOnlyDictionary<string, double>? MergeParts(IReadOnlyDictionary<string, double>? a, IReadOnlyDictionary<string, double>? b)
+        {
+            if (a == null || b == null)
+                return a ?? b;
+            double na = a.TryGetValue(Mcts.PartLines, out var x) ? x : 0, nb = b.TryGetValue(Mcts.PartLines, out var y) ? y : 0;
+            if (na + nb <= 0)
+                return a;
+            var merged = new Dictionary<string, double> { [Mcts.PartLines] = na + nb };
+            foreach (var name in a.Keys.Union(b.Keys).Where(k => k != Mcts.PartLines))
+                merged[name] = ((a.TryGetValue(name, out var p) ? p : 0) * na + (b.TryGetValue(name, out var q) ? q : 0) * nb) / (na + nb);
+            return merged;
+        }
+
+        /// <summary>The breakdown's confidence intervals: this many standard errors either side (95%).</summary>
+        private const double BreakdownZ = 1.96;
+
+        /// <summary>
+        /// The score breakdown of every move on offer, the played one first, then the others by score (user, 2026-11-20: "a complete
+        /// breakdown of what went into the main decision ... nice and visual in a table"; "see the alternative moves it could have played
+        /// and the same breakdown ... the 'best' line following that move"). One note per move, which the logger turns into a table
+        /// (positive parts, negative parts, net) and the move's best line, each step with a 95% interval, in the .log and the AI Room.
+        /// Format: "score breakdown|move|score|lines|loss rate|lethal exposure|name=value;...|role|score interval|step^step...", a step
+        /// "label~us/them~now/next~score~interval~lines~tree/rollout" (a rollout step's numbers empty); a part named "part :: category" is
+        /// a sub-row splitting that part (MctsEvaluator.SubPart); invariant numbers, card units.
+        /// </summary>
+        private static void LogBreakdowns(DuelBotWrapper bot, SearchOutcome outcome, string playedKey, IReadOnlySet<string> legal)
+        {
+            var moves = outcome.Root.Where(s => legal.Contains(s.Key) || s.Key == playedKey)
+                .OrderByDescending(s => s.Key == playedKey).ThenByDescending(s => s.Mean).ToList();
+            foreach (var move in moves)
+                LogBreakdown(bot, move, outcome.Details?.TryGetValue(move.Key, out var d) == true ? d : null,
+                    outcome.ScoredLines?.TryGetValue(move.Key, out var line) == true ? line : null, move.Key == playedKey);
+        }
+
+        private static void LogBreakdown(DuelBotWrapper bot, RootStat move, RootDetail? detail, List<LineStepStat>? line, bool played)
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            static string Clean(string s) => s.Replace('|', '/').Replace(';', ',').Replace('=', '-').Replace('~', '-').Replace('^', ' ');
+            string Num(double v) => v.ToString("0.###", inv);
+            var parts = detail?.Parts ?? new Dictionary<string, double>();
+            var rows = parts.Where(p => p.Key != Mcts.PartLines && p.Key != MctsEvaluator.LethalPart && Math.Abs(p.Value) >= 0.005)
+                .Select(p => $"{Clean(p.Key)}={Num(p.Value)}");
+            double lethal = parts.TryGetValue(MctsEvaluator.LethalPart, out var l) ? l : 0;
+            int lines = parts.TryGetValue(Mcts.PartLines, out var n) ? (int)n : detail?.Lines ?? 0;
+            // A rollout step (past the tree's end) has no score of its own: "rollout" as its kind, its numbers empty.
+            var steps = (line ?? new List<LineStepStat>()).Select(s => s.Rollout
+                ? string.Join('~', Clean(s.Label), s.Ours ? "us" : "them", s.TheirTurn ? "next" : "now", "", "", "0", "rollout")
+                : string.Join('~', Clean(s.Label), s.Ours ? "us" : "them", s.TheirTurn ? "next" : "now",
+                    Num(MctsEvaluator.CardUnits(s.Value)), Num(MctsEvaluator.CardUnitsErr(s.Value, BreakdownZ * s.StdErr)), s.Visits.ToString(inv), "tree"));
+            bot.LogNote(string.Join('|', "score breakdown", Clean(move.Label),
+                Num(MctsEvaluator.CardUnits(move.Mean)), lines.ToString(inv),
+                Num(detail?.LossRate ?? 0), Num(lethal), string.Join(';', rows),
+                played ? "played" : "alternative", Num(MctsEvaluator.CardUnitsErr(move.Mean, BreakdownZ * move.StdErr)), string.Join('^', steps)));
+        }
+
         /// <summary>Two runs' line totals per move, combined (weighted by lines).</summary>
         private static IReadOnlyDictionary<string, RootDetail>? MergeDetails(IReadOnlyDictionary<string, RootDetail>? a, IReadOnlyDictionary<string, RootDetail>? b)
         {
@@ -1279,7 +1335,7 @@ namespace BotTest.Game.AI.Brains
                 int n = x.Lines + y.Lines;
                 double W(double p, double q) => n == 0 ? 0 : (p * x.Lines + q * y.Lines) / n;
                 merged[key] = new RootDetail(n, W(x.WinRate, y.WinRate), W(x.LossRate, y.LossRate), W(x.OurLp, y.OurLp), W(x.TheirLp, y.TheirLp),
-                    W(x.OurBoard, y.OurBoard), W(x.TheirBoard, y.TheirBoard), W(x.Penalty, y.Penalty));
+                    W(x.OurBoard, y.OurBoard), W(x.TheirBoard, y.TheirBoard), W(x.Penalty, y.Penalty), MergeParts(x.Parts, y.Parts));
             }
             return merged;
         }
@@ -1361,6 +1417,7 @@ namespace BotTest.Game.AI.Brains
                     bot.LogNote($"search: the brain's {mine.Label}: {Detail(mine)}; its line: {Line(mine)}");
                 }
             }
+            LogBreakdowns(bot, outcome, (overrides ? best : mine).Key, legal);
             // kind|turn|phase|rules (comma-separated, the last usually decided)|brain label|brain mean|brain lines|
             // search label|search mean|search lines|total lines
             static string Clean(string s) => s.Replace('|', '/').Replace('\t', ' ');

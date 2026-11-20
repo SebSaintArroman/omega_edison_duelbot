@@ -1364,3 +1364,560 @@ kbd {
   opacity: 0.7;
   white-space: nowrap;
 }
+
+/* Score breakdowns (user, 2026-11-20): the played move on the left, an alternative on the right (a dropdown picks which); each card
+   has positive and negative parts with bars, the net, then its best line with a 95% interval range per step. */
+.entry:not([data-open="true"]) .entry-breakdown {
+  display: none;
+}
+
+.entry-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0.55rem 0 0.2rem 0.2rem;
+  font-size: 0.8rem;
+  color: #c3d3e2;
+}
+
+.breakdown-column[hidden] {
+  display: none;
+}
+
+.breakdown-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.breakdown-card {
+  padding: 0.6rem 0.75rem 0.55rem;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  background: rgba(6, 14, 24, 0.55);
+}
+
+.breakdown-card[data-role="played"] {
+  border-color: rgba(241, 195, 111, 0.35);
+}
+
+.breakdown-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.breakdown-picker select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+}
+
+.breakdown-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.45rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.breakdown-role {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--secondary-soft);
+  color: #9fd0ff;
+}
+
+.breakdown-card[data-role="played"] .breakdown-role {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.breakdown-move {
+  color: var(--accent-strong);
+}
+
+.breakdown-card[data-role="alternative"] .breakdown-move {
+  color: #cfe7ff;
+}
+
+.breakdown-meta {
+  margin: 0.15rem 0 0.2rem;
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+/* The best line: one row per step, its score's 95% interval drawn as a band on a scale shared by the whole line. */
+.breakdown-line-head {
+  justify-content: flex-start;
+}
+
+.breakdown-line {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.breakdown-line th {
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-align: left;
+  color: rgba(158, 183, 204, 0.6);
+  padding: 0.2rem 0.35rem 0.1rem 0;
+}
+
+.breakdown-line th:nth-child(1) { width: 1.6rem; }
+.breakdown-line th:nth-child(3) { width: 22%; }
+.breakdown-line th:nth-child(4) { width: 3.6rem; text-align: right; }
+.breakdown-line th:nth-child(5) { width: 3.4rem; text-align: right; }
+.breakdown-line th:nth-child(6) { width: 3.4rem; text-align: right; }
+
+.breakdown-line td {
+  padding: 0.12rem 0.35rem 0.12rem 0;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.breakdown-line tr[data-side="them"] .breakdown-step {
+  color: rgba(195, 211, 226, 0.7);
+}
+
+.breakdown-index,
+.breakdown-lines,
+.breakdown-interval {
+  font-family: "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.breakdown-lines,
+.breakdown-interval {
+  text-align: right;
+}
+
+.breakdown-line .breakdown-value {
+  width: auto;
+}
+
+.breakdown-who {
+  display: inline-block;
+  min-width: 2.4rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9fd0ff;
+}
+
+.breakdown-line tr[data-side="them"] .breakdown-who {
+  color: var(--danger);
+}
+
+.breakdown-line-turn td {
+  padding-top: 0.3rem;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(158, 183, 204, 0.6);
+  border-top: 1px dashed var(--panel-border);
+}
+
+.breakdown-range {
+  position: relative;
+  display: block;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: rgba(189, 222, 255, 0.07);
+}
+
+.breakdown-range-band {
+  position: absolute;
+  top: 0.12rem;
+  height: 0.36rem;
+  border-radius: 999px;
+  background: rgba(109, 184, 255, 0.45);
+}
+
+.breakdown-range-dot {
+  position: absolute;
+  top: 0.05rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-left: -0.25rem;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+@media (max-width: 900px) {
+  .entry-breakdown {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.breakdown-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 0.45rem;
+  padding-bottom: 0.15rem;
+  border-bottom: 1px solid var(--panel-border);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.breakdown-total {
+  font-family: "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+}
+
+.breakdown-section[data-tone="positive"] .breakdown-total {
+  color: var(--success);
+}
+
+.breakdown-section[data-tone="negative"] .breakdown-total {
+  color: var(--danger);
+}
+
+.breakdown-net {
+  margin-top: 0.6rem;
+  padding: 0.35rem 0 0;
+  border-bottom: none;
+  border-top: 1px solid rgba(189, 222, 255, 0.3);
+  color: var(--text);
+}
+
+.breakdown-net .breakdown-total {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.breakdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.breakdown-table th {
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-align: left;
+  color: rgba(158, 183, 204, 0.6);
+  padding: 0.2rem 0.4rem 0.1rem 0;
+}
+
+.breakdown-table th:last-child,
+.breakdown-value {
+  text-align: right;
+  width: 5.5rem;
+}
+
+.breakdown-table td {
+  padding: 0.12rem 0.4rem 0.12rem 0;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.breakdown-bar-cell {
+  width: 28%;
+}
+
+.breakdown-bar {
+  display: block;
+  height: 0.45rem;
+  border-radius: 999px;
+}
+
+.breakdown-bar[data-tone="positive"] {
+  background: rgba(156, 224, 177, 0.7);
+}
+
+.breakdown-bar[data-tone="negative"] {
+  background: rgba(255, 156, 156, 0.7);
+}
+
+.breakdown-value {
+  font-family: "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
+  padding-right: 0 !important;
+}
+
+.breakdown-value[data-tone="positive"] {
+  color: var(--success);
+}
+
+.breakdown-value[data-tone="negative"] {
+  color: var(--danger);
+}
+
+.breakdown-none {
+  color: rgba(158, 183, 204, 0.55);
+  font-style: italic;
+}
+
+.breakdown-foot {
+  margin-top: 0.35rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .breakdown-bar-cell {
+    width: 18%;
+  }
+}
+
+/* The search's notes, folded under the brain's reasons (closed by default). */
+.entry-reasons li.search-fold {
+  display: block;
+}
+
+.search-fold summary {
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9fd0ff;
+  padding: 0.15rem 0;
+}
+
+.search-fold-count {
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+.search-fold-list {
+  margin-top: 0.2rem;
+  padding-left: 0.9rem;
+  border-left: 1px solid var(--panel-border);
+}
+
+/* The left column's header: the same height as the right's dropdown row, so the cards line up. */
+.breakdown-picker {
+  min-height: 1.9rem;
+}
+
+.breakdown-picker-static {
+  color: var(--accent-strong);
+}
+
+/* ---- setup panel with the problem report (user, 2026-11-20: the terminal takes the full width; the report box moves under the
+   setup, its contents compressed to keep the top row's height; saved comments folded by default) ---- */
+.log-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.panel-selection {
+  display: flex;
+  flex-direction: column;
+  padding: 1.1rem 1.2rem;
+}
+
+.setup-head {
+  margin-bottom: 0.6rem;
+}
+
+.setup-head h2 {
+  font-size: 1.15rem;
+  margin-top: 0.2rem;
+}
+
+.setup-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.setup-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--radius-sm);
+}
+
+.setup-row .button {
+  flex: none;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.panel-selection .status-compact {
+  margin-top: 0.55rem;
+  gap: 0.4rem 0.6rem;
+}
+
+.panel-selection .status-badge {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.72rem;
+}
+
+.panel-selection .status-meta {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.panel-selection .comment-panel {
+  margin-top: 0.75rem;
+  gap: 0.5rem;
+}
+
+.panel-selection .comment-form {
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.panel-selection .comment-form textarea {
+  min-height: 3.2rem;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.panel-selection .comment-row {
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+}
+
+.panel-selection .comment-row .comment-status {
+  flex: 1;
+  min-height: 0;
+  text-align: right;
+}
+
+.panel-selection .comment-row .button {
+  flex: none;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.82rem;
+}
+
+.panel-selection .comment-history {
+  flex: none;
+}
+
+.panel-selection .comment-history summary {
+  cursor: pointer;
+  list-style: none;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 0.15rem 0;
+}
+
+.panel-selection .comment-history summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel-selection .comment-history summary::before {
+  content: "›";
+  display: inline-block;
+  width: 0.8rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.panel-selection .comment-history[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.panel-selection .comment-history[open] .comment-list {
+  margin-top: 0.5rem;
+  max-height: 18rem;
+}
+
+/* A part split into categories (our cards / their cards): click to unfold its sub-rows. */
+.breakdown-has-subs {
+  cursor: pointer;
+}
+
+.breakdown-has-subs:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.breakdown-sub-caret {
+  display: inline-block;
+  width: 0.8rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.breakdown-has-subs[data-open="true"] .breakdown-sub-caret {
+  transform: rotate(90deg);
+}
+
+.breakdown-sub td {
+  font-size: 0.74rem;
+  color: rgba(195, 211, 226, 0.78);
+}
+
+.breakdown-sub-name {
+  padding-left: 1.3rem !important;
+}
+
+.breakdown-sub-bar {
+  height: 0.3rem;
+  opacity: 0.7;
+}
+
+.breakdown-sub .breakdown-value {
+  font-size: 0.74rem;
+}
+
+/* Best-line steps past the search tree (the brain's own play, unscored). */
+.breakdown-line tr[data-rollout="true"] .breakdown-step {
+  color: rgba(195, 211, 226, 0.55);
+  font-style: italic;
+}
+
+.breakdown-rollout-note {
+  text-align: right;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(158, 183, 204, 0.5);
+}
+
+/* Both columns' header rows (the "Played move" label and the "Compare with" dropdown) at one fixed height, the dropdown sized to fit
+   inside it, so the two cards start on the same line. */
+.entry-breakdown .breakdown-picker {
+  height: 2rem;
+  min-height: 0;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.entry-breakdown .breakdown-picker select {
+  height: 2rem;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: normal;
+  box-sizing: border-box;
+}
+
+.entry-breakdown .breakdown-picker select:focus {
+  transform: none;
+}

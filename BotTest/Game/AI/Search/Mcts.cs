@@ -45,7 +45,10 @@ namespace BotTest.Game.AI.Search
     /// show more"): how often they won or lost outright, LP and board value (card units) on each side, and the cost paid
     /// for going against the brain's rules.
     /// </summary>
-    internal sealed record RootDetail(int Lines, double WinRate, double LossRate, double OurLp, double TheirLp, double OurBoard, double TheirBoard, double Penalty)
+    /// <param name="Parts">The score breakdown, averaged over the lines (card units, against the decision's position; user, 2026-11-20: "a
+    /// complete breakdown of what went into the main decision"). MctsEvaluator.LethalPart is the average lethal exposure, a chance.</param>
+    internal sealed record RootDetail(int Lines, double WinRate, double LossRate, double OurLp, double TheirLp, double OurBoard, double TheirBoard, double Penalty,
+        IReadOnlyDictionary<string, double>? Parts = null)
     {
         public string Describe() =>
             $"won {WinRate:P0}, lost {LossRate:P0} of {Lines} lines; at the end LP {OurLp:0} vs {TheirLp:0}, board {OurBoard:0.0} vs {TheirBoard:0.0} card units" +
@@ -53,6 +56,12 @@ namespace BotTest.Game.AI.Search
     }
 
     internal sealed record PlanStep(BotState State, string Key, string Label);
+
+    /// <summary>One step of a move's best line: whose answer it is, the lines behind it, its score (the node's line value, 0-1) and
+    /// standard error. Deeper steps have fewer lines, so their uncertainty grows.</summary>
+    /// <param name="TheirTurn">The step comes after our turn ended (on their turn).</param>
+    /// <param name="Rollout">Past the tree's end: the brain's own play in the line that made the last tree step (no score of its own).</param>
+    internal sealed record LineStepStat(string Label, bool Ours, bool TheirTurn, int Visits, double Value, double StdErr, bool Rollout = false);
 
     internal sealed record SearchOutcome(List<RootStat> Root, int Iterations, int Failures, TimeSpan Elapsed, string? FirstFailure,
         /// <summary>The best line's next own pick after the root choice (e.g. the attack target), or null.</summary>
@@ -83,7 +92,10 @@ namespace BotTest.Game.AI.Search
         /// <summary>Per root choice: what this search's lines through it ended in (see RootDetail).</summary>
         IReadOnlyDictionary<string, RootDetail>? Details = null,
         /// <summary>Pairs of root moves whose best lines reach the same position within our turn (transpositions: another order of the same play).</summary>
-        IReadOnlyList<(string A, string B)>? Transposed = null)
+        IReadOnlyList<(string A, string B)>? Transposed = null,
+        /// <summary>Per root choice (all of them): its best line through the tree, every step with its score and uncertainty (the log's
+        /// breakdown; user, 2026-11-20: "the full best line it's following, with a confidence interval on each score").</summary>
+        IReadOnlyDictionary<string, List<LineStepStat>>? ScoredLines = null)
     {
         public RootStat? Stat(string key) => Root.FirstOrDefault(r => r.Key == key) ??
             (SearchActions.SameMoveIn(key, Root.Select(r => r.Key)) is { } same ? Root.FirstOrDefault(r => r.Key == same) : null);
@@ -133,6 +145,9 @@ namespace BotTest.Game.AI.Search
         public MctsNode? Origin;
         /// <summary>Its parent's visits when it was created: Available over the parent's visits since then is how often its answer was on offer.</summary>
         public int ParentVisitsAtCreation;
+        /// <summary>Our moves after this node to the end of our turn, as the first line that created it played them outside the tree (the
+        /// rollout): the log's best line goes on with them where the tree ends (user, 2026-11-20: "show the full line to end of turn").</summary>
+        public List<string>? RolloutTail;
         public double Mean => Visits == 0 ? 0 : Total / Visits;
         /// <summary>The sum of its lines' squared scores (for how settled its score is).</summary>
         public double SumSq;
@@ -232,6 +247,8 @@ namespace BotTest.Game.AI.Search
         /// <summary>The centre its lines are scored around (MctsEvaluator.PositionDiff of its first root), fixed once set, so a tree reused
         /// across decisions keeps one yardstick (user, 2026-11-18: centre the curve). NaN until the first line reaches a root.</summary>
         public double Center = double.NaN;
+        /// <summary>Center's terms by name (MctsEvaluator.PositionParts), set with it: the score breakdown's starting point.</summary>
+        public IReadOnlyDictionary<string, double>? CenterParts;
         public string Label { get; init; } = "";
 
         public void Register(string key, MctsNode node)
@@ -697,12 +714,35 @@ namespace BotTest.Game.AI.Search
                 {
                     var d = kv.Value;
                     double n = d.Lines;
-                    return new RootDetail(d.Lines, d.Wins / n, d.Losses / n, d.OurLp / n, d.TheirLp / n, d.OurBoard / n, d.TheirBoard / n, d.Penalty / n);
+                    // Averaged over the lines that didn't lose (PartLines keeps their count).
+                    var parts = _parts.TryGetValue(kv.Key, out var sums) && sums.TryGetValue(PartLines, out var scored) && scored > 0
+                        ? sums.ToDictionary(p => p.Key, p => p.Key == PartLines ? p.Value : p.Value / scored) : null;
+                    return new RootDetail(d.Lines, d.Wins / n, d.Losses / n, d.OurLp / n, d.TheirLp / n, d.OurBoard / n, d.TheirBoard / n, d.Penalty / n, parts);
                 });
         }
 
         // Per root key, this search's line totals (see RootDetail).
         private readonly Dictionary<string, (int Lines, int Wins, int Losses, double OurLp, double TheirLp, double OurBoard, double TheirBoard, double Penalty)> _details = new();
+        // Per root key, the score breakdown's parts summed over its lines that didn't lose (under _details' lock).
+        private readonly Dictionary<string, Dictionary<string, double>> _parts = new();
+        /// <summary>The breakdown's count of lines behind its parts (not a part).</summary>
+        internal const string PartLines = "~lines";
+
+        /// <summary>Sets the tree's centre (and its parts, for the breakdown) from this decision's position, once.</summary>
+        private void SetCenter(DuelHost host)
+        {
+            if (!double.IsNaN(Volatile.Read(ref _tree.Center)))
+                return;
+            var parts = _evaluator.PositionParts(host);
+            double center = _evaluator.PositionDiff(host);
+            lock (_tree)
+            {
+                if (!double.IsNaN(_tree.Center))
+                    return;
+                _tree.CenterParts = parts;
+                Volatile.Write(ref _tree.Center, center);
+            }
+        }
 
         /// <summary>The root's answers, most visited first, with the line below each.</summary>
         private SearchOutcome Outcome(TimeSpan elapsed, int iterations, int failures, string? firstFailure)
@@ -733,7 +773,79 @@ namespace BotTest.Game.AI.Search
                                 .OrderByDescending(v => v.Visits).ToList();
             return new SearchOutcome(stats, iterations, failures, elapsed, firstFailure, followUp, _mismatch, Plans(stats), _traces.ToList(),
                 rootVisits, _maxDepth, BestLine(), rootHolds, _start.PriorKey,
-                stats.Take(5).ToDictionary(s => s.Key, s => BestLine(s.Key)), followUps, Details(), Transposed(stats));
+                stats.Take(5).ToDictionary(s => s.Key, s => BestLine(s.Key)), followUps, Details(), Transposed(stats),
+                stats.ToDictionary(s => s.Key, s => ScoredLine(s.Key)));
+        }
+
+        /// <summary>
+        /// A root move's best line through the tree with each step's score (for the log's breakdown): our answers by the best score,
+        /// theirs by the most lines (as StepAt), on past the end of our turn into theirs while the tree has explored answers. Passes are
+        /// walked past, not shown.
+        /// </summary>
+        private List<LineStepStat> ScoredLine(string firstKey)
+        {
+            // To the end of our turn (user, 2026-11-20: "show the full line to end of turn ... they get very uncertain but that's fine"):
+            // every tree step with lines behind it (the settled pick where one has MinPlanVisits, else the most-visited answer), then,
+            // where the tree ends, the brain's own play to the turn's end in the line that made the last tree step (its RolloutTail).
+            var steps = new List<LineStepStat>();
+            var seen = new HashSet<MctsNode>(ReferenceEqualityComparer.Instance);
+            var node = _start;
+            bool turnOver = false;
+            for (int guard = 0; guard < 80; guard++)
+            {
+                KeyValuePair<string, MctsNode> next;
+                string label;
+                int player;
+                lock (node.Lock)
+                {
+                    if (node.Children.Count == 0)
+                        break;
+                    if (guard == 0)
+                    {
+                        if (!node.Children.TryGetValue(firstKey, out var first))
+                            break;
+                        next = new KeyValuePair<string, MctsNode>(firstKey, first);
+                    }
+                    else if (StepAt(node, ours: node.ChildPlayer == 0) is { } step)
+                        next = step;
+                    else if (node.Children.Where(kv => IsMove(kv.Key) && kv.Value.Visits > 0)
+                                 .OrderByDescending(kv => kv.Value.Visits).ThenByDescending(kv => kv.Value.Mean).FirstOrDefault() is { Value: not null } thin)
+                        next = thin;
+                    else
+                        break;
+                    player = node.ChildPlayer;
+                    label = node.LabelOf(next.Key, next.Value);
+                }
+                var child = next.Value;
+                if (!seen.Add(child))
+                    break;
+                if (next.Key != "pass")
+                {
+                    int visits;
+                    double err;
+                    lock (child.Lock)
+                    {
+                        visits = child.Visits;
+                        err = child.StdErr;
+                    }
+                    steps.Add(new LineStepStat(label, player == 0, false, visits, child.LineValue(LineValueVisits), err));
+                }
+                node = child;
+                if (player == 0 && next.Key == "end")
+                {
+                    turnOver = true;
+                    break;
+                }
+            }
+            if (!turnOver && node != _start)
+            {
+                List<string>? rest;
+                lock (node.Lock)
+                    rest = node.RolloutTail?.ToList();
+                foreach (var label in rest ?? new List<string>())
+                    steps.Add(new LineStepStat(label, true, false, 0, double.NaN, double.NaN, Rollout: true));
+            }
+            return steps;
         }
 
         /// <summary>One iteration. Returns a failure note, or null when it scored a line.</summary>
@@ -789,6 +901,21 @@ namespace BotTest.Game.AI.Search
             var line = new MctsPolicy.LineState();
             var steps = new List<PlanStep>();
             double penalty = 0;
+            // The score breakdown of this line (card units, by name; user, 2026-11-20): Cost records a named part of penalty (a cost
+            // positive, a bonus negative); what penalty holds beyond them shows as one "other" part.
+            var lineParts = new Dictionary<string, double>();
+            double namedPenalty = 0;
+            void Cost(string name, double cost)
+            {
+                if (cost == 0)
+                    return;
+                namedPenalty += cost;
+                lineParts[name] = (lineParts.TryGetValue(name, out var had) ? had : 0) - cost;
+            }
+            var deferredHoldRules = new List<(string Rule, double Cost)>();
+            // The node this line created (the tree's new leaf) and our moves after it to the end of our turn (its RolloutTail).
+            MctsNode? tailNode = null;
+            List<string>? tail = null;
             int lastTurn = 0, depth = 0;
             string? lastKey = null; // the answer that led into the current node (for transpositions)
             bool attacked = false;
@@ -818,9 +945,15 @@ namespace BotTest.Game.AI.Search
                 },
             };
             penalty += tally.Start;
+            Cost("Brain rules our turn already broke", tally.Start);
+            tally.Charged = Cost;
             Action<string>? note = trace != null ? trace.Add : null;
             void NoteOurMainMove(Prompt p, byte[] packet)
             {
+                // Outside the tree, our moves to the end of our turn: the new leaf's rollout tail (for the log's line).
+                if (tail != null && !inTree && rootReached && p.Player == 0 && host.Turn == SearchTurn && tail.Count < 60 &&
+                    OptionsFor(p, true, rng) is { Count: > 0 } offered && MatchKey(offered, packet, p.State) is { } taken && taken != "pass")
+                    tail.Add(offered.First(o => o.Key == taken).Label);
                 if (rootReached && p.Player == 0 && host.Turn == SearchTurn)
                     penalty += tally.OnOurAnswer(p, packet, note);
                 else if (rootReached && p.Player == 0 && host.TurnPlayer != 0 && p.Data is SelectChainData theirTurnChain)
@@ -950,10 +1083,16 @@ namespace BotTest.Game.AI.Search
                     if (deferredBattleHolds > 0)
                     {
                         if (host.Turn != SearchTurn)
+                        {
                             deferredBattleHolds = 0; // our turn ended without a Battle Phase: the holds evaporate
+                            deferredHoldRules.Clear();
+                        }
                         else if (host.Phase is >= (int)OmegaBotWrapper.Enum.DuelPhase.BattleStart and <= (int)OmegaBotWrapper.Enum.DuelPhase.Battle)
                         {
                             penalty += deferredBattleHolds;
+                            foreach (var (rule, cost) in deferredHoldRules)
+                                Cost($"Brain rule {rule}", cost);
+                            deferredHoldRules.Clear();
                             Interlocked.Increment(ref HoldsCharged);
                             trace?.Add($"  (into the Battle Phase after the battle-only holds: -{deferredBattleHolds:0.#})");
                             deferredBattleHolds = 0;
@@ -1006,7 +1145,7 @@ namespace BotTest.Game.AI.Search
                         ourCardsAtRoot = OurCards();
                         dustshootsAtRoot = DustshootsGone();
                         rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
-                        if (double.IsNaN(Volatile.Read(ref _tree.Center))) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
+                        SetCenter(host); // the curve's centre: this decision's position
                         long at = Stopwatch.GetTimestamp();
                         SearchTimings.Add(ref SearchTimings.ToRoot, at - phaseStart);
                         phaseStart = at;
@@ -1084,7 +1223,7 @@ namespace BotTest.Game.AI.Search
                                 ourCardsAtRoot = OurCards();
                                 dustshootsAtRoot = DustshootsGone();
                                 rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
-                                if (double.IsNaN(Volatile.Read(ref _tree.Center))) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
+                                SetCenter(host); // the curve's centre: this decision's position
                                 long reachedAt = Stopwatch.GetTimestamp();
                                 SearchTimings.Add(ref SearchTimings.ToRoot, reachedAt - phaseStart);
                                 phaseStart = reachedAt;
@@ -1099,7 +1238,7 @@ namespace BotTest.Game.AI.Search
                             ourCardsAtRoot = OurCards();
                             dustshootsAtRoot = DustshootsGone();
                             rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
-                            if (double.IsNaN(Volatile.Read(ref _tree.Center))) Interlocked.CompareExchange(ref _tree.Center, _evaluator.PositionDiff(host), double.NaN); // the curve's centre: this decision's position
+                            SetCenter(host); // the curve's centre: this decision's position
                             CheckPosition(host);
                             long now = Stopwatch.GetTimestamp();
                             SearchTimings.Add(ref SearchTimings.ToRoot, now - phaseStart);
@@ -1274,11 +1413,13 @@ namespace BotTest.Game.AI.Search
                                 host.Phase == (int)OmegaBotWrapper.Enum.DuelPhase.Main1)
                             {
                                 deferredBattleHolds += battleOnly.Cost;
+                                deferredHoldRules.Add((battleOnly.Rule, battleOnly.Cost));
                                 trace?.Add($"  (the brain's hold {battleOnly.Rule}: -{battleOnly.Cost:0.#} if this line goes to the Battle Phase)");
                             }
                             else if (held is { } broken)
                             {
                                 penalty += broken.Cost;
+                                Cost($"Brain rule {broken.Rule}", broken.Cost);
                                 Interlocked.Increment(ref HoldsCharged);
                                 trace?.Add($"  (against the brain's hold {broken.Rule}: -{broken.Cost:0.#})");
                             }
@@ -1293,12 +1434,20 @@ namespace BotTest.Game.AI.Search
                         if (ours && Suggestions != null)
                         {
                             steps.Add(new PlanStep(prompt.State, key, child.Label));
-                            try { penalty += Suggestions(steps, steps.Count - 1, options.Select(o => o.Key).ToList(), host.Summary(1)); }
+                            try
+                            {
+                                double suggested = Suggestions(steps, steps.Count - 1, options.Select(o => o.Key).ToList(), host.Summary(1));
+                                penalty += suggested;
+                                Cost("Deck's suggestions", suggested);
+                            }
                             catch { /* a suggestion that fails costs nothing */ }
                         }
                         node = child;
                         inTree = !isNew;
                         NoteOurMainMove(prompt, options.First(o => o.Key == key).Packet);
+                        // A new leaf in our turn: record our moves after it (the rollout) until our turn ends.
+                        if (isNew && rootReached && host.Turn == SearchTurn && child.RolloutTail == null)
+                            (tailNode, tail) = (child, new List<string>());
                         Answer(host, prompt, options.First(o => o.Key == key).Packet);
                         continue;
                     }
@@ -1386,11 +1535,35 @@ namespace BotTest.Game.AI.Search
             if (dustshootsAtRoot >= 0 && DustshootsGone() - dustshootsAtRoot is > 0 and var fired)
             {
                 penalty -= fired * MctsEvaluator.DustshootBonus;
+                Cost("Trap Dustshoot activated", -fired * MctsEvaluator.DustshootBonus);
                 trace?.Add($"  (Trap Dustshoot activated: +{fired * MctsEvaluator.DustshootBonus:0.#})");
+            }
+            // The breakdown's line parts beside the rules: what's left of penalty unnamed, card advantage, overexposure by kind, draws.
+            Dictionary<string, double>? parts = null;
+            if (rootKey != null)
+            {
+                parts = lineParts;
+                if (Math.Abs(penalty - namedPenalty) > 1e-9)
+                    Cost("Other rule costs", penalty - namedPenalty);
+                double risk = _evaluator.RiskDiscount;
+                void Add(string name, double v)
+                {
+                    if (v != 0)
+                        parts[name] = (parts.TryGetValue(name, out var had) ? had : 0) + v;
+                }
+                Add("Card advantage in our turn", advantage);
+                Add("Exposure to Torrential Tribute", -peakTorrential * risk);
+                Add("Exposure to Mirror Force", -peakMirror * risk);
+                Add("Exposure to Heavy Storm", -heavyExposure * risk);
+                Add("Exposure to single removal", -peakSpot * risk);
+                Add("Exposure to Icarus Attack", -peakIcarus * risk);
+                Add("Sitting duck (attackable monsters)", -sittingDuck * risk);
+                Add("Cards drawn", drawn * MctsEvaluator.DrawBonus);
             }
             double value = _evaluator.Evaluate(host, penalty - advantage + exposure * _evaluator.RiskDiscount - drawn * MctsEvaluator.DrawBonus, turnEnd,
                 winRisk: exposure, cardsSpent: ourCardsAtRoot >= 0 ? Math.Max(0, ourCardsAtRoot - OurCards()) : 0, length: prompts,
-                center: double.IsNaN(_tree.Center) ? 0 : _tree.Center, noClock: main2Codes, activatedThisTurn: activatedInTurn);
+                center: double.IsNaN(_tree.Center) ? 0 : _tree.Center, noClock: main2Codes, activatedThisTurn: activatedInTurn,
+                parts: parts, centerParts: _tree.CenterParts);
             if (rootKey != null)
             {
                 var ours = host.Summary(0);
@@ -1403,8 +1576,20 @@ namespace BotTest.Game.AI.Search
                     _details[rootKey] = (d.Lines + 1, d.Wins + (winner == 0 ? 1 : 0), d.Losses + (winner == 1 ? 1 : 0),
                         d.OurLp + Math.Max(0, host.LifePoints(0)), d.TheirLp + Math.Max(0, host.LifePoints(1)), d.OurBoard + ourBoard, d.TheirBoard + theirBoard,
                         d.Penalty + penalty);
+                    // A lost line scores 0 outright, not by parts: its share shows as the loss rate.
+                    if (parts != null && winner != 1)
+                    {
+                        if (!_parts.TryGetValue(rootKey, out var sums))
+                            _parts[rootKey] = sums = new Dictionary<string, double>();
+                        sums[PartLines] = (sums.TryGetValue(PartLines, out var lines) ? lines : 0) + 1;
+                        foreach (var (name, v) in parts)
+                            sums[name] = (sums.TryGetValue(name, out var had) ? had : 0) + v;
+                    }
                 }
             }
+            if (tailNode != null && tail != null)
+                lock (tailNode.Lock)
+                    tailNode.RolloutTail ??= tail;
             if (trace != null && rootKey == _settings.TraceRoot && _traces.Count < _settings.TraceLines)
                 _traces.Enqueue(string.Join("\n", trace) + $"\n  => position score {MctsEvaluator.Cu(value)} card units" + (penalty > 0 ? $" (suggestions cost {penalty:0.0})" : ""));
             SearchTimings.Add(ref SearchTimings.Evaluate, Stopwatch.GetTimestamp() - scoring);
