@@ -61,6 +61,19 @@ public static class Program
 
     public static async Task<int> Main(string[] args)
     {
+        try
+        {
+            return await RunAsync(args);
+        }
+        catch (UnknownDeckException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 2;
+        }
+    }
+
+    private static async Task<int> RunAsync(string[] args)
+    {
         var paths = SimPaths.Discover();
         var console = Console.Out;
         BotTest.Game.AI.Brains.Tuning.EnsureLoaded(); // bot-tuning.txt: every weight and threshold, before any bot or search reads one
@@ -399,9 +412,13 @@ public static class Program
                 Func<BotTest.Game.AI.Search.SearchBrain>? brains = deckBrain == null || args.Contains("--no-brain") ? null
                     : () => new BotTest.Game.AI.Search.SearchBrain(deckBrain, benchDef.DeckName, benchDef.Factory().DeckHash);
                 var evaluator = new BotTest.Game.AI.Search.MctsEvaluator(new BotTest.Game.AI.Search.SearchCardValues(view.OwnGrave, view.EnemyGrave),
-                    deckBrain == null ? null : deckBrain.SearchSetupValue, deckBrain == null ? null : deckBrain.SearchCardBonus,
+                    deckBrain?.SearchSetupFor(view), deckBrain == null ? null : deckBrain.SearchCardBonus,
                     Math.Max(0, view.EnemyHandCount - view.EnemyKnownHand.Count) + view.EnemySpells.Count(c => c.Code <= 0), 0.5)
-                    { AttackerOdds = BenchAttackerOdds(benchOpponent, view, sc, ss) };
+                    {
+                        AttackerOdds = BenchAttackerOdds(benchOpponent, view, sc, ss),
+                        RewardGladiatorBattles = deckBrain?.RewardGladiatorBattles == true,
+                        BackrowDoomRule = deckBrain?.SearchBackrowDoomRule
+                    };
                 var tree = new BotTest.Game.AI.Search.MctsTree { Label = "bench" };
                 BotTest.Game.AI.Search.Mcts NewSearch() => new(view, tree, tree.Root, root, null, Array.Empty<int>(), settings, evaluator, brains)
                     { Suggestions = deckBrain == null ? null : deckBrain.PlanSuggestions };

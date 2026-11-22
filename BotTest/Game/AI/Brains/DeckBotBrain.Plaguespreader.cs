@@ -19,6 +19,32 @@ namespace BotTest.Game.AI.Brains
         protected int PlagueTargetSynchro;
         protected int PlagueTargetTurn = -1;
 
+        private async Task<bool> CanRevivePlaguespreaderAsync(DecisionContext<IdleCmdData> context, IdleCmdData state,
+            int handAfterCost)
+        {
+            int opponentLife = await CurrentField.GetBotLifePoints(isOwnSide: false);
+            if (opponentLife < 400)
+                return true;
+
+            var ours = await GetBotMonsterCardsAsync();
+            var theirs = await GetEnemyMonsterCardsAsync();
+            var defenders = BoardAssessment.Defenders(theirs, OpponentMemory);
+            var attackers = ours.Where(card => card.IsFaceup() && card.IsAttack() && !card.Attacked)
+                .Select(EffectiveAttack);
+            bool battleAhead = (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 && state.CanBattlePhase;
+            if (battleAhead && BoardAssessment.TurnsToWin(attackers, defenders, opponentLife - 399, maxTurns: 1) == 1)
+                return true;
+
+            if (await PlagueSynchroPlanAsync(context, state, theirs, ours, handAfterCost) is not { } plan)
+                return false;
+            if (plan.Answer != null)
+                return true;
+
+            var afterSynchro = ours.Where(card => card.IsFaceup() && card.IsAttack() && !card.Attacked &&
+                !SameZone(card, plan.Material)).Select(EffectiveAttack).Append(plan.Synchro.Attack);
+            return battleAhead && BoardAssessment.TurnsToWin(afterSynchro, defenders, opponentLife, maxTurns: 1) == 1;
+        }
+
         /// <summary>
         /// Plaguespreader (Level 2 Tuner) + a non-Tuner on the field: the synchro of that Level + 2 from our actual Extra
         /// Deck. Prefer the material whose synchro answers a threat (Card Trooper L3 -> Catastor into a non-DARK boss),

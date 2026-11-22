@@ -1,4 +1,5 @@
 using BotTest.Game.AI.Brains;
+using OmegaBotWrapper.Enum;
 
 namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
 {
@@ -9,6 +10,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
     [RuleSet(typeof(HeroFrogBotBrain))]
     public static class HeroFrogRules
     {
+        internal static bool TreebornDoomsBackrow(bool ourTurn, DuelPhase phase, bool treebornInGrave, bool monarchInHand) =>
+            treebornInGrave && (ourTurn ? phase == DuelPhase.Draw : phase == DuelPhase.End && monarchInHand);
+
         public const string AoiStrip = "herofrog.aoi-strip";
         public const string BattleFader = "herofrog.battle-fader";
         public const string BrainControlTribute = "herofrog.brain-control-tribute";

@@ -31,7 +31,6 @@ namespace BotTest.Game.AI.Brains
         [HoldCost(HoldCosts.Strong)]
         public const string WabokuOwnTurn = "deck.waboku-own-turn";
         public const string ChargeOfTheLightBrigade = "deck.charge-of-the-light-brigade";
-        public const string CheapAttackUnblocks = "deck.cheap-attack-unblocks";
         public const string CheapIntoFaceDown = "deck.cheap-into-face-down";
         public const string CheapestIntoBouncer = "deck.cheapest-into-bouncer";
         public const string ChimeratechSafetyFuse = "deck.chimeratech-safety-fuse";
@@ -53,7 +52,6 @@ namespace BotTest.Game.AI.Brains
         public const string NoHandTrapSet = "deck.no-hand-trap-set";
         /// <summary>On their turn, a monster we summon goes to defence when one of their attackers can still beat it.</summary>
         public const string DefenceOnTheirTurn = "deck.defence-on-their-turn";
-        public const string DeferSummonForAttackOrder = "deck.defer-summon-for-attack-order";
         public const string DimensionalPrison = "deck.dimensional-prison";
         public const string DrawForGorz = "deck.draw-for-gorz";
         public const string DrawWhenNoPlay = "deck.draw-when-no-play";
@@ -91,9 +89,6 @@ namespace BotTest.Game.AI.Brains
         [HoldCost(HoldCosts.Strong)]
         public const string KeepCommittedAttack = "deck.keep-committed-attack";        /// <summary>No valuable attacker into a face-down that likely banishes / bounces what battles it (D.D. Warrior Lady).</summary>
         public const string AvoidBattleRemoval = "deck.avoid-battle-removal";
-        /// <summary>Against a likely Gorz, monsters ahead in zone order go to defence so a weaker one hits first and a
-        /// stronger one behind it beats the token.</summary>
-        public const string GorzAttackOrder = "deck.gorz-attack-order";
         /// <summary>Lyla attacks first and uses her effect in Main Phase 2 when their spells/traps can't stop her attack.</summary>
         public const string LylaAfterBattle = "deck.lyla-after-battle";
         /// <summary>A defence-position monster switches to attack when our attackers already up clear their monsters and its
@@ -172,7 +167,6 @@ namespace BotTest.Game.AI.Brains
         public const string TrooperDefenceWhenThin = "deck.trooper-defence-when-thin";
         public const string TrooperIntoFaceDown = "deck.trooper-into-face-down";
         public const string TrooperMill = "deck.trooper-mill";
-        public const string UnblockAttackOrder = "deck.unblock-attack-order";
         public const string UpstartGoblin = "deck.upstart-goblin";
         public const string ValueSet = "deck.value-set";
         public const string WeakDontAttackDirectly = "deck.weak-dont-attack-directly";
@@ -212,8 +206,6 @@ namespace BotTest.Game.AI.Brains
         public const string MstBeforeKeyAttack = "deck.mst-before-key-attack";
         /// <summary>A synchro made in Main Phase 1 when it hits harder than its materials (round-robin 30).</summary>
         public const string SynchroBeforeBattle = "deck.synchro-before-battle";
-        /// <summary>A weak monster blocking the zone order is cleared (material, defence) in Main Phase 1 (round-robin 26).</summary>
-        public const string ClearZoneBlocker = "deck.clear-zone-blocker";
         /// <summary>A non-expendable summon into a likely Ryko waits for next turn (round-robin 11; medium weight).</summary>
         public const string RykoHoldsBigSummon = "deck.ryko-holds-big-summon";
         /// <summary>D.D. Crow banishes a DARK first when exactly 3 would let their DAD out (round-robin 14a).</summary>

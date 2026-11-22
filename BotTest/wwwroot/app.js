@@ -254,6 +254,23 @@ function addReason(source, text, validator) {
   if (!currentEntry) {
     return null;
   }
+  if (source === "strategic state") {
+    const state = text.match(/^(Base|Threatened|Desperate)\b/);
+    if (state) {
+      const head = currentEntry.querySelector(".entry-head");
+      let icon = head.querySelector(".entry-strategic-state");
+      if (!icon) {
+        icon = element("span", "entry-strategic-state");
+        icon.setAttribute("role", "img");
+        head.append(icon);
+      }
+      icon.dataset.state = state[1].toLowerCase();
+      icon.textContent = { Base: "\u25C7", Threatened: "\u26A0", Desperate: "!" }[state[1]];
+      icon.title = `Strategic state: ${text}`;
+      icon.setAttribute("aria-label", icon.title);
+      return icon;
+    }
+  }
   let list = currentEntry.querySelector(".entry-reasons");
   if (!list) {
     list = document.createElement("ul");

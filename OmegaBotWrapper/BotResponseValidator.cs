@@ -26,9 +26,10 @@ namespace OmegaBotWrapper
             }
 
             if (response.Action == BattleAction.Attack &&
-                (state.AttackableCards == null || state.AttackableCards.Length == 0))
+                state.AttackableCards?.Any(card => card.ActionIndex is { Length: > (int)BattleAction.Attack } indexes &&
+                    indexes[(int)BattleAction.Attack] == response.Index) != true)
             {
-                BotLogger.Warn(botId, $"[SelectBattleCmd] Attack chosen but AttackableCards is empty. Falling back to ToEndPhase.");
+                BotLogger.Warn(botId, $"[SelectBattleCmd] Attack index {response.Index} was not offered. Falling back to ToEndPhase.");
                 return BattleAction.ToEndPhase;
             }
 

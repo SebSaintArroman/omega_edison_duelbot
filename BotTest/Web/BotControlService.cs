@@ -71,14 +71,11 @@ public sealed class BotControlService
             if (!_isBusy)
             {
                 _status = enabled ? "Waiting" : "Paused";
-                _statusDetail = enabled ? WaitingDetail() : "Auto-start is paused. Press Resume to let the bot take the next bot slot.";
+                _statusDetail = enabled ? string.Empty : "Auto-start is paused. Press Resume to let the bot take the next bot slot.";
                 _lastUpdated = DateTimeOffset.Now;
             }
         return CommandResult.Ok(enabled ? "Auto-start on." : "Auto-start paused.");
     }
-
-    private string WaitingDetail() =>
-        $"Waiting for a bot slot in Omega (add a bot to a room); the next duel uses {_selectedDeckName}.";
 
     /// <summary>
     /// Every few seconds: when nothing runs and auto-start is on, try to fill a waiting bot slot with the selected deck
@@ -386,7 +383,7 @@ public sealed class BotControlService
             }
             if (!connected && auto)
             {
-                    UpdateStatus("Waiting", WaitingDetail());
+                    UpdateStatus("Waiting", string.Empty);
                 return;
             }
             if (auto)

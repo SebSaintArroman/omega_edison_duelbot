@@ -119,17 +119,17 @@ namespace BotTest.Game.AI.Brains
             // Learn from the last attack (did their set cards stay down when Mirror Force would have paid off?).
             await RefreshBackrowOddsAsync(context);
             await RiskToleranceAsync(); // RiskNow, for the attack checks (LikelyRyko)
-            if (context.Header.CurrentTurn != _battleTurn)
-            {
-                _battleTurn = context.Header.CurrentTurn;
-                _bouncerAttacksThisTurn = 0;
-            }
-            var response = await ChooseWithServerAttackOrderAsync(context);
+            PrepareBattleTurn(context.Header.CurrentTurn);
+            return await ChooseBattleActionAsync(context);
+        }
+
+        private async Task RecordBattleChoiceAsync(DecisionContext<BattleCmdData> context, BattleCmdResponse response)
+        {
+            PrepareBattleTurn(context.Header.CurrentTurn);
             if (response.Action == BattleAction.Attack)
             {
-                var attacker = AttackerFor(context.StateData, response);
-                // The server attacks with the first in zone order, whichever index we send.
-                _declaredAttacker = (context.StateData.AttackableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault();
+                var attacker = Search.SearchActions.AttackerFor(context.StateData, response.Index);
+                _declaredAttacker = attacker;
                 if (attacker.ID > 0)
                     await NoteAttackForMirrorForceAsync(attacker);
                 if (_selectedDefenderCard is DynamicCard target && BouncesAttacker(target))
@@ -141,7 +141,15 @@ namespace BotTest.Game.AI.Brains
                     _gorzOpportunityHand = (await CurrentField.GetBotField()).EnemySide.Hand?.Length ?? 0;
                 }
             }
-            return response;
+        }
+
+        private void PrepareBattleTurn(int turn)
+        {
+            if (turn != _battleTurn)
+            {
+                _battleTurn = turn;
+                _bouncerAttacksThisTurn = 0;
+            }
         }
 
         private int _battleTurn = -1;
@@ -150,25 +158,13 @@ namespace BotTest.Game.AI.Brains
         private DynamicCard _declaredAttacker;
 
         /// <summary>
-        /// A target the deck wants this attacker (the first in zone order: the one the server attacks with) to take out before
+        /// A target the deck wants this attacker to take out before
         /// anything else, and why, or null. Default: none.
         /// </summary>
         protected virtual Task<(DynamicCard Target, string Why)?> PriorityAttackTargetAsync(DynamicCard attacker) =>
             Task.FromResult<(DynamicCard, string)?>(null);
 
-        private static DynamicCard AttackerFor(BattleCmdData state, BattleCmdResponse response) =>
-            (state.AttackableCards ?? Array.Empty<DynamicCard>())
-                .FirstOrDefault(card => card.ActionIndex != null && card.ActionIndex.Length > (int)BattleAction.Attack &&
-                                        card.ActionIndex[(int)BattleAction.Attack] == response.Index);
-
-        /// <summary>
-        /// Known server issue (see README): Omega ignores which attacker we pick and always attacks with the first monster
-        /// in AttackableCards (zone order). So plan the attack the server will actually make: if our preferred attacker
-        /// isn't first, choose the best target for the first one instead. If it has nothing worth attacking, it still
-        /// attacks something harmless (a direct hit, or a monster it beats) when that unblocks better attacks behind it;
-        /// otherwise the battle stops there. (Main Phase 1 moves a monster that would block the order to defence.)
-        /// </summary>
-        private async Task<BattleCmdResponse> ChooseWithServerAttackOrderAsync(DecisionContext<BattleCmdData> context)
+        private async Task<BattleCmdResponse> ChooseBattleActionAsync(DecisionContext<BattleCmdData> context)
         {
             var all = context.StateData.AttackableCards ?? Array.Empty<DynamicCard>();
             // Return from the Different Dimension for lethal, before the attacks it adds to.
@@ -177,133 +173,19 @@ namespace BotTest.Game.AI.Brains
             // What we committed to this turn comes first: an attack a rule summoned for, a lethal push (DeckBotBrain.Commitments).
             if (await CommittedAttackAsync(context) is BattleCmdResponse committed)
                 return committed;
-            // A target the deck must take out first with the monster the server attacks with (Glads: a Special Summon lock
-            // in the way of a tag-out).
-            if (all.Length > 0 && await PriorityAttackTargetAsync(all[0]) is { } priority)
+            foreach (var attacker in all)
             {
-                AimAt(context.Bot, priority.Target, AimKind.Deliberate, $"{CardNames.Get(all[0].ID)} attacks {DescribeTarget(priority.Target)} first: {priority.Why}");
-                return all[0].DeclareAttack();
+                if (await PriorityAttackTargetAsync(attacker) is not { } priority)
+                    continue;
+                AimAt(context.Bot, priority.Target, AimKind.Deliberate, $"{CardNames.Get(attacker.ID)} attacks {DescribeTarget(priority.Target)} first: {priority.Why}");
+                return attacker.DeclareAttack();
             }
-            var response = await ChooseBattleCmdAsync(context);
-            if (all.Length < 2 || response.Action != BattleAction.Attack)
-                return response;
-            var first = all[0];
-            var chosen = AttackerFor(context.StateData, response);
-            if (chosen.ActionIndex == null || SameZone(chosen, first))
-                return response;
-
-            var wanted = $"{CardNames.Get(chosen.ID)}{(_selectedDefenderCard is DynamicCard t ? $" into {DescribeTarget(t)}" : " directly")}";
-            var onlyFirst = context.StateData;
-            onlyFirst.AttackableCards = new[] { first };
-            var forced = await ChooseBattleCmdAsync(context with { StateData = onlyFirst });
-            if (forced.Action == BattleAction.Attack)
-            {
-                context.Bot.LogNote($"deck brain: we'd rather attack with {wanted}, but the server always attacks with the first " +
-                                    $"monster in zone order, {CardNames.Get(first.ID)}: attack with it as planned for it " +
-                                    $"({(_selectedDefenderCard is DynamicCard ft ? $"into {DescribeTarget(ft)}" : "directly")})");
-                return forced;
-            }
-
-            // The first monster has no good attack. Something harmless still lets the better attacks behind it through.
-            var opponents = (await GetPlayerCardsInZoneAsync(CardLocation.MonsterZone)).Where(card => !card.IsDisabled()).ToList();
-            opponents = await AttackableTargetsAsync(opponents);
-            if (opponents.Count == 0 && first.CanDirectAttack)
-            {
-                AimAt(context.Bot, null, AimKind.Deliberate, $"the server attacks with {CardNames.Get(first.ID)} first (zone order), and it has no good attack; " +
-                                    $"a direct hit is harmless and lets {wanted} follow");
-                return all[0].DeclareAttack();
-            }
-            int ourLp = await CurrentField.GetBotLifePoints();
-            // The whole sequence, not just the first attack (user, 2026-11-12, round-robin 8: Grepher was sacrificed into Junk
-            // Warrior "so Armor Master can follow", but Armageddon Knight was next in zone order with nothing to attack, so
-            // the battle stopped there). Every attacker between the first and the one we want must be able to go on too: a good
-            // attack, a direct hit, or a cheap one.
-            bool CanGoOn(DynamicCard attacker, DynamicCard? gone)
-            {
-                var left = opponents.Where(target => gone is not DynamicCard g || !SameZone(target, g)).ToList();
-                if (left.Count == 0)
-                    return true; // a direct hit
-                return left.Any(target => target.IsFaceup() && GetAttackScore(attacker, target) > 0 && IsWorthAttacking(attacker, target)) ||
-                       left.Any(target => target.IsFaceup() && !DestroysByEffectInBattle(target, attacker) && !BouncesAttacker(target) &&
-                                          (target.IsDefense() || IsExpendable(attacker)) &&
-                                          Math.Max(0, (target.IsDefense() ? target.Defense : target.Attack) - attacker.Attack) < Math.Min(ourLp, CheapUnblockDamage));
-            }
-            DynamicCard? InTheWay(DynamicCard? gone) =>
-                all.Skip(1).TakeWhile(card => !SameZone(card, chosen)).Where(card => !CanGoOn(card, gone)).Cast<DynamicCard?>().FirstOrDefault();
-            string Blocked(DynamicCard stuck) =>
-                $"deck brain: the server attacks with {CardNames.Get(first.ID)} first (zone order) and it has no good attack; making it attack anyway " +
-                $"doesn't let {wanted} follow: {CardNames.Get(stuck.ID)} comes next and has nothing it can attack, so the battle would stop there";
-
-            var harmless = opponents
-                .Where(target => target.IsFaceup() && GetAttackScore(first, target) > 0 &&
-                                 !(BouncesAttacker(target) && ReSummonCost(first) >= 100) &&
-                                 // Not a recruiter: destroying one is never harmless (it replaces itself).
-                                 (!IsRecruiter(target) || IsWorthAttacking(first, target)))
-                .OrderByDescending(target => GetAttackScore(first, target))
-                .FirstOrDefault();
-            if (harmless.ID > 0 && InTheWay(harmless) is DynamicCard stuckAfterKill)
-            {
-                context.Bot.LogNote(Blocked(stuckAfterKill));
-                harmless = default;
-            }
-            if (harmless.ID > 0)
-            {
-                AimAt(context.Bot, harmless, AimKind.Deliberate, $"the server attacks with {CardNames.Get(first.ID)} first (zone order); it has no good attack, " +
-                                    $"but it beats {DescribeTarget(harmless)}, which lets {wanted} follow");
-                return all[0].DeclareAttack();
-            }
-            // A cheap attack still unblocks the better ones: bouncing off a defence-position monster costs at most a little
-            // damage (no monster lost), and an expendable first monster (a flipped Ryko) can even be lost. Not into a
-            // Catastor-type or a bouncer, and never for damage that matters.
-            int DamageTaken(DynamicCard target) => Math.Max(0, (target.IsDefense() ? target.Defense : target.Attack) - first.Attack);
-            var cheapAttack = opponents
-                .Where(target => target.IsFaceup() && !DestroysByEffectInBattle(target, first) && !BouncesAttacker(target) &&
-                                 (target.IsDefense() || IsExpendable(first)) &&
-                                 DamageTaken(target) < Math.Min(ourLp, CheapUnblockDamage))
-                .OrderBy(DamageTaken).FirstOrDefault();
-            if (cheapAttack.ID > 0 && InTheWay(null) is DynamicCard stuckAfterCheap)
-            {
-                context.Bot.LogNote(Blocked(stuckAfterCheap));
-                cheapAttack = default;
-            }
-            if (cheapAttack.ID > 0 && Rule(DeckRules.CheapAttackUnblocks))
-            {
-                AimAt(context.Bot, cheapAttack, AimKind.Deliberate, $"the server attacks with {CardNames.Get(first.ID)} first (zone order) and it has no good attack, " +
-                                    $"but attacking {DescribeTarget(cheapAttack)} costs little ({DamageTaken(cheapAttack)} damage" +
-                                    $"{(cheapAttack.IsDefense() ? "" : $", {CardNames.Get(first.ID)} is expendable")}) and lets {wanted} follow");
-                return all[0].DeclareAttack();
-            }
-
-            AimAt(context.Bot, null, AimKind.Deliberate, $"we'd attack with {wanted}, but the server always attacks with the first monster in zone order, " +
-                                $"{CardNames.Get(first.ID)}, and it has nothing it can safely attack: stop the battle here");
-            return forced;
+            return await ChooseBattleCmdAsync(context);
         }
 
         private static string DescribeTarget(DynamicCard target) =>
             target.IsFaceup() && target.ID > 0 ? CardNames.Get(target.ID) : "a face-down monster";
 
-        /// <summary>
-        /// Main Phase 1 helper for the server's attack order: the first face-up attack-position monster (zone order) attacks
-        /// first. If it has nothing worth attacking but a monster behind it does, it would block (or waste) that attack,
-        /// so it is better in defence. Returns the reason, or null.
-        /// </summary>
-        protected string? BlocksAttackOrder(DynamicCard card, List<DynamicCard> opponents)
-        {
-            var attackers = _ownMonsters.Where(own => own.IsFaceup() && own.IsAttack() && !own.Attacked)
-                .OrderBy(own => own.CurrentCoordinates.Sequence).ToList();
-            if (attackers.Count < 2 || !SameZone(attackers[0], card))
-                return null;
-            if (HasGoodAttack(card, opponents, attackers) || HasHarmlessAttack(card, opponents))
-                return null;
-            var behind = attackers.Skip(1).FirstOrDefault(own => HasGoodAttack(own, opponents, attackers));
-            if (behind.ID <= 0)
-                return null;
-            return $"the server attacks in zone order and {CardNames.Get(card.ID)} is first with nothing it can attack; " +
-                   $"in defence it stops blocking {CardNames.Get(behind.ID)}'s attack";
-        }
-
-        // A face-down target counts too: the battle logic sends a strong monster into it (seen 2026-11-13: Absolute Zero
-        // "had nothing to attack" against a lone face-down, so Substitoad was summoned in front of it and stopped the battle).
         private bool HasGoodAttack(DynamicCard own, List<DynamicCard> opponents, List<DynamicCard> attackers) => opponents.Count == 0
             ? !IsWeak(own) || ChangesClock(own, attackers) || IsBeater(own) || ExpendableHitter(own)
             : opponents.Any(target => target.IsFaceup() ? IsWorthAttacking(own, target)
@@ -339,17 +221,13 @@ namespace BotTest.Game.AI.Brains
             opponents.Any(target => IsGoodTrade(own, target, Math.Max(1, _ownMonsters.Count(card => card.IsFaceup() && card.IsAttack()))));
 
         /// <summary>
-        /// Whether the Battle Phase would do anything. The server always attacks with the first face-up attack-position
-        /// monster in zone order, so it's worth entering only if that one has something it can attack: a direct hit,
-        /// an unknown face-down monster (assumed Ryko, beaten by anything), a good attack, or a harmless one that lets the
-        /// rest follow. E.g. a lone Armageddon Knight (1400) against an 1800 Pegasus: nothing, so skip it (and set
-        /// cards now rather than "after attacking"). Returns why it isn't worth it, or null when it is.
+        /// Whether any available attacker has a worthwhile attack.
         /// </summary>
         protected async Task<string?> BattleWorthEnteringAsync()
         {
             var attackers = (await GetBotMonsterCardsAsync())
                 .Where(card => card.IsFaceup() && card.IsAttack() && !card.Attacked)
-                .OrderBy(card => card.CurrentCoordinates.Sequence).ToList();
+                .ToList();
             if (attackers.Count == 0)
                 return "no face-up attack-position monster";
             // A battle we committed to (an attack a rule summoned for, a lethal push, the search's line): never skipped.
@@ -363,16 +241,16 @@ namespace BotTest.Game.AI.Brains
             if (opponents.Any(card => !card.IsFaceup()) && attackers.Any(card => card.Attack > OpponentMemory.LowestFaceDownDefense(opponents)))
                 return null;
             await RefreshRewardOnDestroyAsync(opponents);
-            var first = attackers[0];
-            if (HasGoodAttack(first, opponents, attackers) || HasHarmlessAttack(first, opponents))
+            if (attackers.Any(attacker => HasGoodAttack(attacker, opponents, attackers) || HasHarmlessAttack(attacker, opponents)))
                 return null;
             // A crash that pays off (Fortress destroys a card, Returner revives Jinzo): the battle step makes it (see the
             // CrashForBattlePayoff attack), so the Battle Phase isn't skipped (seen 2026-11-12: Jinzo - Returner summoned "to
             // crash into Rai-Mei", then the Battle Phase was skipped as "nothing it can attack").
-            if (BattleDeathPayoff(first) != null && opponents.Any(target => target.IsFaceup() && target.IsAttack() && target.Attack >= first.Attack &&
-                                                                           !BouncesAttacker(target) && !DestroysByEffectInBattle(target, first)))
+            if (attackers.Any(attacker => BattleDeathPayoff(attacker) != null && opponents.Any(target =>
+                    target.IsFaceup() && target.IsAttack() && target.Attack >= attacker.Attack &&
+                    !BouncesAttacker(target) && !DestroysByEffectInBattle(target, attacker))))
                 return null;
-            return $"{CardNames.Get(first.ID)} attacks first (zone order) and has nothing it can attack";
+            return "no attacker has a worthwhile attack";
         }
 
         /// <summary>
@@ -380,60 +258,6 @@ namespace BotTest.Game.AI.Brains
         /// (0-based sequences 2, 1, 3, 0, 4).
         /// </summary>
         private static readonly int[] ServerZoneFillOrder = { 2, 1, 3, 0, 4 };
-
-        /// <summary>
-        /// Before a Main Phase 1 summon: would the new monster land ahead of our attackers in zone order (the server
-        /// always attacks with the first one) with nothing it can attack itself, blocking an attacker behind it that has a
-        /// good attack? A monster summoned this turn can't be moved to defence, so it would stop the whole battle.
-        /// E.g. Armageddon Knight (1400) landing in M2 ahead of Dark Grepher (M3, 1700) against a 1600 Topaz Tiger.
-        /// Returns the reason, or null.
-        /// </summary>
-        protected async Task<string?> SummonWouldBlockAttackOrderAsync(DynamicCard summon)
-        {
-            var own = await GetBotMonsterCardsAsync();
-            var occupied = own.Select(card => (int)card.CurrentCoordinates.Sequence).ToHashSet();
-            int zone = ServerZoneFillOrder.Where(z => !occupied.Contains(z)).DefaultIfEmpty(-1).First();
-            if (zone < 0)
-                return null;
-            var attackers = own.Where(card => card.IsFaceup() && card.IsAttack() && !card.Attacked)
-                .OrderBy(card => card.CurrentCoordinates.Sequence).ToList();
-            if (attackers.Count == 0 || attackers.Any(card => card.CurrentCoordinates.Sequence < zone))
-                return null; // nothing to block, or an attacker already goes before it
-            var opponents = (await GetEnemyMonsterCardsAsync()).Where(card => !card.IsDisabled()).ToList();
-            await RefreshRewardOnDestroyAsync(opponents);
-            // Judge it at the ATK it will have once we've used its summon effect (Card Trooper: 400 -> 1900).
-            var asSummoned = summon;
-            asSummoned.Attack = ExpectedAttackAfterSummon(summon);
-            asSummoned.CurrentCoordinates.Sequence = (byte)zone;
-            // Judge the board as it will be with the new monster out: its arrival can make an attack worth it (e.g. a
-            // Giant Rat isn't worth attacking until it threatens the new Armageddon Knight).
-            var savedOwn = _ownMonsters;
-            _ownMonsters = own.Append(asSummoned).ToList();
-            try
-            {
-                if (HasGoodAttack(asSummoned, opponents, attackers) || HasHarmlessAttack(asSummoned, opponents))
-                    return null;
-                var blocked = attackers.FirstOrDefault(card => HasGoodAttack(card, opponents, attackers) || HasHarmlessAttack(card, opponents));
-                if (blocked.ID <= 0)
-                    return null;
-                return $"it would land in M{zone + 1}, ahead of {CardNames.Get(blocked.ID)} (the server attacks in zone order), with nothing " +
-                       $"it can attack itself: it would stop {CardNames.Get(blocked.ID)}'s attack";
-            }
-            finally
-            {
-                _ownMonsters = savedOwn;
-            }
-        }
-
-        /// <summary>
-        /// The ATK a monster will have once summoned and its summon effect used (e.g. Card Trooper milling 3: 400 -> 1900).
-        /// Deck brains override this for their own cards; the default is its current ATK.
-        /// </summary>
-        protected virtual int ExpectedAttackAfterSummon(DynamicCard card) => card.Attack;
-
-        /// <summary>Most damage we take to let a first-in-zone-order monster attack so the better attacks behind it follow. Tune from logs.</summary>
-        [Tunable("Most damage we take to let a first-in-zone-order monster attack so the better attacks behind it follow. Tune from logs.")]
-        public int CheapUnblockDamage { get; set; } = 1000;
 
         /// <summary>
         /// Whether anything we'd set waits for Main Phase 2, thought through before setting (user, 2026-11-13: "am I going to
@@ -506,36 +330,6 @@ namespace BotTest.Game.AI.Brains
         /// <summary>Whether our deck is too small for Lyla's End Phase mill (3 a turn).</summary>
         protected bool DeckTooSmallForLyla => _ourDeckCount < LylaDeckGuard;
 
-        /// <summary>
-        /// Final check on a Main Phase 1 decision: a summon that would block our attack order (see
-        /// <see cref="SummonWouldBlockAttackOrderAsync"/>) waits for Main Phase 2, and we go to battle first.
-        /// </summary>
-        protected async Task<IdleCmdResponse> DeferSummonBlockingAttackOrderAsync(DecisionContext<IdleCmdData> context, IdleCmdResponse response)
-        {
-            if (response.Action is not (MainAction.Summon or MainAction.SpSummon) ||
-                (DuelPhase)context.Header.CurrentPhase != DuelPhase.Main1 || !context.StateData.CanBattlePhase)
-                return response;
-            var candidates = response.Action == MainAction.Summon
-                ? context.StateData.SummonableCards
-                : context.StateData.SpecialSummonableCards;
-            var card = (candidates ?? Array.Empty<DynamicCard>()).FirstOrDefault(c =>
-                c.ActionIndex != null && c.ActionIndex.Length > (int)response.Action && c.ActionIndex[(int)response.Action] == response.Index);
-            if (card.ID <= 0 || await SummonWouldBlockAttackOrderAsync(card) is not string why)
-                return response;
-            // A summon a lethal plan made (combined lethal: the summon starts the combo) goes ahead: the plan is the turn
-            // (seen 2026-11-11: Armageddon Knight deferred to Main Phase 2 broke Vayu's combined lethal; user: "had it done all
-            // of this in mp1 it would've won this turn").
-            if (_decisionRules.Any(rule => rule.Contains("lethal", StringComparison.OrdinalIgnoreCase)))
-            {
-                context.Bot.LogNote($"deck brain: summon {CardNames.Get(card.ID)} now even though {why}: it's part of a lethal plan");
-                return response;
-            }
-            if (!Rule(DeckRules.DeferSummonForAttackOrder))
-                return response;
-            context.Bot.LogNote($"deck brain: summon {CardNames.Get(card.ID)} in Main Phase 2 instead: {why}");
-            return new IdleCmdResponse(MainAction.ToBattlePhase);
-        }
-
         private async Task<BattleCmdResponse> ChooseBattleCmdAsync(DecisionContext<BattleCmdData> context)
         {
             ConsoleUtils.PrintColored("OnBattleCmd - Generic attack evaluation");
@@ -590,7 +384,7 @@ namespace BotTest.Game.AI.Brains
                     context.Bot.LogNote($"deck brain: {CardNames.Get(oneShot.ID)} is lethal in one hit: attack with it first");
                     directAttacker = oneShot;
                 }
-                else if (fieldEmpty && directAttacker.ID > 0 && await FearGorzAsync(context) && Rule(DeckRules.HoldForGorz))
+                else if (fieldEmpty && directAttacker.ID > 0 && await FearGorzAsync(context, directAttacker.Attack) && Rule(DeckRules.HoldForGorz))
                 {
                     ClearAim();
                     return context.StateData.CanMainPhaseTwo ? BattleAction.ToMainPhaseTwo : BattleAction.ToEndPhase;
@@ -609,12 +403,11 @@ namespace BotTest.Game.AI.Brains
                     return context.StateData.CanMainPhaseTwo ? BattleAction.ToMainPhaseTwo : BattleAction.ToEndPhase;
                 }
 
-                if (directAttacker.ID > 0 &&
-                    attackableCardArray.TryGetByID(directAttacker.ID, out _, out int index))
+                if (directAttacker.ID > 0)
                 {
-                    ConsoleUtils.PrintColored($"Direct Attack with Card ID: {directAttacker.ID}, Attack: {directAttacker.Attack}, Index: {index}");
+                    ConsoleUtils.PrintColored($"Direct Attack with Card ID: {directAttacker.ID}, Attack: {directAttacker.Attack}");
                     AimAt(context.Bot, null, AimKind.Fallback, $"{CardNames.Get(directAttacker.ID)} attacks directly: their field is empty");
-                    return attackableCardArray[index].DeclareAttack();
+                    return directAttacker.DeclareAttack();
                 }
 
                 ConsoleUtils.PrintColored("No direct attack possible.");
@@ -638,11 +431,10 @@ namespace BotTest.Game.AI.Brains
             if (unknownFaceDown.CurrentCoordinates.Location != 0 || unknownFaceDown.ID > 0)
             {
                 // The deck's own pick for probing a face-down (Blackwing: Shura / Bora, whose effects pay off on a kill).
-                if (PreferredFaceDownAttacker(attackableCards) is { ID: > 0 } preferred &&
-                    attackableCardArray.TryGetByID(preferred.ID, out _, out int preferredIndex))
+                if (PreferredFaceDownAttacker(attackableCards) is { ID: > 0 } preferred)
                 {
                     AimAt(context.Bot, unknownFaceDown, AimKind.Deliberate, $"attack the unknown face-down with {CardNames.Get(preferred.ID)}: {PreferredFaceDownWhy(preferred)}");
-                    return attackableCardArray[preferredIndex].DeclareAttack();
+                    return preferred.DeclareAttack();
                 }
                 // A cheap monster first (Necro Gardna, an expendable body) when everything we have out is cheap: if it's
                 // their Ryko, its flip has nothing better to destroy (Necro even works from the graveyard). With a good
@@ -653,18 +445,18 @@ namespace BotTest.Game.AI.Brains
                     ? attackableCards.Where(card => IsCheapAttacker(card) && card.Attack > OpponentMemory.FaceDownDefense(unknownFaceDown))
                         .OrderBy(card => card.Attack).FirstOrDefault()
                     : default;
-                if (cheap.ID > 0 && attackableCardArray.TryGetByID(cheap.ID, out _, out int cheapIndex) && Rule(DeckRules.CheapIntoFaceDown))
+                if (cheap.ID > 0 && Rule(DeckRules.CheapIntoFaceDown))
                 {
                     AimAt(context.Bot, unknownFaceDown, AimKind.Deliberate, $"attack the unknown face-down (Ryko chance {FaceDownRykoChance(unknownFaceDown):P0}: {FaceDownRykoWhy(unknownFaceDown)}) with a cheap monster, {CardNames.Get(cheap.ID)}: " +
                                         "if it's Ryko, its flip is wasted on it");
-                    return attackableCardArray[cheapIndex].DeclareAttack();
+                    return cheap.DeclareAttack();
                 }
                 var strongest = attackableCards[0];
                 // A face-down that likely banishes (or bounces) what battles it (D.D. Warrior Lady, e.g. set after Reinforcement
                 // of the Army): a valuable attacker isn't worth the trade (user, 2026-11-13: "expected to violate the 'dont
                 // banish fortress' rule (can be fine sometimes...)"). Weighed: the face-down destroyed (1 card) when it isn't,
-                // against our attacker lost when it is. The server attacks in zone order, so the battle stops here.
-                var first = attackableCardArray[0];
+                // against our attacker lost when it is.
+                var first = strongest;
                 if (!IsExpendable(first) && await FaceDownRemovesAttackerChanceAsync(unknownFaceDown) is var (removeChance, removers) &&
                     removeChance > 0)
                 {
@@ -683,11 +475,10 @@ namespace BotTest.Game.AI.Brains
                     IsWorthAttacking(strongest, target) &&
                     !attackableCards.Skip(1).Any(other => IsWorthAttacking(other, target)));
 
-                if (!strongestUniquelyNeeded && strongest.Attack > OpponentMemory.FaceDownDefense(unknownFaceDown) && Rule(DeckRules.StrongestIntoFaceDown) &&
-                    attackableCardArray.TryGetByID(strongest.ID, out _, out int ryukoAttackerIndex))
+                if (!strongestUniquelyNeeded && strongest.Attack > OpponentMemory.FaceDownDefense(unknownFaceDown) && Rule(DeckRules.StrongestIntoFaceDown))
                 {
                     AimAt(context.Bot, unknownFaceDown, AimKind.Deliberate, $"attack the unknown face-down (Ryko chance {FaceDownRykoChance(unknownFaceDown):P0}: {FaceDownRykoWhy(unknownFaceDown)}) first with the strongest monster {CardNames.Get(strongest.ID)}");
-                    return attackableCardArray[ryukoAttackerIndex].DeclareAttack();
+                    return strongest.DeclareAttack();
                 }
             }
 
@@ -697,10 +488,10 @@ namespace BotTest.Game.AI.Brains
                 if (!OpponentMemory.TryRecall(remembered, out var known))
                     continue;
                 var attacker = attackableCards.FirstOrDefault(card => card.Attack > known.BaseDefense);
-                if (attacker.ID > 0 && attackableCardArray.TryGetByID(attacker.ID, out _, out int rememberedIndex) && Rule(DeckRules.AttackRememberedFaceDown))
+                if (attacker.ID > 0 && Rule(DeckRules.AttackRememberedFaceDown))
                 {
                     AimAt(context.Bot, remembered, AimKind.Deliberate, $"attack face-down {CardNames.Get(known.Id)} (remembered, {known.BaseDefense} DEF) with {CardNames.Get(attacker.ID)}");
-                    return attackableCardArray[rememberedIndex].DeclareAttack();
+                    return attacker.DeclareAttack();
                 }
             }
 
@@ -854,29 +645,27 @@ namespace BotTest.Game.AI.Brains
             // nothing: it comes back anyway, so the 2300 damage bought nothing); a free kill always is one.
             foreach (var option in options.Where(o => o.Rule == null || o.Value > 0).OrderByDescending(o => o.Value))
             {
-                if (!attackableCardArray.TryGetByID(option.Attacker.ID, out _, out int optionIndex) || option.Rule != null && !Rule(option.Rule))
+                if (option.Rule != null && !Rule(option.Rule))
                     continue;
                 AimAt(context.Bot, option.Target, option.Kind, $"{option.Why} (value {option.Value:0})");
-                return attackableCardArray[optionIndex].DeclareAttack();
+                return option.Attacker.DeclareAttack();
             }
             foreach (var option in options.Where(o => o.Rule != null && o.Value <= 0))
                 context.Bot.LogNote($"deck brain: no {option.Why.Split(':')[0]}: it gains nothing (value {option.Value:0})");
 
             // An attack that pays off just by battling (a tag-out), made safe by Shield Warrior / Waboku.
-            if (await TryProtectedAttackAsync(context, attackableCardArray, attackableCards, opponentMonsters) is BattleCmdResponse protectedAttack)
+            if (await TryProtectedAttackAsync(context, attackableCards, opponentMonsters) is BattleCmdResponse protectedAttack)
                 return protectedAttack;
 
             ConsoleUtils.PrintColored("No advantageous attack targets found.");
-            // Held: the attack the search could make here is with the first attacker in zone order (the server's choice).
-            if (attackableCardArray.Length > 0)
-                HoldAttack(attackableCardArray[0].ID, DeckRules.NoAttackWithoutGain);
+            foreach (var attacker in attackableCardArray)
+                HoldAttack(attacker.ID, DeckRules.NoAttackWithoutGain);
             ClearAim();
             return context.StateData.CanMainPhaseTwo ? BattleAction.ToMainPhaseTwo : BattleAction.ToEndPhase;
         }
 
         public override async Task<IdleCmdResponse> OnIdleCmdAsync(DecisionContext<IdleCmdData> context, CancellationToken ct = default) =>
-            // A Main Phase 1 summon that would block our attack order (server zone order) waits for Main Phase 2.
-            await FlipBeforeSummonAsync(context, await DeferSummonBlockingAttackOrderAsync(context, await DecideGenericMainPhaseAsync(context, ct)));
+            await FlipBeforeSummonAsync(context, await DecideGenericMainPhaseAsync(context, ct));
 
         private async Task<IdleCmdResponse> DecideGenericMainPhaseAsync(DecisionContext<IdleCmdData> context, CancellationToken ct)
         {
@@ -984,56 +773,6 @@ namespace BotTest.Game.AI.Brains
                 return repositionToDefense.Reposition();
             }
 
-            // The server attacks in zone order: a first monster with nothing to attack would block the ones behind it.
-            if ((DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 && context.StateData.CanBattlePhase)
-            {
-                if (await GorzAttackOrderAsync(context.StateData, opponentMonsters) is { } gorzOrder && Rule(DeckRules.GorzAttackOrder))
-                {
-                    context.Bot.LogNote($"deck brain: {CardNames.Get(gorzOrder.Card.ID)} to defence: {gorzOrder.Why}");
-                    return gorzOrder.Card.Reposition();
-                }
-                if (await BattleRemovalOrderAsync(context.StateData, opponentMonsters) is { } removalOrder && Rule(DeckRules.AvoidBattleRemoval))
-                {
-                    context.Bot.LogNote($"deck brain: {CardNames.Get(removalOrder.Card.ID)} to defence: {removalOrder.Why}");
-                    return removalOrder.Card.Reposition();
-                }
-                foreach (var card in (context.StateData.ReposableCards ?? Array.Empty<DynamicCard>()).Where(card => card.IsFaceup() && card.IsAttack()))
-                {
-                    if (BlocksAttackOrder(card, opponentMonsters) is string blockWhy && Rule(DeckRules.UnblockAttackOrder))
-                    {
-                        context.Bot.LogNote($"deck brain: {CardNames.Get(card.ID)} to defence: {blockWhy}");
-                        return card.Reposition();
-                    }
-                }
-                // Round-robin 26 (user, 2026-11-13: "yes totally agree"): a blocker that can't change position (summoned this turn)
-                // is cleared out of the way as material: a synchro with another monster of ours (one a Tuner), or the tribute for
-                // a Level 5-6. The material prompts take the cheapest monsters, and a weak blocker is that.
-                var blocker = _ownMonsters.Where(own => own.IsFaceup() && own.IsAttack() && !own.Attacked)
-                    .OrderBy(own => own.CurrentCoordinates.Sequence).FirstOrDefault();
-                if (blocker.ID > 0 && BlocksAttackOrder(blocker, opponentMonsters) is string stuckWhy &&
-                    !(context.StateData.ReposableCards ?? Array.Empty<DynamicCard>()).Any(card => SameZone(card, blocker)))
-                {
-                    var partners = _ownMonsters.Where(own => own.ID > 0 && own.IsFaceup() && !SameZone(own, blocker) &&
-                                                             (own.HasType(CardType.Tuner) != blocker.HasType(CardType.Tuner))).ToList();
-                    var synchro = (context.StateData.SpecialSummonableCards ?? Array.Empty<DynamicCard>())
-                        .Where(card => card.HasType(CardType.Synchro) && partners.Any(p => p.Level + blocker.Level == card.Level))
-                        .OrderByDescending(card => card.Attack).FirstOrDefault();
-                    if (synchro.ID > 0 && synchro.Attack > blocker.Attack && Rule(DeckRules.ClearZoneBlocker))
-                    {
-                        context.Bot.LogNote($"deck brain: synchro summon {CardNames.Get(synchro.ID)} with {CardNames.Get(blocker.ID)} as material: {stuckWhy}");
-                        return synchro.SpecialSummon();
-                    }
-                    var tributeSummon = (context.StateData.SummonableCards ?? Array.Empty<DynamicCard>()).Where(card => card.Level is 5 or 6)
-                        .OrderByDescending(card => card.Attack).FirstOrDefault();
-                    if (tributeSummon.ID > 0 && Rule(DeckRules.ClearZoneBlocker))
-                    {
-                        PlanTributes(context.Header.CurrentTurn, new[] { blocker }, $"{CardNames.Get(tributeSummon.ID)}'s tribute (clearing the attack order)");
-                        context.Bot.LogNote($"deck brain: tribute summon {CardNames.Get(tributeSummon.ID)} off {CardNames.Get(blocker.ID)}: {stuckWhy}");
-                        return tributeSummon.NormalSummon();
-                    }
-                }
-            }
-
             var repositionToAttack = (context.StateData.ReposableCards ?? Array.Empty<DynamicCard>())
                 .Where(card => card.IsDefense() && ShouldRepositionToAttack(card, opponentMonsters))
                 .OrderByDescending(card => card.Attack)
@@ -1129,10 +868,13 @@ namespace BotTest.Game.AI.Brains
         protected virtual Task RecordDeckChainHoldsAsync(DecisionContext<SelectChainData> context) => Task.CompletedTask;
 
         /// <summary>Our set card is about to be removed anyway: their chain targets it, or they just activated Heavy Storm.</summary>
-        private async Task<bool> DoomedAsync(DynamicCard ours)
+        private async Task<bool> DoomedAsync(DynamicCard ours, BotStateHeader? header = null)
         {
             if (ours.CurrentCoordinates.Location != (byte)CardLocation.SpellZone)
                 return false;
+            var decision = header ?? _currentHeader;
+            if (await TreatBackrowAsDoomedAsync(IsOwnTurn(decision), (DuelPhase)decision.CurrentPhase))
+                return true;
             if (await OurSetCardTargetedAsync(ours))
                 return true;
             return _newFaceUpSpellZones.Count > 0 && (await GetEnemySpellCardsAsync())
@@ -1439,6 +1181,9 @@ namespace BotTest.Game.AI.Brains
             if (!IsSearchTwin)
                 bot.KnownOpponentHand = () => KnownEnemyHand(); // the log's "their hand" line
             _trackedTurn = -1;
+            _theirAttackedZones = (-1, new());
+            _opponentBeforeTheirTurn = (-1, new());
+            _opponentSummonedAndAttackedWithThreat = -1;
             _activatedThisTurn.Clear();
             _usedEffects.Clear();
             _chainDescriptions.Clear();
@@ -1718,7 +1463,7 @@ namespace BotTest.Game.AI.Brains
         /// already in the graveyard/banished), lower if our board can beat a 2700 Gorz, and lower when holding back
         /// gives up a fast clock.
         /// </summary>
-        protected async Task<bool> FearGorzAsync<T>(DecisionContext<T> context)
+        protected async Task<bool> FearGorzAsync<T>(DecisionContext<T> context, int? leadAttack = null)
         {
             int turn = context.Header.CurrentTurn;
             if (turn < _gorzDecisionTurn)
@@ -1745,8 +1490,7 @@ namespace BotTest.Game.AI.Brains
             // gorz chance by 30%").
             if (_gorzPassFactor > 1)
                 haveGorz = Math.Min(1, haveGorz * GorzPassBonus); // "not +30%, *1.3"
-            int tokenAtk = context is DecisionContext<BattleCmdData> battle && battle.StateData.AttackableCards is { Length: > 0 } attackers
-                ? attackers[0].Attack : FirstHitAttack();
+            int tokenAtk = leadAttack ?? FirstHitAttack();
             var (canAnswer, answerWhy) = await CanAnswerGorzAndTokenAsync(tokenAtk);
             double clockFactor = _clockSpeed switch
             {
@@ -1809,90 +1553,6 @@ namespace BotTest.Game.AI.Brains
             bool gone = view.EnemyGrave.Concat(view.EnemyBanished).Any(id => id == GorzId || Search.SearchHost.CanonicalId(id) == GorzId);
             double chance = GorzInHandChance(view.EnemyHandCount, gone).Chance;
             return _gorzPassFactor > 1 ? Math.Min(1, chance * GorzPassBonus) : chance;
-        }
-
-        /// <summary>Gorz chance from which Main Phase 1 sets up the attack order for it (see GorzAttackOrderAsync). Tune from logs.</summary>
-        [Tunable("Gorz chance from which Main Phase 1 sets up the attack order for it (see GorzAttackOrderAsync). Tune from logs.")]
-        public double GorzOrderChance { get; set; } = 0.3;
-
-        /// <summary>
-        /// Main Phase 1, their field without a single card and Gorz likely in their hand: the first direct hit (the server
-        /// attacks in zone order) brings Gorz and a token with that hit's ATK. Lead with a weaker monster so one behind it
-        /// beats the token this turn (user, 2026-11-13: "you can still try and engineer it by switching things to defence"):
-        /// when the current first attacker leaves a token nothing of ours beats, the monsters ahead of the best leader go to
-        /// defence (they don't attack this turn; a Fortress in defence still answers Gorz). Returns the monster to switch
-        /// now and why, or null. Not when the first hit alone wins.
-        /// </summary>
-        protected async Task<(DynamicCard Card, string Why)?> GorzAttackOrderAsync(IdleCmdData state, List<DynamicCard> opponents)
-        {
-            if (opponents.Any(card => card.ID != 0 || !card.IsFaceup()) || (await GetEnemySpellCardsAsync()).Count > 0)
-                return null;
-            var attackers = _ownMonsters.Where(own => own.ID > 0 && own.IsFaceup() && own.IsAttack() && !own.Attacked)
-                .OrderBy(own => own.CurrentCoordinates.Sequence).ToList();
-            if (attackers.Count < 2)
-                return null;
-            int oppLp = await CurrentField.GetBotLifePoints(isOwnSide: false);
-            if (attackers[0].Attack >= oppLp)
-                return null;
-            var (chance, _, _, _) = await GorzInHandChanceAsync();
-            if (chance < GorzOrderChance)
-                return null;
-            bool Clears(int lead) => attackers.Skip(lead + 1).Any(m => m.Attack > attackers[lead].Attack);
-            if (Clears(0))
-                return null;
-            var reposable = state.ReposableCards ?? Array.Empty<DynamicCard>();
-            for (int lead = 1; lead < attackers.Count; lead++)
-            {
-                if (!Clears(lead))
-                    continue;
-                // Everything ahead of the new leader must be able to go to defence.
-                var ahead = attackers.Take(lead).ToList();
-                if (!ahead.All(m => reposable.Any(r => SameZone(r, m))))
-                    return null;
-                var switchNow = ahead[0];
-                var beater = attackers.Skip(lead + 1).First(m => m.Attack > attackers[lead].Attack);
-                return (reposable.First(r => SameZone(r, switchNow)),
-                    $"Gorz is likely in their hand ({chance:P0}): {CardNames.Get(attackers[0].ID)} would hit first and its {attackers[0].Attack} token " +
-                    $"would be bigger than anything we have left; in defence, {CardNames.Get(attackers[lead].ID)} leads ({attackers[lead].Attack} token) " +
-                    $"and {CardNames.Get(beater.ID)} beats the token this turn");
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// Main Phase 1: their unknown face-down likely banishes / bounces what battles it (D.D. Warrior Lady), and our first
-        /// attacker in zone order is too valuable to trade into it while a cheaper one behind it isn't (user, 2026-11-13: "i
-        /// would've attacked with dark grepher first - my deck had a high chance of dd warrior lady"). The monsters ahead of the
-        /// cheaper one go to defence, one per decision, so it leads. Same weighing as the battle's own check: losing the
-        /// attacker (its ATK in thousands) when it is one, against destroying the face-down (1 card) when it isn't.
-        /// </summary>
-        protected async Task<(DynamicCard Card, string Why)?> BattleRemovalOrderAsync(IdleCmdData state, List<DynamicCard> opponents)
-        {
-            var faceDown = opponents.Where(card => !card.IsFaceup() && card.CurrentCoordinates.Location != 0 && !OpponentMemory.TryRecall(card, out _))
-                .OrderBy(card => card.CurrentCoordinates.Sequence).FirstOrDefault();
-            if (faceDown.CurrentCoordinates.Location == 0)
-                return null;
-            var attackers = _ownMonsters.Where(own => own.ID > 0 && own.IsFaceup() && own.IsAttack() && !own.Attacked)
-                .OrderBy(own => own.CurrentCoordinates.Sequence).ToList();
-            if (attackers.Count < 2)
-                return null;
-            var (chance, removers) = await FaceDownRemovesAttackerChanceAsync(faceDown);
-            if (chance <= 0)
-                return null;
-            bool TooValuable(DynamicCard m) => !IsExpendable(m) && chance * Math.Max(1, BotTest.Game.AI.Search.MctsEvaluator.AtkValue(m.Attack)) > 1 - chance;
-            bool CanProbe(DynamicCard m) => !TooValuable(m) && m.Attack > OpponentMemory.FaceDownDefense(faceDown);
-            if (!TooValuable(attackers[0]))
-                return null;
-            int lead = attackers.FindIndex(CanProbe);
-            if (lead <= 0)
-                return null;
-            var reposable = state.ReposableCards ?? Array.Empty<DynamicCard>();
-            var ahead = attackers.Take(lead).ToList();
-            if (!ahead.All(m => reposable.Any(r => SameZone(r, m))))
-                return null;
-            return (reposable.First(r => SameZone(r, ahead[0])),
-                $"their face-down may well be {removers} ({chance:P0}), which removes what battles it: {CardNames.Get(attackers[lead].ID)} " +
-                $"should hit it first, and the server attacks in zone order");
         }
 
         private readonly Random _gorzRandom = new();
@@ -2222,10 +1882,10 @@ namespace BotTest.Game.AI.Brains
             return (false, $"one answer ({string.Join(", ", units.Select(u => u.Name))}) for Gorz and its {tokenAtk} ATK token");
         }
 
-        /// <summary>The ATK of the monster that would hit first (the server attacks in zone order): the Gorz token's ATK.</summary>
+        /// <summary>The smallest available direct hit, used to estimate the Gorz token's ATK.</summary>
         private int FirstHitAttack() => _ownMonsters
             .Where(card => card.IsFaceup() && card.IsAttack() && !card.Attacked && card.ID > 0)
-            .OrderBy(card => card.CurrentCoordinates.Sequence).Select(card => card.Attack).FirstOrDefault();
+            .Select(card => card.Attack).DefaultIfEmpty().Min();
 
         // Our monsters whose trigger takes the monster they destroyed by battle (Goyo Guardian: official and Omega's pre-errata id).
         protected static readonly int[] TakeControlTriggerIds = { 7391448, 7391468 };
@@ -2726,7 +2386,6 @@ namespace BotTest.Game.AI.Brains
                 if (FlipEffectText.IsMatch(info.CardText ?? ""))
                     _flipEffect.Add(card.ID);
             }
-            CheckPendingPlacement(_currentHeader, _ownMonsters);
             await LearnBattleDestroyersAsync(_ownMonsters.Where(card => card.IsFaceup()).Select(card => card.ID));
             _opponents = opponents;
             _oppLp = await CurrentField.GetBotLifePoints(isOwnSide: false);
@@ -3279,7 +2938,7 @@ namespace BotTest.Game.AI.Brains
         /// Unless it's in attack position (damage), destroying it clears the path for a direct hit this turn (our attackers
         /// can take every monster of theirs, Treeborn included, with one left over: they may start with two monsters against
         /// our three), their spell/trap stops it coming back, or our attacker banishes / bounces what it battles. (Attacking it
-        /// only to unblock the server's attack order, e.g. a 100 into its 100 DEF, safe, is the zone-order code's call.)
+        /// only to deal damage or destroy the target.)
         /// Returns why it's pointless, or null.
         /// </summary>
         protected string? TreebornAttackPointless(DynamicCard attacker, DynamicCard target, IReadOnlyList<DynamicCard> theirMonsters,

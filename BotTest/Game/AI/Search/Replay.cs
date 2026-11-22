@@ -64,10 +64,7 @@ namespace BotTest.Game.AI.Search
                     }
                     case BattleCmdData battle:
                     {
-                        var c = SearchActions.Battle(battle, anyOrder: true).FirstOrDefault(x => SearchActions.Packet(x.Response).AsSpan().SequenceEqual(response));
-                        // Omega attacks with the first attacker by zone whatever index we send (server attack order): that one.
-                        if (c != null && c.Key.StartsWith("attack:"))
-                            c = SearchActions.Battle(battle).FirstOrDefault(x => x.Key.StartsWith("attack:")) ?? c;
+                        var c = SearchActions.Battle(battle).FirstOrDefault(x => SearchActions.Packet(x.Response).AsSpan().SequenceEqual(response));
                         return c == null ? Raw(state, response) : new ReplayStep(state, SearchActions.LooseKey(c.Key), c.Label) { Exact = c.Key };
                     }
                     case SelectChainData chain:
@@ -135,7 +132,7 @@ namespace BotTest.Game.AI.Search
                 }
                 case BattleCmdData battle:
                 {
-                    var battleChoices = SearchActions.Battle(battle, anyOrder: true).ToList();
+                    var battleChoices = SearchActions.Battle(battle).ToList();
                     return (battleChoices.FirstOrDefault(c => c.Key == step.Exact) ?? battleChoices.FirstOrDefault(c => SearchActions.LooseKey(c.Key) == key)) is { } b
                         ? SearchActions.Packet(b.Response) : null;
                 }

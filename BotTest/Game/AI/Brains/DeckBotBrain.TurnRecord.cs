@@ -135,10 +135,12 @@ namespace BotTest.Game.AI.Brains
         {
             bool battle = _recBattle; // a fact, not a commitment: sets after it are Main Phase 2's
             int enemyHand = _recEnemyHand, enemyDeck = _recEnemyDeck;
+            int ownDeck = _recOwnDeck;
             ResetTurnRecord(_recordTurn);
             _recBattle = battle;
             _recEnemyHand = enemyHand;
             _recEnemyDeck = enemyDeck;
+            _recOwnDeck = ownDeck;
             _wipeTrees = true;
             bot.LogNote($"search: memory wiped ({why}): this turn's commitments are dropped and the next search starts a fresh tree");
             if (_searchLine != null || _plan != null)

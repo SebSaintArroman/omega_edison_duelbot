@@ -29,8 +29,6 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         public static double GladBodyBase = 0.6;
         [Tunable("A Gladiator board's worth: card units per 1000 ATK of each monster.")]
         public static double GladBodyPerThousand = 0.8;
-        [Tunable("Gladiator Proving Ground / recycled Indomitable: the cost of each one recycled.")]
-        public static double RecycledIndomitableCost = 0.1;
         [Tunable("A face-down monster of theirs with at least this Ryko chance counts as a flip effect coming (War Chariot worth more).")]
         public static double FlipThreatChance = 0.25;
         [Tunable("Tag-out value: Murmillo's kill counts this share when Raigeki Break in hand could do it too.")]
@@ -104,6 +102,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         protected override string? BattleGain(DynamicCard attacker) =>
             SummonLock(attacker) == null && attacker.Negator.Location == 0 && (attacker.IsCode(GladCardId.Glads) || attacker.IsCode(GladCardId.Gyzarus))
                 ? "it tags out after battling (a tag-in with its effect)" : null;
+
+        internal override bool RewardGladiatorBattles => true;
 
         // The cards that stop the tag-out's Special Summon (user, 2026-11-11: "might be simpler to list them"). Royal Oppression
         // negates it (for 800 LP), so it counts too.
@@ -305,6 +305,34 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             var grave = await GetBotGraveyardCardsAsync();
             int theirCards = enemyMonsters.Count + enemySpells.Count;
 
+            if (botMonsters.Count == 1 && botMonsters[0].IsFaceup() && IsGlad(botMonsters[0]) &&
+                !enemyMonsters.Any(card => card.IsFaceup() && card.IsCode(GladCardId.StardustDragon)) &&
+                enemySpells.Count + enemyMonsters.Count(card => !IsExpendable(card)) >= 2 &&
+                (MirrorForceChance > 0 || !TrapsNegated && enemySpells.Any(card => !card.IsFaceup() &&
+                    (card.IsCode(GladCardId.BottomlessTrapHole) ||
+                     OpponentDeck.SetZoneChance(card.CurrentCoordinates.Sequence, GladCardId.BottomlessTrapHole) > 0))))
+            {
+                bool bestiariOnField = botMonsters[0].IsCode(GladCardId.Bestiari);
+                var material = (state.MonsterSetableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault(card =>
+                    bestiariOnField ? IsGlad(card) && !card.IsCode(GladCardId.Bestiari) : card.IsCode(GladCardId.Bestiari));
+                if (material.ID > 0 &&
+                    (await CurrentField.GetCardsInLocation(CardLocation.Extra)).Any(card => card.IsCode(GladCardId.Gyzarus)) &&
+                    await StartRoutineAsync(context, "go for Gyzarus", "set the second material before contact fusion",
+                        new[]
+                        {
+                            new RoutineStep(MainAction.SetMonster, material.ID, $"set {CardNames.Get(material.ID)}"),
+                            new RoutineStep(MainAction.SpSummon, GladCardId.Gyzarus, "contact fuse Gyzarus")
+                        }, gladiatorSet: material.ID) is IdleCmdResponse goForGyzarus)
+                    return goForGyzarus;
+            }
+
+            if (!hand.Any(card => card.IsCode(GladCardId.Waboku)))
+            {
+                state.MonsterSetableCards = (state.MonsterSetableCards ?? Array.Empty<DynamicCard>())
+                    .Where(card => !CardRules.IsGladiatorBeast(card.ID)).ToArray();
+                context = context with { StateData = state };
+            }
+
             // Raigeki Break on a big threat first (user, 2026-11-11: on Archlord Kristya, which stops every tag-out, it was "by
             // far the best play"); attack boosts are for monsters that aren't worth it.
             if (await TryRaigekiThreatAsync(context, state, enemyMonsters) is IdleCmdResponse raigekiThreat)
@@ -395,10 +423,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         /// Attack boosts on one Glad to get it over their monster (user, 2026-11-11: Skill Successor and Indomitable from the
         /// GY would have put Equeste over Archlord Kristya). Main Phase 1 with a Battle Phase ahead. The attacker is our first
         /// attacker by zone (the server attacks with it); the wall is their strongest face-up monster it doesn't already beat.
-        /// Boosts: Skill Successor from the GY (+800, our turn), Indomitable from the hand (+500, Gladiator Beasts only), its
-        /// recycle from the GY (2 Gladiator Beast cards back to the deck: another +500, repeatable while there are cards to
-        /// pay), a set Skill Successor (+400). The cheapest combination that gets over is used, nothing more ("dont use more
-        /// than you need"); it's recomputed at every step, so each boost only goes on while it's still needed.
+        /// Recycle Indomitable before battle if needed. Apply the boosts when the attack is underway.
         /// </summary>
         private async Task<IdleCmdResponse?> TryBoostOverWallAsync(DecisionContext<IdleCmdData> context, IdleCmdData state,
             List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters, List<DynamicCard> grave)
@@ -425,25 +450,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             bool glad = IsGlad(attacker);
             bool indHand = glad && activable.Any(card => Is(card, GladCardId.IndomitableGladiatorBeast, CardLocation.Hand));
             bool indGrave = glad && activable.Any(card => Is(card, GladCardId.IndomitableGladiatorBeast, CardLocation.Grave));
-            int recycles = indHand || indGrave ? grave.Count(card => card.IsCode(GladCardId.GladCards)) / 2 : 0;
-            int indUses = (indHand ? 1 : 0) + recycles;
-
-            // Fewest boosts over the wall (each costs about the same; see below).
-            (int Grave, int Ind, int Set, double Cost)? best = null;
-            for (int g = 0; g <= skillGrave; g++)
-                for (int i = 0; i <= indUses; i++)
-                    for (int s = 0; s <= skillSet; s++)
-                    {
-                        if (800 * g + 500 * i + 400 * s < need)
-                            continue;
-                        int recycled = Math.Max(0, i - (indHand ? 1 : 0));
-                        // Every boost costs about the same (user, 2026-11-11: a set Skill Successor comes back as the GY +800, so
-                        // use it freely): the fewest boosts win; a recycle a little more (2 Gladiator Beast cards leave the GY).
-                        double cost = g + i + s + RecycledIndomitableCost * recycled;
-                        if (best == null || cost < best.Value.Cost)
-                            best = (g, i, s, cost);
-                    }
-            if (best is not (int useGrave, int useInd, int useSet, _) || !Rule(GladRules.BoostOverWall))
+            int availableBoost = 800 * skillGrave + 400 * skillSet + (indHand ? 500 : 0);
+            bool recycle = availableBoost < need && indGrave && grave.Count(card => card.IsCode(GladCardId.GladCards)) >= 2;
+            if (availableBoost + (recycle ? 500 : 0) < need || !Rule(GladRules.BoostOverWall))
             {
                 // No boosts get over it: Raigeki Break it instead, if it's worth two cards (Raigeki + the discard).
                 var raigeki = activable.FirstOrDefault(card => Is(card, GladCardId.RaigekiBreak, CardLocation.SpellZone));
@@ -456,36 +465,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 }
                 return null;
             }
-            string plan = string.Join(" + ", new[]
-            {
-                useGrave > 0 ? $"Skill Successor from the GY x{useGrave} (+{800 * useGrave})" : null,
-                useInd > 0 ? $"Indomitable x{useInd} (+{500 * useInd}{(useInd > (indHand ? 1 : 0) ? ", recycled from the GY" : "")})" : null,
-                useSet > 0 ? $"set Skill Successor x{useSet} (+{400 * useSet})" : null,
-            }.Where(part => part != null));
-            string why = $"{CardNames.Get(attacker.ID)} ({atk}) over {CardNames.Get(wall.ID)} ({Power(wall)}): {plan}";
-
-            // The whole boost sequence handed over at once and followed (DeckBotBrain.TurnPlan, user 2026-11-12), then the attack
-            // into the wall, committed: Skill Successor from the GY, Indomitable from the hand, its recycle and Indomitable
-            // again, the set Skill Successor, the Battle Phase. Each boost aims at our attacker as it's taken.
             string attackerName = CardNames.Get(attacker.ID);
-            void Aim() => PlanTarget(turn, attacker, theirs: false);
             var steps = new List<RoutineStep>();
-            for (int g = 0; g < useGrave; g++)
-                steps.Add(new RoutineStep(MainAction.Activate, GladCardId.SkillSuccessor, $"Skill Successor from the GY on {attackerName}", Aim, CardLocation.Grave));
-            int indFromHand = useInd > 0 && indHand ? 1 : 0;
-            if (indFromHand == 1)
-                steps.Add(new RoutineStep(MainAction.Activate, GladCardId.IndomitableGladiatorBeast, $"Indomitable Gladiator Beast on {attackerName}", Aim, CardLocation.Hand));
-            for (int r = 0; r < useInd - indFromHand; r++)
-            {
+            if (recycle)
                 steps.Add(new RoutineStep(MainAction.Activate, GladCardId.IndomitableGladiatorBeast, "Indomitable back to the hand", null, CardLocation.Grave));
-                steps.Add(new RoutineStep(MainAction.Activate, GladCardId.IndomitableGladiatorBeast, $"Indomitable Gladiator Beast on {attackerName}", Aim, CardLocation.Hand));
-            }
-            for (int s = 0; s < useSet; s++)
-                steps.Add(new RoutineStep(MainAction.Activate, GladCardId.SkillSuccessor, $"set Skill Successor on {attackerName}", Aim, CardLocation.SpellZone));
             steps.Add(RoutineStep.Battle);
+            string why = $"{attackerName} can beat {CardNames.Get(wall.ID)} with at least {need} extra ATK in battle";
             if (await StartRoutineAsync(context, "boost over a wall", why, steps) is not IdleCmdResponse first)
                 return null;
-            CommitAttack(turn, attacker.ID, wall, $"{attackerName} was boosted over {CardNames.Get(wall.ID)}");
+            CommitAttack(turn, attacker.ID, wall, why);
             return first;
         }
 

@@ -72,7 +72,6 @@ BlackwingBotBrain.HoldCost.blackwing.necro-protects-only-clock = 1.5
 BlackwingBotBrain.HoldCost.blackwing.no-pointless-summon = 1.5
 BlackwingBotBrain.HoldCost.blackwing.plague-synchro = 1.5
 BlackwingBotBrain.HoldCost.blackwing.recursion-for-vayu = 1.5
-BlackwingBotBrain.HoldCost.blackwing.shura-attacks-first = 1.5
 BlackwingBotBrain.HoldCost.blackwing.shura-takes-vayu = 1.5
 BlackwingBotBrain.HoldCost.blackwing.sirocco-boost = 1.5
 BlackwingBotBrain.HoldCost.blackwing.sirocco-free = 1.5

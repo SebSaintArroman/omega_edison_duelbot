@@ -96,7 +96,9 @@ namespace BotTest.Game.AI.Brains
             int vayuSteps = TryGetActivable(state, VayuId, out _)
                 ? Math.Min(grave.Count(c => c.IsCode(VayuId)), grave.Count(c => c.IsCode(VayuPartnerIds)))
                 : 0;
-            int plagueSteps = TryGetActivable(state, PlaguespreaderId, out _) && hand.Any(c => !c.IsCode(DarkArmedDragonId)) ? 1 : 0;
+            int plagueSteps = TryGetActivable(state, PlaguespreaderId, out _) &&
+                hand.Any(c => !c.IsCode(DarkArmedDragonId)) &&
+                await CanRevivePlaguespreaderAsync(context, state, Math.Max(0, hand.Count - 2)) ? 1 : 0;
             int chaosSteps = TryGetSpecialSummon(state, ChaosSorcererId, out _) ? 1 : 0;
             int need = darks - 3;
             (int V, int P, int C)? plan = null;

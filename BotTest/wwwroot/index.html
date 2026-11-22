@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Omega Bot AI Room</title>
-  <link rel="stylesheet" href="/styles.css?v=12">
+  <link rel="stylesheet" href="/styles.css?v=14">
 </head>
 <body>
   <div class="scene scene-left"></div>
@@ -19,17 +19,14 @@
           <h2>Choose Your Duel</h2>
         </div>
 
-        <!-- Compact (deck, pause and status in two rows) so the problem report fits in the same panel height. -->
         <div class="setup-row">
           <label class="sr-only" for="deckSelect">Deck</label>
           <select id="deckSelect"></select>
           <button id="startButton" class="button button-secondary" type="button">Pause auto-start</button>
+          <span id="statusBadge" class="status-badge">Ready</span>
         </div>
 
-        <div class="status-line status-compact">
-          <span id="statusBadge" class="status-badge">Ready</span>
-          <span id="statusDetail" class="status-meta">Fetching the current panel state.</span>
-        </div>
+        <span id="statusDetail" class="status-meta">Fetching the current panel state.</span>
 
         <aside class="comment-panel" aria-label="Duel comments">
           <form id="commentForm" class="comment-form">
@@ -38,7 +35,7 @@
               <span class="comment-anchor">Pinned to the current decision</span>
             </div>
             <label class="sr-only" for="commentText">Comment on this duel</label>
-            <textarea id="commentText" rows="2" placeholder="What did the bot do wrong, and what should it have done?"></textarea>
+            <textarea id="commentText" rows="6" placeholder="What did the bot do wrong, and what should it have done?"></textarea>
             <div class="comment-row">
               <span class="comment-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> saves</span>
               <span id="commentStatus" class="comment-status" role="status"></span>
@@ -106,6 +103,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=12" defer></script>
+  <script src="/app.js?v=13" defer></script>
 </body>
 </html>

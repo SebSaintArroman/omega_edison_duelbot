@@ -36,7 +36,12 @@ internal sealed partial class DuelHost
     {
         switch (id)
         {
-            case Msg.SelectIdleCmd: _summonWindow = false; return IdleCmd(r);
+            case Msg.SelectIdleCmd:
+                // Edison ignition priority can be offered at the first idle prompt after a summon.
+                if (_summonIdleSeen)
+                    _summonWindow = false;
+                _summonIdleSeen = _summonWindow;
+                return IdleCmd(r);
             case Msg.SelectBattleCmd: _summonWindow = false; return BattleCmd(r);
             case Msg.SelectEffectYn: return EffectYesNo(r);
             case Msg.SelectYesNo: return YesNo(r);
@@ -153,6 +158,10 @@ internal sealed partial class DuelHost
                 int action = value & 0xffff, index = value >> 16;
                 if (action <= 5 && index < keys[action].Count)
                     _lastChosenCode[player] = keys[action][index].Code;
+                if (_summonWindow && (action != (int)MainAction.Activate || index < 0 ||
+                    index >= keys[(int)MainAction.Activate].Count ||
+                    !IsSummonWindow(player, keys[(int)MainAction.Activate][index].Code)))
+                    _summonWindow = false;
                 return Responses.Int32(value);
             },
         };
@@ -202,7 +211,7 @@ internal sealed partial class DuelHost
         ActivationCardIndex[]? Acts(LocInfo at) => activations.TryGetValue(at.Key, out var list) ? list.ToArray() : null;
         var data = new BattleCmdData
         {
-            // In zone order, as Omega lists them (its AttackableCards[0] is the lowest zone that can still attack).
+            // List cards by zone while preserving the engine action index.
             AttackableCards = attackers.OrderBy(a => a.At.Sequence).Select(a =>
             {
                 var card = Offered(player, a.Code, a.At, IndexFor(a.At.Key), Acts(a.At));
@@ -227,14 +236,6 @@ internal sealed partial class DuelHost
                 int action = value & 0xffff, index = value >> 16;
                 if (action == (int)BattleAction.Activate && index < activates.Count)
                     _lastChosenCode[player] = activates[index].Code;
-                // Omega ignores which attacker a bot declares: it always attacks with the first one in zone order (the lowest
-                // zone that can still attack). Reproduced for the players that are bots (user, 2026-11-13: "there shouldn't be
-                // any differences"; "the opponent should be allowed to attack in any order when simulating opponent's turns").
-                if (action == (int)BattleAction.Attack && attackers.Count > 0 && _zoneOrderAttacks[player])
-                {
-                    int first = attackers.Select((a, i) => (a.At.Sequence, i)).OrderBy(x => x.Sequence).First().i;
-                    value = (first << 16) | action;
-                }
                 return Responses.Int32(value);
             },
         };
@@ -544,8 +545,7 @@ internal sealed partial class DuelHost
         };
         var group = groups.FirstOrDefault(g => g.Mask != 0);
         // Main monster zones the way Omega fills them: it ignores the zone the bot asks for and takes the first free one
-        // centre-out (M3, M2, M4, M1, M5), and it attacks in zone order, so the zones decide the attack order (user,
-        // 2026-11-12: the simulation must play out exactly as Omega would). Other zones in their own order.
+        // centre-out (M3, M2, M4, M1, M5). Other zones use their own order.
         static IEnumerable<int> ZoneOrder(uint location) => location == Ocg.LocMZone ? new[] { 2, 1, 3, 0, 4, 5, 6, 7 } : Enumerable.Range(0, 8);
         var allZones = groups.SelectMany(g => ZoneOrder(g.Location).Where(s => (g.Mask & (1 << s)) != 0)
             .Select(s => (Player: Absolute(player, g.Relative), Location: (byte)g.Location, Sequence: (byte)s))).ToList();

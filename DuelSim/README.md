@@ -184,7 +184,7 @@ The simulator is meant to play exactly like Omega. What it does to match:
   - one face-up Field Spell;
   - no Extra Monster Zone;
   - the old once-per-turn Special Summon, return-to-deck trigger and summon-oath rulings.
-- **Attack order.** Omega attacks with a bot's first attacker in zone order, whichever one the bot declares. The simulator does the same for every bot player: both players in bot-vs-bot duels, and the searching bot (player 0) in the search's duels. The opponent in a search duel is a human and attacks in any order. Attackable monsters are listed in zone order, as Omega lists them.
+- **Attack order.** The simulator executes the declared attack index. The search can compare all eligible attackers and choose their order.
 - **Engine.** EDOPro's engine and scripts, not Omega's own. Rulings follow EDOPro's scripts, which can differ from Omega's on individual cards.
 - **Pre-errata cards.** Omega has its own ids for pre-errata cards: official id + 20, reported with the official id as Alias.
   - EDOPro doesn't have these ids. The simulator gives each one the official card's data under the Omega id, so the bots still see Omega's ids.

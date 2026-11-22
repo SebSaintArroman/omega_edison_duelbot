@@ -172,9 +172,11 @@ namespace BotTest.Game.AI.Brains
                     System.Text.RegularExpressions.Regex.Match(text, @"gains? (\d+) ATK", System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } gain)
                     knownBoost = Math.Max(knownBoost, int.Parse(gain.Groups[1].Value));
             bool honestKnown = knownHand.Any(k => k == HonestId || SearchHost.CanonicalId(k) == HonestId);
-            return new(new SearchCardValues(view.OwnGrave, view.EnemyGrave), SearchSetupValue, SearchCardBonus, unknownHand, explosiveness)
+            return new(new SearchCardValues(view.OwnGrave, view.EnemyGrave), SearchSetupFor(view), SearchCardBonus, unknownHand, explosiveness)
             {
                 AttackerOdds = attackerOdds,
+                RewardGladiatorBattles = RewardGladiatorBattles,
+                BackrowDoomRule = SearchBackrowDoomRule,
                 TheirNormalAttack = biggest?.Normal ?? MctsEvaluator.NoListNormalAttack,
                 TheirTributeAttack = biggest?.Tribute ?? MctsEvaluator.NoListTributeAttack,
                 TheirKnownBoost = knownBoost,

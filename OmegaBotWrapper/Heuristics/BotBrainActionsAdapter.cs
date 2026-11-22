@@ -81,6 +81,8 @@ namespace OmegaBotWrapper.Heuristics
             // The play search replans mid-chain when something new was revealed (DeckBotBrain.MidChain).
             if (_brain is IDecisionRefiner chainRefiner && await chainRefiner.RefineChainAsync(context, index) is int refined)
                 index = refined;
+            if (state.Forced && state.SelectableCards is { } cards && index >= 0 && index < cards.Length)
+                context.Bot.LogNote($"mandatory action: activate {Logging.CardNames.Get(cards[index].ID)} (the game requires a chain response)");
             (_brain as IDecisionRefiner)?.ChainAnswered(context, index);
             return index;
         }

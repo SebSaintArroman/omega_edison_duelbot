@@ -35,9 +35,6 @@ internal sealed partial class DuelHost : IDisposable
     private readonly OcgDuel _duel;
     private readonly CardStore _cards;
     private readonly Random _rng;
-    // Per player: whether Omega's bot attack order applies (it always attacks with the first attacker in zone order). Both
-    // players in a bot-vs-bot duel; in a search duel only the searching bot (see DuelHost.Search).
-    private bool[] _zoneOrderAttacks = { true, true };
     private readonly Prompt?[] _pending = new Prompt?[2];
     // Timeouts in a row per player: a bot that stopped answering (crashed) ends the duel instead of being waited on for
     // every prompt (seen 2026-11-12: a crashed bot left two duels running for 12 hours).
@@ -46,13 +43,25 @@ internal sealed partial class DuelHost : IDisposable
     private readonly ulong[] _selectHint = new ulong[2];
     private readonly int[] _lp = { 8000, 8000 };
     private readonly HashSet<(byte, byte, uint)> _attackedThisTurn = new();
+    private readonly HashSet<(byte, byte, uint)> _summonedThisTurn = new();
+    private bool _summonedAndAttackedWithThreat;
+    internal bool PreviousTurnSummonedAndAttackedWithThreat { get; private set; }
     // Chain link card -> what it targets; cleared when the chain ends.
     private readonly Dictionary<(byte, byte, uint), List<LocInfo>> _chainTargets = new();
     private LocInfo? _lastChainCard;
+    private LocInfo? _previousChainCard;
     private (LocInfo Attacker, LocInfo? Target)? _attack;
+    internal bool IsDirectAttack => _attack is { Target: null };
+    private readonly List<(int Player, int Code, int Location)> _pendingChainEffects = new();
+    internal IReadOnlyList<(int Player, int Code, int Location)> PendingChainEffects => _pendingChainEffects;
+    internal bool InDamageStep { get; private set; }
+    private readonly List<(int Player, int Code)> _survivingAttackers = new();
+    internal IReadOnlyList<(int Player, int Code)> SurvivingAttackers => _survivingAttackers;
     private int _lastChainPlayer = -1;
     private int _lastSummonPlayer = -1;
+    private int _lastSummonedCardId;
     private bool _summonWindow;
+    private bool _summonIdleSeen;
     private readonly bool[] _wipeInChain = new bool[2];
 
     /// <summary>The card at this place is about to go: a chain link of the other player targets it, or wipes the spells/traps.</summary>
@@ -73,7 +82,30 @@ internal sealed partial class DuelHost : IDisposable
     /// priority pass). A trap fired here could have waited (user, 2026-11-19: "a general 'last possible moment' rule for all traps").</summary>
     public bool Attacking { get { lock (_core) return _attack != null; } }
 
+    internal bool IsOpponentAttacking(int viewer)
+    {
+        lock (_core)
+            return _attack is { } attack && attack.Attacker.Controller != viewer;
+    }
+
+    internal bool IsTargetedByOpponent(int controller, int location, int sequence)
+    {
+        lock (_core)
+            return _chainTargets.Any(link => link.Key.Item1 == 1 - controller &&
+                link.Value.Any(target => target.Controller == controller &&
+                    target.Location == location && target.Sequence == sequence));
+    }
+
     public bool EventlessWindow { get { lock (_core) return _lastChainPlayer < 0 && _attack == null && !_summonWindow; } }
+
+    internal bool IsSummonWindow(int viewer, int cardId)
+    {
+        lock (_core)
+        {
+            bool SameCard(int a, int b) => a == b || _cards.Get(a)?.Alias == b || _cards.Get(b)?.Alias == a;
+            return _summonWindow && Relative(viewer, _lastSummonPlayer) == 0 && SameCard(cardId, _lastSummonedCardId);
+        }
+    }
     private Prompt? _lastPrompt;
     private readonly DateTime _started = DateTime.UtcNow;
 
@@ -277,6 +309,31 @@ internal sealed partial class DuelHost : IDisposable
         }
     }
 
+    /// <summary>Visible details of the latest chain link in a search duel.</summary>
+    internal SearchChainLink CurrentSearchChain(int viewer)
+    {
+        lock (_core)
+            return SearchChainAt(viewer, _lastChainCard, _lastChainPlayer);
+    }
+
+    internal SearchChainLink PreviousSearchChain(int viewer)
+    {
+        lock (_core)
+            return SearchChainAt(viewer, _previousChainCard, _previousChainCard is { } link ? link.Controller : -1);
+    }
+
+    private SearchChainLink SearchChainAt(int viewer, LocInfo? location, int player)
+    {
+        if (location is not { } link)
+            return new SearchChainLink(-1, 0, Array.Empty<int>());
+        int code = QueryCard(link.Controller, link.Location, link.Sequence)?.Code ?? 0;
+        int[] targets = _chainTargets.TryGetValue(link.Key, out var locations)
+            ? locations.Select(target => QueryCard(target.Controller, target.Location, target.Sequence)?.Code ?? 0)
+                .Where(target => target > 0).ToArray()
+            : Array.Empty<int>();
+        return new SearchChainLink(Relative(viewer, player), code, targets);
+    }
+
     // Released whenever a player gets a new prompt: the emulator holds a bot's state poll until then (long-poll).
     private readonly SemaphoreSlim[] _promptSignal = { new(0), new(0) };
 
@@ -406,6 +463,9 @@ internal sealed partial class DuelHost : IDisposable
                 TurnPlayer = r.U8() & 1;
                 Turn++;
                 _attackedThisTurn.Clear();
+                _summonedThisTurn.Clear();
+                PreviousTurnSummonedAndAttackedWithThreat = _summonedAndAttackedWithThreat;
+                _summonedAndAttackedWithThreat = false;
                 _decisionsThisTurn = 0;
                 _lastActivation = (-1, 0, 0);
                 _sameActivations = 0;
@@ -423,7 +483,9 @@ internal sealed partial class DuelHost : IDisposable
             }
             case Msg.NewPhase:
                 Phase = r.U16();
+                InDamageStep = false;
                 _summonWindow = false;
+                _lastSummonedCardId = 0;
                 _attack = null;
                 return null;
             case Msg.Chaining:
@@ -431,13 +493,16 @@ internal sealed partial class DuelHost : IDisposable
                 int code = r.I32();
                 var card = r.Loc();
                 byte triggerController = r.U8();
-                r.U8(); r.U32();
+                byte triggerLocation = r.U8();
+                r.U32();
                 ulong desc = r.U64();
                 uint chainCount = r.U32();
+                _pendingChainEffects.Add((triggerController, code, triggerLocation));
                 _lastChainPlayer = triggerController;
                 if (triggerController < 2 && _cards.Get(code)?.Text is { } wipeText &&
                     System.Text.RegularExpressions.Regex.IsMatch(wipeText, @"destroy all (Spells?|Spell(/| and )Trap)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                     _wipeInChain[triggerController] = true;
+                _previousChainCard = _lastChainCard;
                 _lastChainCard = card;
                 if (triggerController < 2)
                 {
@@ -470,9 +535,11 @@ internal sealed partial class DuelHost : IDisposable
                 return null;
             }
             case Msg.ChainEnd:
+                _pendingChainEffects.Clear();
                 _chainTargets.Clear();
                 _wipeInChain[0] = _wipeInChain[1] = false;
                 _lastChainCard = null;
+                _previousChainCard = null;
                 _lastChainPlayer = -1;
                 return null;
             case Msg.Summoning:
@@ -482,7 +549,11 @@ internal sealed partial class DuelHost : IDisposable
                 int code = r.I32();
                 var at = r.Loc();
                 _lastSummonPlayer = at.Controller;
+                _lastSummonedCardId = code;
+                if (at.Controller == TurnPlayer)
+                    _summonedThisTurn.Add(at.Key);
                 _summonWindow = true;
+                _summonIdleSeen = false;
                 string kind = id == Msg.Summoning ? "summons" : id == Msg.SpSummoning ? "special summons" : "flip summons";
                 Event?.Invoke($"  player {at.Controller} {kind} {CardName(code)}");
                 return null;
@@ -493,11 +564,28 @@ internal sealed partial class DuelHost : IDisposable
                 var target = r.Loc();
                 _attack = (attacker, target.Location == 0 ? null : target);
                 _attackedThisTurn.Add(attacker.Key);
+                if (!_summonedAndAttackedWithThreat && _summonedThisTurn.Contains(attacker.Key) &&
+                    QueryCard(attacker.Controller, attacker.Location, attacker.Sequence) is { } summonedAttacker)
+                {
+                    int bestDefense = QueryList(1 - attacker.Controller, Ocg.LocMZone, Ocg.QueryPosition | Ocg.QueryAttack)
+                        .Where(card => card != null && (card.Position & Ocg.PosFaceUpAttack) != 0)
+                        .Select(card => card!.Attack).DefaultIfEmpty(0).Max();
+                    _summonedAndAttackedWithThreat = summonedAttacker.Attack > bestDefense;
+                }
                 Event?.Invoke($"  attack: {DescribeAt(attacker)} -> {(target.Location == 0 ? "direct" : DescribeAt(target))}");
                 return null;
             }
             case Msg.AttackDisabled:
+                _attack = null;
+                return null;
+            case Msg.DamageStepStart:
+                InDamageStep = true;
+                return null;
             case Msg.DamageStepEnd:
+                InDamageStep = false;
+                if (_attack is { } battle && QueryCard(battle.Attacker.Controller, battle.Attacker.Location,
+                    battle.Attacker.Sequence) is { Code: > 0 } survivor)
+                    _survivingAttackers.Add((battle.Attacker.Controller, survivor.Code));
                 _attack = null;
                 return null;
             case Msg.Move:
@@ -506,8 +594,12 @@ internal sealed partial class DuelHost : IDisposable
                 var from = r.Loc();
                 var to = r.Loc();
                 uint reason = r.U32();
+                if (_attack is { } currentBattle && currentBattle.Attacker.Key == from.Key && to.Location != Ocg.LocMZone)
+                    _attack = null;
                 if (_attackedThisTurn.Remove(from.Key) && to.Location == Ocg.LocMZone)
                     _attackedThisTurn.Add(to.Key);
+                if (from.Key != to.Key && _summonedThisTurn.Remove(from.Key) && to.Location == Ocg.LocMZone)
+                    _summonedThisTurn.Add(to.Key);
                 bool draw = from.Location == Ocg.LocDeck && to.Location == Ocg.LocHand;
                 if (code != 0 && from.Location != to.Location && !draw && to.Location != Ocg.LocOverlay)
                     Event?.Invoke($"  {CardName(code)}: {LocationName(from)} -> {LocationName(to)}");

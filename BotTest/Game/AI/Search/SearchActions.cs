@@ -38,7 +38,8 @@ namespace BotTest.Game.AI.Search
         private static string Name(DynamicCard card) => card.ID > 0 ? CardNames.Get(card.ID) : "a face-down card";
 
         /// <param name="usedThisTurn">Cards whose field effect we already used this turn (once per turn): not offered again.</param>
-        public static List<Choice<IdleCmdResponse>> Idle(IdleCmdData data, IReadOnlyCollection<int>? usedThisTurn = null)
+        public static List<Choice<IdleCmdResponse>> Idle(IdleCmdData data, IReadOnlyCollection<int>? usedThisTurn = null,
+            Func<int, MainAction, bool>? allowed = null)
         {
             var choices = new List<Choice<IdleCmdResponse>>();
             var seen = new HashSet<string>();
@@ -50,7 +51,7 @@ namespace BotTest.Game.AI.Search
             void List(DynamicCard[]? cards, MainAction action, string verb)
             {
                 foreach (var card in cards ?? Array.Empty<DynamicCard>())
-                    if (card.ActionIndex != null && card.ActionIndex.Length > (int)action)
+                    if (card.ActionIndex != null && card.ActionIndex.Length > (int)action && (allowed == null || allowed(card.ID, action)))
                         Add($"{(int)action}:{CardKey(card)}", $"{verb} {Name(card)}", (action, (ushort)card.ActionIndex[(int)action]));
             }
             List(data.SummonableCards, MainAction.Summon, "summon");
@@ -60,6 +61,8 @@ namespace BotTest.Game.AI.Search
             List(data.SpellSetableCards, MainAction.SetSpell, "set");
             foreach (var card in data.ActivableCards ?? Array.Empty<DynamicCard>())
             {
+                if (allowed != null && !allowed(card.ID, MainAction.Activate))
+                    continue;
                 bool onField = card.CurrentCoordinates.Location is (byte)CardLocation.MonsterZone or (byte)CardLocation.SpellZone;
                 if (onField && usedThisTurn != null && usedThisTurn.Contains(card.ID))
                     continue;
@@ -74,15 +77,11 @@ namespace BotTest.Game.AI.Search
             return choices;
         }
 
-        /// <summary>
-        /// Battle choices. Only the first attacker in zone order: Omega attacks with it whichever we pick (see the
-        /// server attack order note in DeckBotBrain), so that's the only attack there is.
-        /// </summary>
-        /// <param name="anyOrder">
-        /// Every attacker is a choice, not only the first in zone order: for the opponent, who may be a person attacking in
-        /// any order (user, 2026-11-12: the search assumes the opponent isn't held to the server order our bot works with).
-        /// </param>
-        public static List<Choice<BattleCmdResponse>> Battle(BattleCmdData data, bool anyOrder = false)
+        internal static DynamicCard AttackerFor(BattleCmdData data, ushort index) =>
+            (data.AttackableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault(card =>
+                card.ActionIndex is { Length: > (int)BattleAction.Attack } indexes && indexes[(int)BattleAction.Attack] == index);
+
+        public static List<Choice<BattleCmdResponse>> Battle(BattleCmdData data)
         {
             var choices = new List<Choice<BattleCmdResponse>>();
             var seen = new HashSet<string>();
@@ -92,7 +91,7 @@ namespace BotTest.Game.AI.Search
                     choices.Add(new Choice<BattleCmdResponse>(key, label, response));
             }
             var attackers = data.AttackableCards ?? Array.Empty<DynamicCard>();
-            foreach (var attacker in anyOrder ? attackers : attackers.Take(1))
+            foreach (var attacker in attackers)
                 if (attacker.ActionIndex is { Length: > (int)BattleAction.Attack } index)
                     Add($"attack:{CardKey(attacker)}", $"attack with {Name(attacker)}", (BattleAction.Attack, (ushort)index[(int)BattleAction.Attack]));
             foreach (var card in data.ActivableCards ?? Array.Empty<DynamicCard>())

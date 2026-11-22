@@ -132,7 +132,7 @@ namespace BotTest.Game.AI.Brains
             _searchLine is { } line && line.Turn == _currentHeader.CurrentTurn && line.Steps.Skip(line.Next).Any(s => s.Key == "battle" || s.Key.StartsWith("attack:"));
 
         /// <summary>
-        /// The committed attack for the monster the server attacks with now (the first in zone order), or for a lethal push
+        /// An attack the deck committed to, or for a lethal push
         /// an attack that keeps it going. Null when there's none (the deck's usual battle logic decides).
         /// </summary>
         private async Task<BattleCmdResponse?> CommittedAttackAsync(DecisionContext<BattleCmdData> context)
@@ -142,31 +142,30 @@ namespace BotTest.Game.AI.Brains
             _attackCommitments.RemoveAll(c => c.Turn != turn);
             if (all.Length == 0)
                 return null;
-            var first = all[0];
             var enemy = await GetEnemyMonsterCardsAsync();
             int PowerOf(DynamicCard card) => !card.IsFaceup() ? OpponentMemory.FaceDownDefense(card) : card.IsAttack() ? card.Attack : card.Defense;
             foreach (var commitment in _attackCommitments.ToList())
             {
+                var attacker = all.FirstOrDefault(card => card.IsCode(commitment.AttackerId));
+                _attackCommitments.Remove(commitment);
+                if (attacker.ID <= 0)
+                {
+                    context.Bot.LogNote($"deck brain: the attack we committed to ({commitment.Why}) is off: the attacker can't attack");
+                    continue;
+                }
                 // "Attacks this turn" (no set target): direct into a clear field, else the most threatening monster it beats.
                 if (commitment.TargetZone < 0)
                 {
-                    if (!first.IsCode(commitment.AttackerId))
+                    if (enemy.Count == 0 && attacker.CanDirectAttack)
                     {
-                        if (!all.Any(card => card.IsCode(commitment.AttackerId)))
-                            _attackCommitments.Remove(commitment);
-                        continue;
+                        AimAt(context.Bot, null, AimKind.Committed, $"{CardNames.Get(attacker.ID)} attacks directly as committed: {commitment.Why}");
+                        return HeldCommittedAttack(attacker);
                     }
-                    _attackCommitments.Remove(commitment);
-                    if (enemy.Count == 0 && first.CanDirectAttack)
-                    {
-                        AimAt(context.Bot, null, AimKind.Committed, $"{CardNames.Get(first.ID)} attacks directly as committed: {commitment.Why}");
-                        return HeldCommittedAttack(first);
-                    }
-                    var prey = enemy.Where(card => first.Attack > PowerOf(card)).OrderByDescending(OpponentThreat).FirstOrDefault();
+                    var prey = enemy.Where(card => attacker.Attack > PowerOf(card)).OrderByDescending(OpponentThreat).FirstOrDefault();
                     if (prey.CurrentCoordinates.Location != 0)
                     {
-                        AimAt(context.Bot, prey, AimKind.Committed, $"{CardNames.Get(first.ID)} attacks {DescribeTarget(prey)} as committed: {commitment.Why}");
-                        return HeldCommittedAttack(first);
+                        AimAt(context.Bot, prey, AimKind.Committed, $"{CardNames.Get(attacker.ID)} attacks {DescribeTarget(prey)} as committed: {commitment.Why}");
+                        return HeldCommittedAttack(attacker);
                     }
                     context.Bot.LogNote($"deck brain: the attack we committed to ({commitment.Why}) is off: nothing it beats is left");
                     continue;
@@ -174,27 +173,14 @@ namespace BotTest.Game.AI.Brains
                 var target = enemy.FirstOrDefault(card => card.CurrentCoordinates.Sequence == commitment.TargetZone && (card.ID == commitment.TargetId || card.ID <= 0));
                 if (target.CurrentCoordinates.Location == 0)
                 {
-                    _attackCommitments.Remove(commitment);
                     context.Bot.LogNote($"deck brain: the attack we committed to ({commitment.Why}) is off: its target is gone");
                     continue;
                 }
-                if (!first.IsCode(commitment.AttackerId))
-                {
-                    if (!all.Any(card => card.IsCode(commitment.AttackerId)))
-                    {
-                        _attackCommitments.Remove(commitment);
-                        context.Bot.LogNote($"deck brain: the attack we committed to ({commitment.Why}) is off: the attacker can't attack");
-                    }
-                    continue; // another monster attacks first (zone order); the commitment waits for its turn
-                }
-                _attackCommitments.Remove(commitment);
-                AimAt(context.Bot, target, AimKind.Committed, $"{CardNames.Get(first.ID)} attacks {DescribeTarget(target)} as committed: {commitment.Why}");
-                return HeldCommittedAttack(first);
+                AimAt(context.Bot, target, AimKind.Committed, $"{CardNames.Get(attacker.ID)} attacks {DescribeTarget(target)} as committed: {commitment.Why}");
+                return HeldCommittedAttack(attacker);
             }
             if (!LethalPushNow)
                 return null;
-            // The lethal push: direct when the field is clear, else the first attacker takes the monster it beats (the most
-            // threatening), or, with more attackers behind it, the weakest monster (out of the way, the rest follow).
             string why = _lethalPush!.Value.Why;
             // Still lethal on paper with what can attack now (the spend may have been held later, or something removed)?
             // Through their blockers, not just our total ATK (round-robin 44c: 2300 "reached" 1125 LP with Blizzard still in
@@ -207,13 +193,15 @@ namespace BotTest.Game.AI.Brains
                 _lethalPush = null;
                 return null;
             }
-            if (enemy.Count == 0 && first.CanDirectAttack)
+            if (enemy.Count == 0 && all.Any(card => card.CanDirectAttack))
             {
+                var first = all.Where(card => card.CanDirectAttack)
+                    .OrderByDescending(card => card.Attack >= oppLp).ThenBy(card => card.Attack).First();
                 // Into a field with no cards at all the first hit may bring Gorz and its token instead of the win (12:30 duel,
                 // user 2026-11-13): push on when we can answer both, else the push is off (FearGorzAsync decides, as for any
                 // direct attack).
                 bool noCards = (await GetEnemySpellCardsAsync()).Count == 0;
-                if (noCards && first.Attack < oppLp && await FearGorzAsync(context) && Rule(DeckRules.HoldForGorz))
+                if (noCards && first.Attack < oppLp && await FearGorzAsync(context, first.Attack) && Rule(DeckRules.HoldForGorz))
                 {
                     context.Bot.LogNote($"deck brain: the lethal push we committed to ({why}) is off: a Gorz we can't answer would stop it");
                     _lethalPush = null;
@@ -222,36 +210,16 @@ namespace BotTest.Game.AI.Brains
                 AimAt(context.Bot, null, AimKind.Committed, $"{CardNames.Get(first.ID)} attacks directly: the lethal push we committed to ({why})");
                 return HeldCommittedAttack(first);
             }
-            int Power(DynamicCard card) => !card.IsFaceup() ? OpponentMemory.FaceDownDefense(card) : card.IsAttack() ? card.Attack : card.Defense;
-            // The first attacker (zone order) takes the monster it beats, the most threatening. One it can't beat isn't
-            // "cleared out of the way" by crashing into it: the push is off (user, 2026-11-13: after Gorz, Shura and Card Trooper
-            // crashed into a 2500 token "to clear the way": "why are they all attacking tokens").
-            var pick = enemy.Where(card => first.Attack > Power(card)).OrderByDescending(OpponentThreat).FirstOrDefault();
-            if (pick.CurrentCoordinates.Location != 0)
+            foreach (var target in enemy.OrderByDescending(PowerOf))
             {
-                AimAt(context.Bot, pick, AimKind.Committed, $"{CardNames.Get(first.ID)} attacks {DescribeTarget(pick)}: the lethal push we committed to ({why})");
-                return HeldCommittedAttack(first);
+                var attacker = all.Where(card => EffectiveAttack(card) > PowerOf(target))
+                    .OrderBy(EffectiveAttack).FirstOrDefault();
+                if (attacker.ID <= 0)
+                    continue;
+                AimAt(context.Bot, target, AimKind.Committed, $"{CardNames.Get(attacker.ID)} attacks {DescribeTarget(target)}: the lethal push we committed to ({why})");
+                return HeldCommittedAttack(attacker);
             }
-            // It beats nothing: it still attacks to clear the way (the server attacks in zone order, so the monsters behind it can
-            // only attack after it), but only when one behind it has a meaningful attack waiting (user, 2026-11-13: "clearing the
-            // way is still something we may need to do ... there has to be a meaningful attack waiting for it to be worth
-            // clearing the way"). The cheapest crash: into a defence-position monster (we only take the difference) before an
-            // attack-position one (ours dies), smallest first, within CheapUnblockDamage and never lethal.
-            var behind = all.Skip(1).Where(card => !card.Attacked).ToList();
-            var waiting = behind.FirstOrDefault(card => HasGoodAttack(card, enemy, all.ToList()));
-            int ourLp = await CurrentField.GetBotLifePoints();
-            var crash = enemy.Where(card => card.CurrentCoordinates.Location != 0)
-                .OrderBy(card => card.IsFaceup() && card.IsAttack() ? 1 : 0).ThenBy(Power)
-                .FirstOrDefault(card => Power(card) - first.Attack <= Math.Min(CheapUnblockDamage, ourLp - 1));
-            if (waiting.ID > 0 && crash.CurrentCoordinates.Location != 0 && Rule(DeckRules.UnblockAttackOrder))
-            {
-                AimAt(context.Bot, crash, AimKind.Committed, $"{CardNames.Get(first.ID)} attacks {DescribeTarget(crash)} to clear the way: it beats nothing, " +
-                                                             $"but {CardNames.Get(waiting.ID)} behind it has a real attack (the lethal push: {why})");
-                return HeldCommittedAttack(first);
-            }
-            context.Bot.LogNote($"deck brain: the lethal push we committed to ({why}) is off: {CardNames.Get(first.ID)} beats nothing of theirs " +
-                                $"({string.Join(", ", enemy.Select(card => $"{DescribeTarget(card)} {Power(card)}"))})" +
-                                (waiting.ID > 0 ? ", and clearing the way costs too much" : ", and nothing behind it has a meaningful attack to clear the way for"));
+            context.Bot.LogNote($"deck brain: the lethal push we committed to ({why}) is off: no attacker beats a blocker");
             _lethalPush = null;
             return null;
         }

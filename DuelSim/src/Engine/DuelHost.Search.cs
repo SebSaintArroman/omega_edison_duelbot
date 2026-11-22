@@ -27,9 +27,6 @@ internal sealed partial class DuelHost
         _rng = new Random(seed);
         _duel = duel;
         _ownsDuel = false;
-        // Only the searching bot (player 0) has Omega's first-in-zone-order attacks; the opponent it plays against is a human,
-        // who attacks in any order (user, 2026-11-13).
-        _zoneOrderAttacks = new[] { true, false };
         // The search only needs who and what a card is (its key) and its stats: skip targets, equips, counters, reasons.
         _queryFlags = Ocg.QueryCode | Ocg.QueryPosition | Ocg.QueryAlias | Ocg.QueryType | Ocg.QueryLevel | Ocg.QueryAttack |
                       Ocg.QueryDefense | Ocg.QueryOwner | Ocg.QueryIsPublic | Ocg.QueryStatus;
@@ -243,6 +240,9 @@ internal sealed partial class DuelHost
             return (int)_duel.QueryCount(player, location);
     }
 
+    internal int[] ExtraDeckCodes(int player) =>
+        QueryList(player, Ocg.LocExtra, Ocg.QueryCode).Where(card => card != null).Select(card => card!.Code).ToArray();
+
     /// <summary>The position's life points (the puzzle sets them in the engine without a message the host would see).</summary>
     public void SetLifePoints(int first, int second)
     {
@@ -283,12 +283,13 @@ internal sealed partial class DuelHost
         List<int> Codes(uint location) => QueryList(player, location, Ocg.QueryCode).Where(c => c != null).Select(c => c!.Code).ToList();
         var hand = Codes(Ocg.LocHand);
         var grave = Codes(Ocg.LocGrave);
+        var deck = Codes(Ocg.LocDeck);
         int Count(uint location)
         {
             lock (_core)
                 return (int)_duel.QueryCount(player, location);
         }
-        return new SideSummary(_lp[player], monsters, setSpells, faceUpSpells, hand.Count, Count(Ocg.LocDeck),
+        return new SideSummary(_lp[player], monsters, setSpells, faceUpSpells, hand.Count, deck.Count, deck,
             grave.Count, Count(Ocg.LocExtra), spells, hand, grave, foreign);
     }
 }
@@ -302,6 +303,7 @@ internal sealed record SideSummary(
     int FaceUpSpells,
     int Hand,
     int Deck,
+    List<int> DeckCodes,
     int Grave,
     int Extra,
     List<(int Code, bool FaceUp)> SpellCodes,
@@ -309,6 +311,8 @@ internal sealed record SideSummary(
     List<int> GraveCodes,
     /// <summary>Monsters on this side the other player owns (taken), counted in Monsters unless left out.</summary>
     int Foreign = 0);
+
+internal sealed record SearchChainLink(int Player, int CardId, int[] TargetCardIds);
 
 /// <summary>Where search time goes (Stopwatch ticks, summed over all threads). For the search-bench command.</summary>
 internal static class SearchTimings

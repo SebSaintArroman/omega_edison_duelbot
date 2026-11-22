@@ -425,6 +425,20 @@ namespace BotTest.Game.AI.Search
                     return (null, false, $"at our {prompt.State} (phase 0x{host.Phase:x}) the line has {Difference(Key(prompt.State, host), Key(prompt.State, want.View))}; " +
                                          $"checkpoint {_next + 1} is {want.State} in phase 0x{want.Phase:x}{_r.TheirTrail(host, _moves, _next)}");
                 }
+                if (prompt.Data is IdleCmdData)
+                {
+                    // At an open Main Phase command, a recorded pass on this board may have had no
+                    // equivalent window in the engine. Guide toward the next checkpoint instead of
+                    // activating an unrelated ignition effect to manufacture that window.
+                    string board = Key(BotState.SelectChain, host);
+                    while (_next < checkpoints.Count - 1 &&
+                           checkpoints[_next] is { State: BotState.SelectChain, Answer.Key: "pass" } skipped &&
+                           skipped.Phase == host.Phase && board == Key(BotState.SelectChain, skipped.View))
+                    {
+                        _next++;
+                        _extra = 0;
+                    }
+                }
                 var (guided, stuck) = _r.Guide(prompt, host, _next, _attacked);
                 if (stuck != null)
                     return (null, false, $"their {prompt.State} (phase 0x{host.Phase:x}): {stuck}{_r.TheirTrail(host, _moves, _next)}");
@@ -451,7 +465,7 @@ namespace BotTest.Game.AI.Search
             string? label = data switch
             {
                 IdleCmdData idle => SearchActions.Idle(idle).FirstOrDefault(c => SearchActions.Packet(c.Response).AsSpan().SequenceEqual(packet))?.Label,
-                BattleCmdData battle => SearchActions.Battle(battle, anyOrder: true).FirstOrDefault(c => SearchActions.Packet(c.Response).AsSpan().SequenceEqual(packet))?.Label,
+                BattleCmdData battle => SearchActions.Battle(battle).FirstOrDefault(c => SearchActions.Packet(c.Response).AsSpan().SequenceEqual(packet))?.Label,
                 _ => null,
             };
             return label ?? "?";
@@ -616,7 +630,7 @@ namespace BotTest.Game.AI.Search
                 }
                 case BattleCmdData battle:
                 {
-                    var options = SearchActions.Battle(battle, anyOrder: true);
+                    var options = SearchActions.Battle(battle);
                     var done = Count(cp.View.EnemyMonsters.Where(m => m.Attacked && m.Code > 0).Select(m => m.Code));
                     var attack = options.FirstOrDefault(o => o.Key.StartsWith("attack:") &&
                         done.GetValueOrDefault(Canon(SearchActions.KeyCardId(o.Key))) > attacked.GetValueOrDefault(Canon(SearchActions.KeyCardId(o.Key))));
@@ -632,9 +646,9 @@ namespace BotTest.Game.AI.Search
                     bool matched = Key(BotState.SelectChain, host) == Key(BotState.SelectChain, cp.View);
                     // Our window in their Battle Phase with nothing on the board to show for it: their attack declaration (live Omega never
                     // marks their attackers; seen 2026-11-18: Mirror Force offered as Blue Thunder T-45 attacked, the replay never attacked).
-                    // The first attacker by zone (Omega's attack order); its target as the real game came out (OutcomePick).
+                    // With no attacker recorded, try an eligible attacker. OutcomePick reconstructs its target.
                     if (matched && cp.State == BotState.SelectChain && IsBattle(cp.Phase) &&
-                        SearchActions.Battle(battle).FirstOrDefault(o => o.Key.StartsWith("attack:") &&
+                        options.FirstOrDefault(o => o.Key.StartsWith("attack:") &&
                             attacked.GetValueOrDefault(Canon(SearchActions.KeyCardId(o.Key))) == 0) is { } declared)
                     {
                         int code = Canon(SearchActions.KeyCardId(declared.Key));

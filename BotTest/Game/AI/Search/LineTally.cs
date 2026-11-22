@@ -226,11 +226,15 @@ namespace BotTest.Game.AI.Search
             {
                 case IdleCmdData idle:
                     return OnMainMove(idle, packet, note);
-                case BattleCmdData battle when packet[0] == (byte)BattleAction.Attack && (battle.AttackableCards?.Length ?? 0) > 0:
-                    // Omega attacks with the first attacker in zone order, whatever index is sent.
+                case BattleCmdData battle when packet.Length >= 4 && BitConverter.ToUInt16(packet, 0) == (ushort)BattleAction.Attack:
+                {
+                    var attacker = SearchActions.AttackerFor(battle, BitConverter.ToUInt16(packet, 2));
+                    if (attacker.ActionIndex == null)
+                        return 0;
                     _attackedInLine = true;
-                    _idleSummons.Remove(Canonical(battle.AttackableCards![0].ID));
+                    _idleSummons.Remove(Canonical(attacker.ID));
                     return 0;
+                }
                 case SelectChainData chain when packet.Length >= 4:
                 {
                     int index = BitConverter.ToInt32(packet, 0);

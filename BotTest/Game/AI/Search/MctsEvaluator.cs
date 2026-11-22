@@ -16,6 +16,8 @@ namespace BotTest.Game.AI.Search
     /// </summary>
     internal sealed class MctsEvaluator
     {
+        internal bool RewardGladiatorBattles { get; init; }
+        internal Func<bool, OmegaBotWrapper.Enum.DuelPhase, SideSummary, bool>? BackrowDoomRule { get; init; }
         /// <summary>Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.</summary>
         [Tunable("Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.")]
         private static double FieldEffectWeight = 0.25, HeldEffectWeight = 0.1;

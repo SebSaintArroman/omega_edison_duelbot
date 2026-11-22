@@ -127,6 +127,20 @@ internal sealed partial class DuelHost
         return result;
     }
 
+    internal (DynamicCard? Own, DynamicCard? Opponent) BattlingCards(int viewer)
+    {
+        lock (_core)
+        {
+            if (_attack is not { } attack)
+                return (null, null);
+            bool ownAttacks = attack.Attacker.Controller == viewer;
+            var own = ownAttacks ? attack.Attacker : attack.Target;
+            var opponent = ownAttacks ? attack.Target : attack.Attacker;
+            return (own is { } ours ? CardAt(viewer, 0, ours.Location, (int)ours.Sequence) : null,
+                opponent is { } theirs ? CardAt(viewer, 1, theirs.Location, (int)theirs.Sequence) : null);
+        }
+    }
+
     /// <summary>/field-card-info and /bot-field-card-info: one card, by relative controller and Omega location.</summary>
     public DynamicCard? CardAt(int viewer, int relativeController, int location, int sequence)
     {

@@ -246,12 +246,13 @@ namespace BotTest.Game.AI.Brains
                 return null;
             var sets = (context.StateData.SpellSetableCards ?? Array.Empty<DynamicCard>())
                 .Where(card => card.ID > 0)
-                .OrderBy(card => card.HasType(CardType.Trap) ? 0 : 1).ToList();
-            if (sets.Count > 0)
+                .OrderBy(card => card.HasType(CardType.Trap) ? 0 : 1);
+            foreach (var card in sets)
             {
-                context.Bot.LogNote($"deck brain: set {CardNames.Get(sets[0].ID)}: {hand.Count} cards in hand, the End Phase would discard {over} for nothing " +
-                                    $"({(sets[0].HasType(CardType.Trap) ? "traps first" : "no trap left to set: a spell")})");
-                return sets[0].SetSpellTrap();
+                if (!await SharedSpellSetAllowedAsync(card))
+                    continue;
+                context.Bot.LogNote($"deck brain: set {CardNames.Get(card.ID)}: {hand.Count} cards in hand, the End Phase would discard {over} for nothing");
+                return card.SetSpellTrap();
             }
             if (await DeckHandLimitPlayAsync(context, over) is IdleCmdResponse deckPlay)
                 return deckPlay;

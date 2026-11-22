@@ -36,6 +36,8 @@ namespace BotTest.Game.AI.Brains
         }
 
         private TurnStartSnapshot? _turnStart;
+        private DuelBotWrapper? _strategicStateLogBot;
+        private TagRules.BotStrategicState? _lastLoggedStrategicState;
         private readonly List<TurnCheckpoint> _checkpoints = new();
 
         /// <summary>The wrapper's new-turn callback (IDecisionRefiner.TurnStartedAsync, from the adapter as soon as the bot exists, so
@@ -130,6 +132,15 @@ namespace BotTest.Game.AI.Brains
         {
             if (!IsSearchTwin)
             {
+                if (_strategicStateLogBot != bot)
+                {
+                    _strategicStateLogBot = bot;
+                    _lastLoggedStrategicState = null;
+                }
+                var strategicState = StrategicState;
+                bot.LogNote($"strategic state: {TagRules.DescribeStrategicState(strategicState, _lastLoggedStrategicState)} at {state}");
+                _lastLoggedStrategicState = strategicState;
+
                 try { await TrackTemporaryMonstersAsync(); }
                 catch { /* tracking is best effort */ }
                 try { await TrackTheirAttackersAsync(header); }

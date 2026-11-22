@@ -19,8 +19,6 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         public const string ShuraTakesVayu = "blackwing.shura-takes-vayu";
         /// <summary>Gale is mostly removal: no free-body summon when they have no face-up monster to shrink.</summary>
         public const string GaleIsRemoval = "blackwing.gale-is-removal";
-        /// <summary>Shura attacks before Bora when it can kill something (its kill brings a Blackwing): Shura's Normal Summon first, or Bora waits for Main Phase 2.</summary>
-        public const string ShuraAttacksFirst = "blackwing.shura-attacks-first";
         public const string BlackWhirlwind = "blackwing.black-whirlwind";
         /// <summary>Blizzard's revive on its Normal Summon: always (also when it shares a chain prompt with Black Whirlwind).</summary>
         public const string BlizzardRevive = "blackwing.blizzard-revive";

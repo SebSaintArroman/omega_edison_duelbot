@@ -42,7 +42,7 @@ namespace BotTest.Game.AI.Brains
         /// Warrior / Waboku: our monster survives, battles, and gets its payoff (a tag-out). The biggest threat we can afford
         /// the damage from: any amount we survive (none with Waboku). Null when there's no such attack.
         /// </summary>
-        private async Task<BattleCmdResponse?> TryProtectedAttackAsync(DecisionContext<BattleCmdData> context, DynamicCard[] attackableCardArray,
+        private async Task<BattleCmdResponse?> TryProtectedAttackAsync(DecisionContext<BattleCmdData> context,
             List<DynamicCard> attackableCards, List<DynamicCard> opponentMonsters)
         {
             var protection = await BattleProtectionAsync();
@@ -64,12 +64,12 @@ namespace BotTest.Game.AI.Brains
                     .Select(target => (x.Attacker, Target: target, x.Gain)))
                 .OrderByDescending(x => TargetThreat(x.Target))
                 .FirstOrDefault();
-            if (pick.Gain == null || !attackableCardArray.TryGetByID(pick.Attacker.ID, out _, out int index) || !Rule(DeckRules.ProtectedAttack))
+            if (pick.Gain == null || !Rule(DeckRules.ProtectedAttack))
                 return null;
             string how = protection is { } used ? $"{used.Name} keeps it alive" : $"it's in defence, so ours survives ({Math.Max(0, pick.Target.Defense - pick.Attacker.Attack)} damage)";
             AimAt(context.Bot, pick.Target, AimKind.Deliberate, $"attack {CardNames.Get(pick.Target.ID)} ({Power(pick.Target)}) with {CardNames.Get(pick.Attacker.ID)} " +
                                 $"({pick.Attacker.Attack}): {how}, and {pick.Gain}");
-            return attackableCardArray[index].DeclareAttack();
+            return pick.Attacker.DeclareAttack();
         }
 
         /// <summary>

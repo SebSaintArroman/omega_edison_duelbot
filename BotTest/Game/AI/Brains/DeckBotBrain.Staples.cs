@@ -644,10 +644,11 @@ namespace BotTest.Game.AI.Brains
 
         /// <summary>Set cards worth keeping face-down as bait: chained when the opponent's removal would hit them.</summary>
         // Waboku too: set, it's chained when their removal hits it, rather than lost (user, 2026-11-11).
-        protected static readonly int[] DefaultBaitCards = { JarOfGreedId, LegacyOfYataGarasuId, MysticalSpaceTyphoonId, WabokuId };
+        /// <summary>Shared bait-tagged cards; deck brains add their own (e.g. Burial from a Different Dimension).</summary>
+        protected static readonly int[] DefaultBaitCards = CardRuleRegistry.CardsWithTag(TagRules.Tag.Bait).ToArray();
 
         /// <summary>Bait cards for this deck right now (deck brains add their own, e.g. Burial from a Different Dimension).</summary>
-        protected virtual IReadOnlyCollection<int> BaitCardIds => DefaultBaitCards;
+        protected virtual IReadOnlyCollection<int> BaitCardIds => CardRuleRegistry.CardsWithTag(TagRules.Tag.Bait);
 
         /// <summary>
         /// Whether their card being activated targets this set spell/trap of ours (their Lyla, MST, Dust Tornado...): it's
@@ -1856,13 +1857,21 @@ namespace BotTest.Game.AI.Brains
         // the time a trigger after the battle asks us (seen 2026-11-18: Ryko, flipped by Chimeratech Fortress Dragon's attack, destroyed that
         // same Chimeratech: "the one that had attacked", while the other Chimeratech and Machina Fortress were still to come).
         private (int Turn, HashSet<int> Zones) _theirAttackedZones = (-1, new HashSet<int>());
+        private (int Turn, HashSet<(int Zone, int Id)> Monsters) _opponentBeforeTheirTurn = (-1, new());
+        private int _opponentSummonedAndAttackedWithThreat = -1;
 
         /// <summary>At every prompt of ours (PromptArrived) in their Battle Phase: the monster of theirs battling now has attacked.</summary>
         protected async Task TrackTheirAttackersAsync(BotStateHeader header)
         {
             var phase = (DuelPhase)header.CurrentPhase;
-            if (IsOwnTurn(header) ||
-                phase is not (DuelPhase.BattleStart or DuelPhase.BattleStep or DuelPhase.Damage or DuelPhase.DamageCal or DuelPhase.Battle))
+            if (IsOwnTurn(header))
+            {
+                _opponentBeforeTheirTurn = (header.CurrentTurn, (await GetEnemyMonsterCardsAsync())
+                    .Where(card => card.ID > 0 && card.IsFaceup())
+                    .Select(card => ((int)card.CurrentCoordinates.Sequence, card.ID)).ToHashSet());
+                return;
+            }
+            if (phase is not (DuelPhase.BattleStart or DuelPhase.BattleStep or DuelPhase.Damage or DuelPhase.DamageCal or DuelPhase.Battle))
                 return;
             var current = await CurrentField.GetBotBattlingMonster(isOwnSide: false);
             if (current.ID == 0 || current.CurrentCoordinates.Location != (byte)CardLocation.MonsterZone)
@@ -1870,6 +1879,12 @@ namespace BotTest.Game.AI.Brains
             if (_theirAttackedZones.Turn != header.CurrentTurn)
                 _theirAttackedZones = (header.CurrentTurn, new HashSet<int>());
             _theirAttackedZones.Zones.Add(current.CurrentCoordinates.Sequence);
+            if (_opponentBeforeTheirTurn.Turn == header.CurrentTurn - 1 &&
+                !_opponentBeforeTheirTurn.Monsters.Contains((current.CurrentCoordinates.Sequence, current.ID)) &&
+                BoardAssessment.Threats((await GetBotMonsterCardsAsync()).Where(card => card.IsFaceup() && card.IsAttack())
+                    .Select(card => card.Attack),
+                    new[] { new BoardAssessment.Defender(current.Attack, true, false, current.ID) }).Count > 0)
+                _opponentSummonedAndAttackedWithThreat = header.CurrentTurn;
         }
 
         // Our monsters on the field at the last decision before their Battle Phase this turn (their turn number), for counting

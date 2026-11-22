@@ -220,9 +220,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         // ------------------------------------------------------------------ main phase
 
         public override async Task<IdleCmdResponse> OnIdleCmdAsync(DecisionContext<IdleCmdData> context, CancellationToken ct = default) =>
-            // A Main Phase 1 summon that would block our attack order (server zone order) waits for Main Phase 2.
             // A decided strong summon first flips our face-down Ryko to pop their backrow (Bottomless / Torrential).
-            await FlipBeforeSummonAsync(context, await DeferSummonBlockingAttackOrderAsync(context, await DecideMainPhaseAsync(context, ct)));
+            await FlipBeforeSummonAsync(context, await DecideMainPhaseAsync(context, ct));
 
         private async Task<IdleCmdResponse> DecideMainPhaseAsync(DecisionContext<IdleCmdData> context, CancellationToken ct)
         {
@@ -755,14 +754,6 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             }
             return null;
         }
-
-        // Summons are judged at Card Trooper's 1900 (it mills in the priority window right after the summon), e.g. whether
-        // it would block the attack order or can attack something itself.
-        protected override int ExpectedAttackAfterSummon(DynamicCard card) => EffectiveAttack(card);
-
-        // Zone placement plans for Card Trooper's 1900 (it mills in the priority window right after the summon).
-        protected override int PlacementAttack(int cardId, int attack) =>
-            cardId == VayuCardId.CardTrooper ? Math.Max(attack, 1900) : attack;
 
         private int _lastActivatedCard;
 

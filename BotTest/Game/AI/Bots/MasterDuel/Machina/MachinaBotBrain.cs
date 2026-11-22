@@ -253,7 +253,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         // ------------------------------------------------------------------ main phase
 
         public override async Task<IdleCmdResponse> OnIdleCmdAsync(DecisionContext<IdleCmdData> context, CancellationToken ct = default) =>
-            CountSetUnderJinzo(context, await FlipBeforeSummonAsync(context, await DeferSummonBlockingAttackOrderAsync(context, await DecideMainPhaseAsync(context, ct))));
+            CountSetUnderJinzo(context, await FlipBeforeSummonAsync(context, await DecideMainPhaseAsync(context, ct)));
 
         private async Task<IdleCmdResponse> DecideMainPhaseAsync(DecisionContext<IdleCmdData> context, CancellationToken ct)
         {
@@ -717,14 +717,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             if ((DHint)data.SelectionHint == DHint.FMATERIAL && cards.Length > 0 &&
                 cards.All(card => card.CurrentCoordinates.Location == (byte)CardLocation.Deck) && Rule(MachinaRules.FutureFusionMaterials))
             {
-                if (_futureFusionPickTurn != context.Header.CurrentTurn)
-                    (_futureFusionPickTurn, _futureFusionFortresses) = (context.Header.CurrentTurn, 0);
-                var wanted = FutureFusionMaterials(cards.ToList(), _futureFusionFortresses);
+                var wanted = FutureFusionMaterials(cards);
                 int next = wanted.Count > 0 ? wanted.Min() : data.Minimum > 0 ? 0 : -1;
                 if (next >= 0)
                 {
-                    if (cards[next].IsCode(MachinaCardId.MachinaFortress))
-                        _futureFusionFortresses++;
                     Note(context, $"Future Fusion sends {CardNames.Get(cards[next].ID)}");
                     return new List<byte> { (byte)next };
                 }
@@ -1463,29 +1459,17 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         }
 
         /// <summary>
-        /// Future Fusion's sends among these deck cards (indexes): one Cyber Dragon (Overdragon's required material), every
-        /// Jinzo and Jinzo - Returner, and Fortresses up to two in all. Gearframe, Force and the rest stay in the deck.
+        /// Machina's Future Fusion materials for Chimeratech Overdragon.
         /// </summary>
-        private static List<int> FutureFusionMaterials(List<DynamicCard> cards, int fortressesAlready = 0)
+        private static List<int> FutureFusionMaterials(IReadOnlyList<DynamicCard> cards)
         {
             var picks = new List<int>();
-            int cyber = cards.FindIndex(card => card.IsCode(MachinaCardId.CyberDragon));
-            if (cyber >= 0)
-                picks.Add(cyber);
             for (int i = 0; i < cards.Count; i++)
-                if (cards[i].IsCode(MachinaCardId.Jinzo, MachinaCardId.JinzoReturner))
+                if (cards[i].IsCode(MachinaCardId.CyberDragon, MachinaCardId.Jinzo,
+                    MachinaCardId.JinzoReturner, MachinaCardId.MachinaFortress))
                     picks.Add(i);
-            int fortresses = fortressesAlready;
-            for (int i = 0; i < cards.Count && fortresses < 2; i++)
-                if (cards[i].IsCode(MachinaCardId.MachinaFortress))
-                {
-                    picks.Add(i);
-                    fortresses++;
-                }
             return picks;
         }
-
-        private int _futureFusionPickTurn = -1, _futureFusionFortresses;
 
         // Traps set this turn while our lasting Jinzo was out (counted when the set is sent).
         private int _setUnderJinzoTurn = -1, _setUnderJinzo;
@@ -1645,8 +1629,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 return new List<byte> { (byte)host.Index };
             }
 
-            // Future Fusion's materials from the deck (Chimeratech Overdragon: Cyber Dragon + Machines): every Jinzo and Jinzo -
-            // Returner, and up to two Fortresses (user, 2026-11-10: "send all your jinzo cards and a fortress or two").
+            // Future Fusion offers Chimeratech Overdragon's materials from the deck.
             if (hint == DHint.FMATERIAL && fromDeck && Rule(MachinaRules.FutureFusionMaterials))
             {
                 var wanted = FutureFusionMaterials(indexed.Select(x => x.Card).ToList());

@@ -57,6 +57,12 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         internal virtual double SearchSetupValue(DuelSim.Engine.SideSummary own) => 0;
 
+        internal virtual Func<DuelSim.Engine.SideSummary, double> SearchSetupFor(SearchView view) => SearchSetupValue;
+
+        internal virtual bool RewardGladiatorBattles => false;
+
+        internal virtual Func<bool, DuelPhase, DuelSim.Engine.SideSummary, bool>? SearchBackrowDoomRule => null;
+
         /// <summary>The deck's value for next turn at the end of a line, given the cards we activated this turn (Black Whirlwind's kept
         /// Normal Summon). Card units; 0 by default.</summary>
         internal virtual double SearchNextTurnValue(DuelSim.Engine.SideSummary own, IReadOnlyCollection<int> activatedThisTurn) => 0;
@@ -306,7 +312,7 @@ namespace BotTest.Game.AI.Brains
             }
         }
 
-        /// <summary>Records that the brain held back attacking with this monster (the first attacker in zone order).</summary>
+        /// <summary>Records that the brain held back attacking with this monster.</summary>
         protected void HoldAttack(int cardId, string rule)
         {
             if (cardId > 0)
@@ -601,6 +607,16 @@ namespace BotTest.Game.AI.Brains
             if (!IsSearchTwin)
                 { _prevPlayed = _lastPlayed; _lastPlayed = null; }
             var chosen = await RefineIdleCoreAsync(context, brainChoice, ct);
+            if (!await SharedIdleMoveAllowedAsync(context, chosen))
+            {
+                if (await SharedIdleMoveAllowedAsync(context, brainChoice))
+                    chosen = brainChoice;
+                else if (context.StateData.CanEndPhase)
+                    chosen = MainAction.ToEndPhase;
+                else if (context.StateData.CanBattlePhase)
+                    chosen = MainAction.ToBattlePhase;
+            }
+            chosen = await SetDustshootBeforeEndingAsync(context, chosen);
             // The move is final: commitments made for it take effect, the rest are dropped; tracking (DeckBotBrain.TurnPlan).
             await AfterMainMoveAsync(context, chosen, brainChoice);
             return chosen;
@@ -613,8 +629,7 @@ namespace BotTest.Game.AI.Brains
             // first decision of a turn: a new tree and the turn-start budget (4 s in total).
             if (TryGetActivable(context.StateData, Search.Mcts.PotOfGreedId, out var pot))
             {
-                context.Bot.LogNote("deck brain: activate Pot of Greed: draw 2 (fixed rule: Pot of Greed at the first chance); " +
-                                    "the next decision is searched afresh like a turn start");
+                context.Bot.LogNote("mandatory action: activate Pot of Greed at the first opportunity");
                 if (!IsSearchTwin)
                 {
                     _turnStartTurn = -1;
@@ -623,13 +638,15 @@ namespace BotTest.Game.AI.Brains
                 }
                 return pot.MainActivateFromIndex();
             }
+            if (await MandatoryAllureAsync(context.StateData) is IdleCmdResponse allure)
+            {
+                context.Bot.LogNote("mandatory action: activate Allure of Darkness at the first opportunity with a DARK monster in hand");
+                return allure;
+            }
             try
             {
                 // Round-robin 43: whichever rule chose the Battle Phase, spare attackers go to defence first against a likely
                 // Mirror Force (the next decision comes back here for the next one, then the Battle Phase).
-                // A monster first in zone order with nothing to attack blocks the ones behind it: to defence before the battle
-                // (free), rather than a chip crash to let the next one through (seen 2026-11-13: two Armageddon Knights took 600
-                // each into Dupe Frog so Fortress could follow; both could have switched to defence).
                 // Ending the turn over the hand limit (more than 6: the End Phase discards down to 6): set spells/traps first, traps
                 // before spells, rather than discard them for nothing; then the deck's own last resort (Machina: a Fortress
                 // summon). User, 2026-11-13: "if you have more than 6 cards in hand you could always set spell and traps
@@ -639,31 +656,7 @@ namespace BotTest.Game.AI.Brains
                      (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 && !context.StateData.CanBattlePhase) &&
                     await HandLimitPlayAsync(context) is IdleCmdResponse handLimit)
                     brainChoice = handLimit;
-                var opponentsNow = await GetEnemyMonsterCardsAsync();
-                if (brainChoice.Action == MainAction.ToBattlePhase)
-                    await RefreshRewardOnDestroyAsync(opponentsNow); // our monsters and their effect flags, as BlocksAttackOrder reads them
-                var unblock = brainChoice.Action == MainAction.ToBattlePhase && (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1
-                    ? (context.StateData.ReposableCards ?? Array.Empty<DynamicCard>()).Where(card => card.IsFaceup() && card.IsAttack())
-                        .Select(card => (Card: card, Why: BlocksAttackOrder(card, opponentsNow))).FirstOrDefault(x => x.Why != null)
-                    : default;
-                if (brainChoice.Action == MainAction.ToBattlePhase && (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 &&
-                    await GorzAttackOrderAsync(context.StateData, opponentsNow) is { } gorzOrder && Rule(DeckRules.GorzAttackOrder))
-                {
-                    context.Bot.LogNote($"deck brain: {CardNames.Get(gorzOrder.Card.ID)} to defence before the Battle Phase: {gorzOrder.Why}");
-                    brainChoice = gorzOrder.Card.Reposition();
-                }
-                else if (brainChoice.Action == MainAction.ToBattlePhase && (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 &&
-                         await BattleRemovalOrderAsync(context.StateData, opponentsNow) is { } removalOrder && Rule(DeckRules.AvoidBattleRemoval))
-                {
-                    context.Bot.LogNote($"deck brain: {CardNames.Get(removalOrder.Card.ID)} to defence before the Battle Phase: {removalOrder.Why}");
-                    brainChoice = removalOrder.Card.Reposition();
-                }
-                else if (unblock.Why != null && Rule(DeckRules.UnblockAttackOrder))
-                {
-                    context.Bot.LogNote($"deck brain: {CardNames.Get(unblock.Card.ID)} to defence before the Battle Phase: {unblock.Why}");
-                    brainChoice = unblock.Card.Reposition();
-                }
-                else if (brainChoice.Action == MainAction.ToBattlePhase && await ShelterBeforeBattleAsync(context) is IdleCmdResponse shelter)
+                if (brainChoice.Action == MainAction.ToBattlePhase && await ShelterBeforeBattleAsync(context) is IdleCmdResponse shelter)
                     brainChoice = shelter;
                 // Round-robin 9: our set MST at a fresh set card before a key monster attacks.
                 else if (brainChoice.Action == MainAction.ToBattlePhase && await MstBeforeKeyAttackAsync(context) is IdleCmdResponse mstFirst)
@@ -736,26 +729,27 @@ namespace BotTest.Game.AI.Brains
 
         public async Task<BattleCmdResponse> RefineBattleAsync(DecisionContext<BattleCmdData> context, BattleCmdResponse brainChoice, CancellationToken ct = default)
         {
+            var chosen = brainChoice;
             try
             {
                 // No "end the turn" from the Battle Phase: Main Phase 2 comes first, as the rules say (CSV S10; the game passes through it anyway).
                 if (brainChoice.Action == BattleAction.ToEndPhase && context.StateData.CanMainPhaseTwo)
-                    brainChoice = BattleAction.ToMainPhaseTwo;
+                    chosen = brainChoice = BattleAction.ToMainPhaseTwo;
                 if (!IsSearchTwin)
                 {
                     _expectedLine = null;
                     _prevPlayed = _lastPlayed; _lastPlayed = null;
                 }
-                var chosen = await SearchBattleAsync(context, brainChoice, ct);
+                chosen = await SearchBattleAsync(context, brainChoice, ct);
                 if (chosen.Action == BattleAction.ToEndPhase && !IsSearchTwin)
                     await RetargetDeadTimeAsync(context.Bot, context.Header, await CurrentField.GetBotField(), endingOurTurn: true);
-                return chosen;
             }
             catch (Exception ex)
             {
-                context.Bot.LogNote($"search failed, keeping the brain's choice: {ex.Message}");
-                return brainChoice;
+                context.Bot.LogNote($"battle search failed: {ex.Message}");
             }
+            await RecordBattleChoiceAsync(context, chosen);
+            return chosen;
         }
 
         private async Task<BattleCmdResponse> SearchBattleAsync(DecisionContext<BattleCmdData> context, BattleCmdResponse brainChoice, CancellationToken ct)
@@ -771,10 +765,7 @@ namespace BotTest.Game.AI.Brains
             }
             if (!SearchWanted(context.Bot))
                 return brainChoice;
-            // An attack is always the first attacker's (server attack order), whatever index the brain sent.
-            var brainKey = brainChoice.Action == BattleAction.Attack
-                ? choices.FirstOrDefault(c => c.Key.StartsWith("attack:"))?.Key
-                : choices.FirstOrDefault(c => c.Response.Action == brainChoice.Action && c.Response.Index == brainChoice.Index)?.Key;
+            var brainKey = choices.FirstOrDefault(c => c.Response.Action == brainChoice.Action && c.Response.Index == brainChoice.Index)?.Key;
             if (choices.Count < 2 || brainKey == null)
                 return brainChoice;
 
@@ -1461,7 +1452,7 @@ namespace BotTest.Game.AI.Brains
         {
             var picks = outcome.FollowUps?.GetValueOrDefault(chosenKey);
             var best = picks?.FirstOrDefault(p => TargetFromKey(p.Key) != null);
-            string? bestKey = best?.Key ?? (overriding || chosenKey == outcome.Root.FirstOrDefault()?.Key ? outcome.FollowUpKey : null);
+            string? bestKey = best?.Key ?? (chosenKey == outcome.Root.FirstOrDefault()?.Key ? outcome.FollowUpKey : null);
             if (TargetFromKey(bestKey) is not DynamicCard target)
             {
                 if (overriding)
@@ -1697,7 +1688,12 @@ namespace BotTest.Game.AI.Brains
             var field = await CurrentField.GetBotField();
             var own = field.OwnSide;
             var enemy = field.EnemySide;
-            var view = new SearchView();
+            var view = new SearchView
+            {
+                RealTurn = _currentHeader.CurrentTurn,
+                StrategicState = StrategicState,
+                OpponentSummonedAndAttackedWithThreatTurn = _opponentSummonedAndAttackedWithThreat
+            };
             view.LifePoints[0] = own.LifePoints;
             view.LifePoints[1] = enemy.LifePoints;
 

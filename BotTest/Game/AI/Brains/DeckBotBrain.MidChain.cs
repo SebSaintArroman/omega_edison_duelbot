@@ -186,6 +186,9 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         public async Task<int?> RefineChainAsync(DecisionContext<SelectChainData> context, int brainIndex, CancellationToken ct = default)
         {
+            if (await ApplySharedChainRulesAsync(context, brainIndex) is int sharedAnswer)
+                return sharedAnswer;
+
             // The holds for this window, after the deck brain's answer (real bot and search twin alike).
             try { await RecordChainHoldsAsync(context, brainIndex); }
             catch { /* holds are guidance only */ }

@@ -89,9 +89,6 @@ namespace OmegaBotWrapper
             BotLogger.Log(_bot.BotID, "BattleCmd", $"Response -> Action={battleResponse.Action}({(int)battleResponse.Action}) Index={battleResponse.Index}");
             await LogDecisionAsync(BotState.SelectBattleCmd, battleState.CurrentStateData, battleChosen, battleResponse);
 
-            // Known server issue (README): Omega ignores the attack index and always attacks with the first monster in
-            // AttackableCards (zone order). Every logged multi-attacker battle fits that, whatever index was sent, so
-            // sending the zone instead doesn't help either. Brains plan around it (see DeckBotBrain's battle logic).
             return BotResponseWriter.WriteBattleCmd(battleResponse);
         }
 

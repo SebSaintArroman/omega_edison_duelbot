@@ -131,6 +131,20 @@ namespace BotTest.Game.AI.Brains
             bool battleAhead = (DuelPhase)header.CurrentPhase == DuelPhase.Main1 && header.CurrentTurn > 1;
             bool addsMonster = newAtk > 0;
 
+            if (cardId == PlaguespreaderZombieId && extraDeck && context.StateData is IdleCmdData plagueIdle &&
+                TryGetActivable(plagueIdle, PlaguespreaderZombieId, out var plague) &&
+                plague.CurrentCoordinates.Location == (byte)CardLocation.Grave)
+            {
+                bool answersThreat = answered.Count > 0 || effectAnswer != null;
+                bool canGoForGame = battleAhead && clockAfter == 1;
+                bool leavesUnder400 = oppLp < 400 || battleAhead &&
+                    BoardAssessment.TurnsToWin(attackers, defenders, oppLp - 399) == 1;
+                if (!answersThreat && !canGoForGame && !leavesUnder400)
+                    return null;
+                if (leavesUnder400 && !answersThreat && !canGoForGame)
+                    return $"{what}: the board can leave the opponent below 400 LP without it";
+            }
+
             // Already lethal on board: any one of our attacks wins, so more monsters only add exposure to Mirror Force
             // / Torrential. (Removal that clears a blocker is still fine.)
             if (battleAhead && clockNow == 1 && addsMonster && Rule(DeckRules.HoldWhenAlreadyLethal))

@@ -18,7 +18,7 @@ namespace BotTest.Game.AI.Search
         internal sealed class LineState
         {
             public readonly int[] IdleActions = new int[2];
-            /// <summary>ATK of the monster attacking now (the first attacker of the last battle prompt).</summary>
+            /// <summary>ATK of the monster attacking now (the selected attacker from the last battle prompt).</summary>
             public int AttackerAtk;
             /// <summary>ATK of the other monsters that could still attack this Battle Phase (from the same battle prompt).</summary>
             public List<int> OtherAttackers = new();
@@ -70,10 +70,6 @@ namespace BotTest.Game.AI.Search
                     var choices = SearchActions.Battle(battle);
                     var attackers = (battle.AttackableCards ?? Array.Empty<DynamicCard>())
                         .Where(card => card.ActionIndex is { Length: > (int)BattleAction.Attack }).ToList();
-                    // Our own side (no brain twin) is held to the server's zone order like the real bot; the opponent may
-                    // be a person and attacks in any order (user, 2026-11-12).
-                    if (prompt.Player == 0 && attackers.Count > 1)
-                        attackers = attackers.Take(1).ToList();
                     if (attackers.Count > 0)
                     {
                         var defending = host.Summary(1 - prompt.Player);

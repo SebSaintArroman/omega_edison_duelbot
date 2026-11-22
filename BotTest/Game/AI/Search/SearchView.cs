@@ -79,6 +79,13 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>The real turn number at the decision (the rebuilt turn is turn 1; our brain playing the line sees the real one).</summary>
         public int RealTurn { get; set; } = 1;
+        public TagRules.BotStrategicState StrategicState { get; init; } = TagRules.BotStrategicState.Base;
+
+        /// <summary>The turn on which we observed the opponent summon and attack with a threat.</summary>
+        public int OpponentSummonedAndAttackedWithThreatTurn { get; init; } = -1;
+
+        public bool OpponentSummonedAndAttackedWithThreatBefore(int realTurn) =>
+            realTurn > 1 && OpponentSummonedAndAttackedWithThreatTurn == realTurn - 1;
 
         /// <summary>The decision is in the Battle Phase: the rebuilt turn goes straight to it.</summary>
         public bool InBattlePhase { get; set; }
@@ -159,6 +166,8 @@ namespace BotTest.Game.AI.Search
             {
                 EnemyHandCount = EnemyHandCount, EnemyExtraCount = EnemyExtraCount, NormalSummonUsed = NormalSummonUsed,
                 BattlePhaseDone = BattlePhaseDone, FirstTurnOfDuel = FirstTurnOfDuel, RealTurn = RealTurn, InBattlePhase = InBattlePhase,
+                StrategicState = StrategicState,
+                OpponentSummonedAndAttackedWithThreatTurn = OpponentSummonedAndAttackedWithThreatTurn,
                 DrawsAtStart = DrawsAtStart, Record = Record, SkipTurns = SkipTurns, BlankNextDraw = BlankNextDraw, OnlyAttackerZone = OnlyAttackerZone,
             };
             v.EnemyKnownExtra.AddRange(EnemyKnownExtra);

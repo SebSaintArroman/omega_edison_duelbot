@@ -102,7 +102,6 @@ Each line has a short explanation. Restart the bot after editing.
 
 ## Known limits of Omega's bot API
 
-- Omega always attacks with the bot's first attacker by zone, whichever one the bot names. The bot plans its attack order around this.
 - Omega never asks the bot "attack directly?". A monster that can attack directly always does, even if there are monsters on the field.
 - Effects that choose a zone to disable (Ojama King, Boompoline!!) aren't handled by the server and can end the duel.
 

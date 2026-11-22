@@ -1,0 +1,46 @@
+Exceptions to set-only cards:
+	- in threatened state and have a tuner and no other way to make a synchro that answers the threat 
+	-  opponent would be left on 200 or less life points 
+
+Exceptions to do not summon cards:
+If there is no other available normal or special summon, have no monsters and the opponent has enough attack points to destroy you next turn
+
+bait rule: does not count towards heavy storm risk
+good discard rule: 
+non quick play spell rule: do not set
+
+Deck specific future fusion logic:
+Jinzo: send all jinzo, jinzo returner cyber dragon, machina fortress in deck.
+
+Plaguespreader:
+Good discard 
+Activate only if it could be used for a synchro summon that would answer a threat, or could be used for a synchro summon that would go for game, or opponents life points would be left on less than 400 without it
+
+Allure of Darkness:
+If the bot is in the Desperate state and has no DARK monsters in hand, set or summon the other cards if the whole sequence can leave Allure as the only card in hand. Ignore the usual set window for this routine, then activate Allure.
+
+Treeborn frog:
+If this is in grave during draw phase, consider all spell and traps doomed until standby phase
+
+All gladiator beast monsters:
+Do not set 
+Exception: have waboku
+
+Gladiator beast deck routine:
+“Go for gyzarus”: if opponent has a potential bottomless trap hole or a potential mirror force, and has two or more cards on field, not including expendable monsters, and does not have stardust dragon, and you have only bestiari on field and another glad in hand, or another glad on field and bestiari in hand, then ignore the do not set rule for gladiator beasts and set bestiari (if not on field) or another gladiator beast (if bestiari is on field). Then immediately perform a special summon of gyzarus.
+
+Frog deck routine:
+"clear for treeborn": if it's opponent's end phase and you have treeborn frog in grave and a monarch in hand and face down spell/traps on the field: treat all spell/traps as doomed and activate them if possible.
+
+frog deck rule:
+"set up treeborn": if there is no treeborn frog on field or in grave, then any plan that ends with treeborn frog in grave should get a +5 bonus
+
+rule for cards which increase attack - should only be used if the monster is battling another monster and would lose the battle, and the attack boost would make it win the battle.
+note: if there are multiple effects of this kind that could be activated, count the total atk boost for this calcualtion, and use the minimum number of cards to get the required attack boost 
+exception: doomed
+exception: attack boost would win the game from damage
+
+gladiator beast deck rule:
+"gladiator battling rule": gladiator beast monsters should get a bonus of 1 card unit for attacking, provided they survive the attack.
+
+

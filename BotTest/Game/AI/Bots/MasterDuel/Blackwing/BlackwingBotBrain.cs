@@ -236,9 +236,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         // ------------------------------------------------------------------ main phase
 
         public override async Task<IdleCmdResponse> OnIdleCmdAsync(DecisionContext<IdleCmdData> context, CancellationToken ct = default) =>
-            // A Main Phase 1 summon that would block our attack order (server zone order) waits for Main Phase 2.
             // A decided strong summon first flips our face-down Ryko to pop their backrow (Bottomless / Torrential).
-            await FlipBeforeSummonAsync(context, await DeferSummonBlockingAttackOrderAsync(context, await DecideMainPhaseAsync(context, ct)));
+            await FlipBeforeSummonAsync(context, await DecideMainPhaseAsync(context, ct));
 
         private async Task<IdleCmdResponse> DecideMainPhaseAsync(DecisionContext<IdleCmdData> context, CancellationToken ct)
         {
@@ -811,14 +810,6 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             }
             return null;
         }
-
-        // Summons are judged at Card Trooper's 1900 (it mills in the priority window right after the summon), e.g. whether
-        // it would block the attack order or can attack something itself.
-        protected override int ExpectedAttackAfterSummon(DynamicCard card) => EffectiveAttack(card);
-
-        // Zone placement plans for Card Trooper's 1900 (it mills in the priority window right after the summon).
-        protected override int PlacementAttack(int cardId, int attack) =>
-            cardId == BlackwingCardId.CardTrooper ? Math.Max(attack, 1900) : attack;
 
         private int _lastActivatedCard;
 
@@ -2614,30 +2605,9 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             bool galeTarget = enemyMonsters.Any(card => card.IsFaceup() && card.Attack > 0);
             if (!galeTarget && TryGetSpecialSummon(state, BlackwingCardId.BlackwingGaleTheWhirlwind, out _))
                 Hold(BlackwingCardId.BlackwingGaleTheWhirlwind, MainAction.SpSummon, BlackwingRules.GaleIsRemoval);
-            // Shura attacks first when it can kill something (its kill brings a Blackwing from the deck: a whole extra card,
-            // more than Bora's piercing damage; user, 2026-11-12). Omega ignores our zone choice and fills zones centre-out
-            // (M3, M2, M4, M1, M5), attacking in zone order: a free body summoned now can land ahead of Shura. So the Normal
-            // Summon of a Shura from the hand goes first, and with a Shura already out, a body that would land ahead of it waits
-            // for Main Phase 2.
-            int[] centreOut = { 2, 1, 3, 0, 4 };
-            var takenZones = botMonsters.Where(card => card.ID > 0 || card.CurrentCoordinates.Location != 0).Select(card => (int)card.CurrentCoordinates.Sequence).ToHashSet();
-            int nextZone = centreOut.FirstOrDefault(zone => !takenZones.Contains(zone), -1);
-            bool shuraKill = battleAhead && enemyMonsters.Any(card => !card.IsFaceup() || (card.IsAttack() ? card.Attack : card.Defense) < 1800);
-            bool shuraInHand = !NormalSummonUsed(context.Header) && (state.SummonableCards ?? Array.Empty<DynamicCard>()).Any(card => card.IsCode(BlackwingCardId.BlackwingShuraTheBlueFlame));
-            bool aheadOfShura = botMonsters.Any(card => card.IsFaceup() && card.IsAttack() && !card.Attacked &&
-                                                        card.IsCode(BlackwingCardId.BlackwingShuraTheBlueFlame) && card.CurrentCoordinates.Sequence > nextZone);
-            bool bodyWaitsForShura = shuraKill && (shuraInHand || aheadOfShura) && Rule(BlackwingRules.ShuraAttacksFirst);
-            if (bodyWaitsForShura && TryGetSpecialSummon(state, BlackwingCardId.BlackwingBoraTheSpear, out _))
-            {
-                Note(context, shuraInHand
-                    ? "Bora waits: summon Shura first so it lands in the earlier zone and attacks first (its kill brings a Blackwing from the deck)"
-                    : $"Bora waits for Main Phase 2: summoned now it lands in M{nextZone + 1}, ahead of Shura, and would attack first");
-                Hold(BlackwingCardId.BlackwingBoraTheSpear, MainAction.SpSummon, BlackwingRules.ShuraAttacksFirst);
-            }
             foreach (int id in new[] { BlackwingCardId.BlackwingBoraTheSpear, BlackwingCardId.BlackwingGaleTheWhirlwind })
                 if (TryGetSpecialSummon(state, id, out var body) && body.CurrentCoordinates.Location == (byte)CardLocation.Hand && Rule(BlackwingRules.FreeBody) &&
-                    !(id == BlackwingCardId.BlackwingGaleTheWhirlwind && !galeTarget && Rule(BlackwingRules.GaleIsRemoval)) &&
-                    !(id == BlackwingCardId.BlackwingBoraTheSpear && bodyWaitsForShura))
+                    !(id == BlackwingCardId.BlackwingGaleTheWhirlwind && !galeTarget && Rule(BlackwingRules.GaleIsRemoval)))
                 {
                     // Round-robin 33: against their unknown set cards, a body the attack doesn't need stays in hand (Mirror Force
                     // took Shura and both Boras for one Gearframe).

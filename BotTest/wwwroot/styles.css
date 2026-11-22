@@ -733,10 +733,6 @@ option {
 /* Layout: terminal and comment sidebar side by side at a fixed height, each scrolling on its own, so the comment box
    never moves as output arrives. Stacks on narrow screens. */
 
-.status-compact {
-  margin-top: 1.1rem;
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -901,6 +897,24 @@ option {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+.entry-strategic-state {
+  order: 1;
+  margin-inline-start: auto;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.entry-strategic-state[data-state="threatened"] { color: var(--accent-strong); }
+.entry-strategic-state[data-state="desperate"] { color: var(--danger); }
 
 .entry-caret {
   width: 0.7rem;
@@ -1767,19 +1781,20 @@ kbd {
   font-size: 0.85rem;
 }
 
-.panel-selection .status-compact {
-  margin-top: 0.55rem;
-  gap: 0.4rem 0.6rem;
-}
-
 .panel-selection .status-badge {
+  align-self: center;
   padding: 0.25rem 0.65rem;
   font-size: 0.72rem;
 }
 
 .panel-selection .status-meta {
+  margin-top: 0.55rem;
   font-size: 0.82rem;
   line-height: 1.35;
+}
+
+.panel-selection .status-meta:empty {
+  display: none;
 }
 
 .panel-selection .comment-panel {

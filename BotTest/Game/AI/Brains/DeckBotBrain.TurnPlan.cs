@@ -90,7 +90,7 @@ namespace BotTest.Game.AI.Brains
         /// bookkeeping runs as usual); the rest become the turn plan. Null when the first step isn't on offer.
         /// </summary>
         protected async Task<IdleCmdResponse?> StartRoutineAsync(DecisionContext<IdleCmdData> context, string name, string goal, IReadOnlyList<RoutineStep> steps,
-            bool lethal = false)
+            bool lethal = false, int gladiatorSet = 0, bool desperateAllure = false)
         {
             if (steps.Count == 0)
                 return null;
@@ -100,7 +100,7 @@ namespace BotTest.Game.AI.Brains
                           (first.Key is "battle" or "end" && choices.Any(c => c.Key == first.Key) ? first.Key : null);
             if (key == null)
                 return null;
-            if (!await RoutineHoldsUpAsync(context, name, steps.Select(ToPlanStep).ToList(), lethal))
+            if (!await RoutineHoldsUpAsync(context, name, steps.Select(ToPlanStep).ToList(), lethal, gladiatorSet, desperateAllure))
                 return null;
             steps[0].OnTake?.Invoke();
             var rest = steps.Skip(1).Select(ToPlanStep).ToList();
@@ -144,9 +144,10 @@ namespace BotTest.Game.AI.Brains
         /// lethal routine, their LP don't reach 0 in at least half of them. Logged either way. Accepted untested when the
         /// engine isn't available (and in the search's own brain twin: the check is the real bot's).
         /// </summary>
-        private async Task<bool> RoutineHoldsUpAsync(DecisionContext<IdleCmdData> context, string name, List<PlanStep> steps, bool lethal)
+        private async Task<bool> RoutineHoldsUpAsync(DecisionContext<IdleCmdData> context, string name, List<PlanStep> steps, bool lethal,
+            int gladiatorSet = 0, bool desperateAllure = false)
         {
-            if (IsSearchTwin || SearchBudgetMs <= 0 || !PlaySearchSupported || !SearchHost.Available)
+            if (IsSearchTwin || !SearchHost.Available || !desperateAllure && (SearchBudgetMs <= 0 || !PlaySearchSupported))
                 return true;
             try
             {
@@ -160,11 +161,15 @@ namespace BotTest.Game.AI.Brains
                 var tree = new MctsTree { Label = $"check {name}" };
                 var settings = new SearchSettings(BudgetMs: 0, Threads: 1, Horizon: 1);
                 var check = new Mcts(view, tree, tree.Root, BotState.SelectIdleCmd, null, _activatedThisTurn.ToArray(), settings,
-                    MakeEvaluator(view), SearchBrains(context.Bot), new Dictionary<string, (double, string)>());
+                    MakeEvaluator(view), SearchBrains(context.Bot), new Dictionary<string, (double, string)>())
+                {
+                    GladiatorSetForRoutine = gladiatorSet,
+                    State = desperateAllure ? TagRules.BotStrategicState.Desperate : StrategicState
+                };
                 int seed = Interlocked.Increment(ref _searchSeed);
                 var result = await Task.Run(() => check.CheckLine(steps, RoutineMatch, RoutineCheckLines, seed));
                 if (result.Lines == 0)
-                    return true;
+                    return !desperateAllure;
                 string tally = $"{result.Completed}/{result.Lines} play-outs made every step" + (lethal ? $", {result.Lethal}/{result.Lines} lethal" : "");
                 bool stepsHold = result.Completed * 2 > result.Lines;
                 bool lethalHolds = !lethal || result.Lethal * 2 >= result.Lines;
@@ -179,6 +184,11 @@ namespace BotTest.Game.AI.Brains
             }
             catch (Exception ex)
             {
+                if (desperateAllure)
+                {
+                    context.Bot.LogNote($"routine {name}: engine could not verify the sequence ({ex.Message})");
+                    return false;
+                }
                 context.Bot.LogNote($"routine {name}: engine check failed ({ex.Message}); adopted unchecked");
                 return true;
             }
@@ -300,16 +310,47 @@ namespace BotTest.Game.AI.Brains
         public async Task<IdleCmdResponse?> PlannedIdleAsync(DecisionContext<IdleCmdData> context)
         {
             _currentHeader = context.Header;
+            bool followingDesperateAllure = _searchLine?.Turn == context.Header.CurrentTurn &&
+                _planInfo?.Source == $"routine {DesperateAllureRoutine}";
+            if (!followingDesperateAllure && await TryDesperateAllureAsync(context) is IdleCmdResponse desperate)
+            {
+                var action = SearchActions.Idle(context.StateData).FirstOrDefault(choice =>
+                    choice.Response.Action == desperate.Action && choice.Response.Index == desperate.Index);
+                context.Bot.LogNote($"mandatory action: {action?.Label ?? desperate.Action.ToString()} ({DesperateAllureRoutine})");
+                await AfterMainMoveAsync(context, desperate, desperate);
+                return desperate;
+            }
             if (_searchLine != null)
                 await PrepareContextAsync(context); // the board read runs the memory-wipe check (TurnRecord) before a routine step
-            if (_searchLine != null)
+            if (_searchLine != null && !followingDesperateAllure)
                 await CheckOpenChoiceBeforeStepAsync(context.Bot, BotState.SelectIdleCmd, SearchActions.Idle(context.StateData).Select(c => c.Key).ToList());
             if (_searchLine == null || await PlanInterruptedAsync(context.Bot, context.Header))
+                return null;
+            if (await MandatoryAllureAsync(context.StateData) != null)
                 return null;
             var choices = SearchActions.Idle(context.StateData);
             if (NextSearchLineKey(context.Bot, BotState.SelectIdleCmd, choices.Select(c => c.Key).ToList()) is not string key)
                 return null;
             var chosen = choices.First(c => c.Key == key).Response;
+            if (followingDesperateAllure && chosen.Action == MainAction.Activate &&
+                !await AllureIsOnlyCardInHandAsync())
+            {
+                DropPlan(context.Bot, "Allure is no longer the only card in hand");
+                return null;
+            }
+            if (!await SharedIdleMoveAllowedAsync(context, chosen))
+            {
+                DropPlan(context.Bot, "the next move fails a shared card rule");
+                return null;
+            }
+            var required = await SetDustshootBeforeEndingAsync(context, chosen);
+            if (required.Action != chosen.Action)
+            {
+                DropPlan(context.Bot, "set Trap Dustshoot before ending the turn");
+                chosen = required;
+            }
+            else if (followingDesperateAllure)
+                context.Bot.LogNote($"mandatory action: {choices.First(c => c.Key == key).Label} ({DesperateAllureRoutine})");
             await AfterMainMoveAsync(context, chosen, chosen);
             return chosen;
         }
@@ -332,8 +373,8 @@ namespace BotTest.Game.AI.Brains
                 // The target is the plan's own pick: the search line's next pick, or the one a routine's step aimed (its OnTake).
                 if (_planInfo?.Source.StartsWith("routine") != true)
                     ClearAim();
-                _declaredAttacker = (context.StateData.AttackableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault();
             }
+            await RecordBattleChoiceAsync(context, step.Response);
             return step.Response;
         }
 

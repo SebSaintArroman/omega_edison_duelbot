@@ -174,6 +174,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 }
         }
 
+        internal override Func<DuelSim.Engine.SideSummary, double> SearchSetupFor(Search.SearchView view)
+        {
+            static bool IsTreeborn(int code) => Search.SearchHost.Is(code, HeroFrogCardId.TreebornFrog);
+            if (view.OwnGrave.Any(IsTreeborn) || view.OwnMonsters.Any(monster => IsTreeborn(monster.Code)))
+                return SearchSetupValue;
+
+            return own => SearchSetupValue(own) + (own.GraveCodes.Any(IsTreeborn) ? 5 : 0);
+        }
+
         internal override double SearchSetupValue(DuelSim.Engine.SideSummary own)
         {
             double value = 0;
@@ -218,7 +227,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         // ------------------------------------------------------------------ main phase
 
         public override async Task<IdleCmdResponse> OnIdleCmdAsync(DecisionContext<IdleCmdData> context, CancellationToken ct = default) =>
-            await FlipBeforeSummonAsync(context, await DeferSummonBlockingAttackOrderAsync(context, await DecideMainPhaseAsync(context, ct)));
+            await FlipBeforeSummonAsync(context, await DecideMainPhaseAsync(context, ct));
 
         private async Task<IdleCmdResponse> DecideMainPhaseAsync(DecisionContext<IdleCmdData> context, CancellationToken ct)
         {
@@ -466,8 +475,6 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             // Absolute Zero (a WATER monster) first (user, 2026-11-10). A Main Phase 1 whose Battle Phase would be skipped
             // (nothing of ours can attack) counts as no battle ahead: bounce now, or the turn ends with it still out (seen
             // 2026-11-11: Swap Frog in defence, the Battle Phase skipped, no bounce).
-            // (2026-11-17: a Main Phase 1 bounce can be for attack order: Swap Frog first by zone would have to attack before a better
-            // attacker, as Omega attacks with the first attacker by zone. So no hold on it here.)
             bool battleAhead = (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 && context.Header.CurrentTurn > 1 &&
                                await BattleWorthEnteringAsync() == null;
             bool summonLeft = !NormalSummonUsed(context.Header) &&
@@ -976,7 +983,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         private int _swapSendForFusionTurn = -1;
 
         /// <summary>
-        /// The set the frog deck holds back (user, 2026-11-18): Spiritual Water Art - Aoi without a face-up WATER monster of ours on the field
+        /// The set the frog deck holds back: Spiritual Water Art - Aoi without a WATER monster of ours on the field
         /// ("should never be set unless you have a water monster on field"). (Enemy Controller may be set with a plan to use it: the Treeborn
         /// blocking penalty, TreebornBlockedValue, charges a set left in place.)
         /// </summary>
@@ -984,7 +991,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         {
             var setable = context.StateData.SpellSetableCards ?? Array.Empty<DynamicCard>();
             if (setable.Any(card => IsId(card, HeroFrogCardId.SpiritualWaterArtAoi)) &&
-                !(await GetBotMonsterCardsAsync()).Any(card => card.IsFaceup() && (card.Attribute & (int)CardAttribute.Water) != 0) &&
+                !(await GetBotMonsterCardsAsync()).Any(card => (card.Attribute & (int)CardAttribute.Water) != 0) &&
                 Rule(HeroFrogRules.AoiSetNeedsWater))
                 Hold(HeroFrogCardId.SpiritualWaterArtAoi, MainAction.SetSpell, HeroFrogRules.AoiSetNeedsWater);
         }
@@ -1362,8 +1369,22 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             var phase = (DuelPhase)context.Header.CurrentPhase;
             int Index(int id) => Array.FindIndex(options, card => IsId(card, id) && card.CurrentCoordinates.Controller == 0);
 
+            if (Index(HeroFrogCardId.SpiritualWaterArtAoi) is int aoi and >= 0 && Rule(HeroFrogRules.AoiStrip))
+                return aoi;
+
+            bool swapHasTarget = false;
+            if (Index(HeroFrogCardId.SwapFrog) >= 0)
+            {
+                foreach (int target in CardRules.SwapFrogDeckTargets)
+                    if (await InDeckAsync(target) > 0)
+                    {
+                        swapHasTarget = true;
+                        break;
+                    }
+            }
             // Our own optional triggers: Swap Frog's dump, Dupe Frog's search, Treeborn's revive, Stratos, Junk Synchron.
             int trigger = Array.FindIndex(options, card => IsId(card, OwnTriggers) && card.CurrentCoordinates.Controller == 0 &&
+                                                           (!IsId(card, HeroFrogCardId.SwapFrog) || swapHasTarget) &&
                                                            card.CurrentCoordinates.Location != (byte)CardLocation.Hand &&
                                                            card.CurrentCoordinates.Location != (byte)CardLocation.SpellZone);
             if (trigger >= 0)
@@ -1394,27 +1415,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 // Battle Fader on a direct attack (Gorz instead when it can come: no cards of ours and not lethal).
                 if (Index(HeroFrogCardId.BattleFader) is int fader and >= 0 && await FaderNowAsync(context))
                     return fader;
-                // Aoi: early in their turn (most cards in hand), or by their End Phase (our zone clear for Treeborn).
-                if (Index(HeroFrogCardId.SpiritualWaterArtAoi) is int aoi and >= 0)
-                {
-                    int oppHand = await OppHandAsync();
-                    bool early = phase is DuelPhase.Draw or DuelPhase.Standby && oppHand >= 2;
-                    bool late = phase == DuelPhase.End && oppHand >= 1;
-                    if ((early || late) && Rule(HeroFrogRules.AoiStrip))
-                    {
-                        Note(context, $"activate Aoi ({phase}): look at their {oppHand} cards and send the best to the graveyard" +
-                                      (late ? "; our zone is clear for Treeborn" : ""));
-                        return aoi;
-                    }
-                }
-                // Their End Phase: whatever is still set goes off so our zone is clear for Treeborn: Jar of Greed draws,
-                // Compulsory returns their best monster.
-                if (phase == DuelPhase.End && Index(HeroFrogCardId.JarOfGreed) is int jar and >= 0)
-                {
-                    Note(context, "their End Phase: Jar of Greed (draw; our zone is clear for Treeborn)");
-                    return jar;
-                }
-                if (phase == DuelPhase.End && _treebornInGrave && Index(HeroFrogCardId.CompulsoryEvacuationDevice) is int compulsory and >= 0)
+                bool clearForTreeborn = phase == DuelPhase.End && await TreatBackrowAsDoomedAsync(false, phase);
+                if (clearForTreeborn && Index(HeroFrogCardId.CompulsoryEvacuationDevice) is int compulsory and >= 0)
                 {
                     var best = (await GetEnemyMonsterCardsAsync()).Where(card => card.ID > 0 || !card.IsFaceup())
                         .OrderByDescending(card => card.HasType(CardType.Fusion) || card.HasType(CardType.Synchro) || card.HasType(CardType.Token) ? 1 : 0)
@@ -1422,7 +1424,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                     if (!best.Equals(default(DynamicCard)) && (best.ID > 0 || !best.IsFaceup()))
                     {
                         PlanTarget(context.Header.CurrentTurn, best, theirs: true);
-                        Note(context, $"their End Phase: Compulsory Evacuation Device on {DescribePick(best)} (our zone is clear for Treeborn)");
+                        context.Bot.LogNote($"mandatory action: activate Compulsory Evacuation Device on {DescribePick(best)} (clear for Treeborn)");
                         return compulsory;
                     }
                 }
@@ -1432,6 +1434,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 {
                     Note(context, $"activate Raigeki Break: {raigekiWhy}");
                     return raigeki;
+                }
+                if (clearForTreeborn && Array.FindIndex(options, IsOurSetCard) is int set and >= 0)
+                {
+                    context.Bot.LogNote($"mandatory action: activate {CardNames.Get(options[set].ID)} (clear for Treeborn)");
+                    return set;
                 }
             }
 
@@ -1445,6 +1452,20 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             var response = await TryChainResponsesAsync(context, options, botTurn, ct);
             return response ?? -1;
         }
+
+        protected override async Task<bool> TreatBackrowAsDoomedAsync(bool ourTurn, DuelPhase phase)
+        {
+            if (phase != (ourTurn ? DuelPhase.Draw : DuelPhase.End))
+                return false;
+            bool treebornInGrave = (await GetBotGraveyardCardsAsync()).Any(card => IsId(card, HeroFrogCardId.TreebornFrog));
+            return HeroFrogRules.TreebornDoomsBackrow(ourTurn, phase, treebornInGrave,
+                !ourTurn && treebornInGrave && (await GetBotHandCardsAsync()).Any(card => IsId(card, Monarchs)));
+        }
+
+        internal override Func<bool, DuelPhase, DuelSim.Engine.SideSummary, bool> SearchBackrowDoomRule =>
+            (ourTurn, phase, own) => HeroFrogRules.TreebornDoomsBackrow(ourTurn, phase,
+                own.GraveCodes.Any(code => Search.SearchHost.Is(code, HeroFrogCardId.TreebornFrog)),
+                !ourTurn && own.HandCodes.Any(code => Monarchs.Any(monarch => Search.SearchHost.Is(code, monarch))));
 
         /// <summary>Ocean's Standby return: Absolute Zero (wipes their 2+ monsters or a big threat), else Stratos / a HERO from the graveyard.</summary>
         private async Task<DynamicCard?> OceanTargetAsync<T>(DecisionContext<T> context)
