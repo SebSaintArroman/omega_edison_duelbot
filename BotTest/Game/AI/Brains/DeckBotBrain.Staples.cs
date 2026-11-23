@@ -709,12 +709,16 @@ namespace BotTest.Game.AI.Brains
             // Not only the bait staples (Jar of Greed, Yata, MST): any set card of ours the server lets us activate here, about
             // to be removed, goes off if activating it does any good at all (user, 2026-11-12: "if a card is about to be
             // destroyed, and activating it would have a positive effect, no matter how small, then it should always be used").
-            // Torrential Tribute only when it takes more of theirs than of ours.
-            // A doomed Torrential: the normal Torrential weighing (count and value; spent flip monsters are worth their stats).
-            var (torrentialPays, torrentialWhy) = TorrentialWorthIt(await GetEnemyMonsterCardsAsync(),
-                (await GetBotMonsterCardsAsync()).Where(card => card.ID > 0 || card.CurrentCoordinates.Location != 0).ToList());
+            // A doomed Torrential uses the same board valuation as a summon response.
+            bool torrentialPays = false;
             if (options.Any(card => IsOurSetCard(card) && card.IsCode(TorrentialTributeId)))
+            {
+                var (worth, torrentialWhy) = TorrentialWorthIt(await GetEnemyMonsterCardsAsync(),
+                    (await GetBotMonsterCardsAsync()).Where(card => card.ID > 0 || card.CurrentCoordinates.Location != 0).ToList(),
+                    await TorrentialDefendingLpAsync(context));
+                torrentialPays = worth;
                 context.Bot.LogNote($"deck brain: doomed Torrential Tribute: {torrentialWhy}");
+            }
             bool PaysOff(DynamicCard card) => !card.IsCode(TorrentialTributeId) || torrentialPays;
             // "Always use it" is for cards free to activate (Jar of Greed, Compulsory, MST). A card with a cost of its own (Solemn's
             // half LP, Icarus Attack's tribute, Raigeki Break's discard) is weighed like the normal card, with the card itself
@@ -2413,7 +2417,8 @@ namespace BotTest.Game.AI.Brains
             }
 
             // Decide on the mass card first: Torrential, if it's worth it.
-            var all = torrential >= 0 ? TorrentialWorthIt(enemy, ours) : (Worth: false, Why: "");
+            int ourLp = torrential >= 0 ? await TorrentialDefendingLpAsync(context) : 0;
+            var all = torrential >= 0 ? TorrentialWorthIt(enemy, ours, ourLp) : (Worth: false, Why: "");
             bool torrentialLive = torrential >= 0 && all.Worth && await DestructionNegatedAsync(context, TorrentialTributeId) == null &&
                                   Rule(DeckRules.TorrentialTribute);
             bool bottomlessLive = bottomless >= 0 && bottomlessTargets.Count > 0 &&
@@ -2423,7 +2428,7 @@ namespace BotTest.Game.AI.Brains
             {
                 // ...except when Torrential is only worth it because of the summoned monster and Bottomless can take
                 // that one alone: then Bottomless banishes it and Torrential stays set for a bigger board.
-                var withoutSummon = TorrentialWorthIt(rest, ours);
+                var withoutSummon = TorrentialWorthIt(rest, ours, ourLp);
                 if (!bottomlessLive || withoutSummon.Worth || !Rule(DeckRules.BottomlessOverTorrential))
                 {
                     MarkLatestSummonAnswered();
@@ -2446,13 +2451,16 @@ namespace BotTest.Game.AI.Brains
             return -1;
         }
 
+        private async Task<int> TorrentialDefendingLpAsync(DecisionContext<SelectChainData> context) =>
+            !IsOwnTurn(context.Header) && (DuelPhase)context.Header.CurrentPhase is DuelPhase.Main1 or DuelPhase.BattleStart or DuelPhase.BattleStep or DuelPhase.Battle
+                ? await CurrentField.GetBotLifePoints()
+                : 0;
+
         /// <summary>
-        /// Whether wiping every monster with Torrential Tribute trades in our favour, by both count and quality:
-        /// the opponent must lose at least 2 cards and more than we do, and the threat value of what they lose must
-        /// beat what we lose (losing our Dark Armed Dragon to kill two 1400s isn't worth it). Tokens count as cards,
-        /// valued by their size like any other monster.
+        /// Whether the monsters removed are worth more than the monsters lost, or the wipe clears lethal attack
+        /// damage. Pass the defending player's LP when the attacking side can still battle this turn.
         /// </summary>
-        protected (bool Worth, string Why) TorrentialWorthIt(List<DynamicCard> enemyMonsters, List<DynamicCard> ourMonsters)
+        protected (bool Worth, string Why) TorrentialWorthIt(List<DynamicCard> enemyMonsters, List<DynamicCard> ourMonsters, int defendingLp = 0)
         {
             // (A flipped Ryko counts as a card worth its stats: TargetThreat values a spent flip monster by its stats alone.)
             enemyMonsters = enemyMonsters.Where(card => card.ID != 0 || !card.IsFaceup()).ToList();
@@ -2463,8 +2471,12 @@ namespace BotTest.Game.AI.Brains
             int ourCards = ourMonsters.Count;
             int theirValue = enemyMonsters.Sum(Value);
             int ourValue = ourMonsters.Sum(Value);
-            bool worth = theirCards >= 2 && theirCards > ourCards && theirValue > ourValue;
-            return (worth, $"opponent loses {theirCards} card(s) worth {theirValue}, we lose {ourCards} worth {ourValue} -> {(worth ? "yes" : "no")}");
+            int directDamage = enemyMonsters.Where(card => card.IsFaceup() && card.IsAttack() && !card.Attacked)
+                .Select(card => card.Attack).OrderByDescending(attack => attack).Skip(ourCards).Sum();
+            bool preventsLethal = defendingLp > 0 && directDamage >= defendingLp;
+            bool worth = preventsLethal || theirValue > ourValue;
+            string lethal = preventsLethal ? $", prevents {directDamage} direct damage at {defendingLp} LP" : "";
+            return (worth, $"opponent loses {theirCards} card(s) worth {theirValue}, we lose {ourCards} worth {ourValue}{lethal} -> {(worth ? "yes" : "no")}");
         }
 
         public override async Task<bool> OnSelectEffectYnAsync(DecisionContext<SelectEffectYnData> context, CancellationToken ct = default)

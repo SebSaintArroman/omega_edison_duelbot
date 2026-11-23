@@ -1,0 +1,9 @@
+new state:
+pressuring - go into this state if the opponent's board is empty of monsters and you have a beater on your field. (we'll define exactly what beater is later, for now, call it a monster with 1500+ atk).
+clearsight - go into this state if the opponent has no face down spell/traps.  
+
+new concept:
+recovery -
+
+Heavy storm concern:
+I want it so that the amount of traps I risk to heavy storm corresponds to the amount I can afford to lose. My proposal: heavy storm chance*4 is the cap on the percentage of threat answers the bot sets. Ignore this if there is only one threat answer trap, or if in threatened state. Is that too restrictive? For example the bot going first with two answering traps should set one, as the chance of storm is 12.5, so x4 is 50%. I don’t like hard rules

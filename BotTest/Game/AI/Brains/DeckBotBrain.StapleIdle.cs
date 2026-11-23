@@ -74,7 +74,9 @@ namespace BotTest.Game.AI.Brains
                     return response;
             }
             if (TryActivateStaple(context, state, ChargeOfTheLightBrigadeId, "mill 3 and search a Lightsworn", out response, DeckRules.ChargeOfTheLightBrigade)) return response;
-            if (TryActivateStaple(context, state, ReinforcementOfTheArmyId, "search a Warrior", out response, DeckRules.ReinforcementOfTheArmy)) return response;
+            if (TryGetActivable(state, ReinforcementOfTheArmyId, out _) &&
+                await ReinforcementAllowedAsync(context) &&
+                TryActivateStaple(context, state, ReinforcementOfTheArmyId, "search a Warrior", out response, DeckRules.ReinforcementOfTheArmy)) return response;
             // Allure of Darkness: draw 2, then banish a DARK from the hand (the whole hand without one): only with a DARK we
             // can spare already in hand. Shared since 2026-11-10 (the Machina brain held it all game). A brain with its own
             // Allure rule (Blackwing) reaches it here first; its banish pick stays its own.

@@ -382,7 +382,7 @@ MctsEvaluator.AttackerOddsStep = 100   # ATK steps of AttackerOdds: index i is "
 MctsEvaluator.BaitWeight = 0.5   # A set bait card gains this times our other sets' worth over the number of our sets (the share of a random pick).
 MctsEvaluator.DefenceShare = 1   # A monster in defence position counts this share of its DEF as its battle size (its ATK doesn't count there). User, 2026-11-18: 100%.
 MctsEvaluator.DominanceBonus = 0.1   # Bonus for the single largest face-up monster on the whole field, to its side (user, 2026-11-13: "move the dominance score down to just 0.1 for now, and only apply it if its the largest on both sides of the field ... nominal - a lever we can pull later"; the ATK table does most of the work).
-MctsEvaluator.DrawBonus = 0.01   # Per card we draw in our turn, on top of the card itself: a drawn card counts as 1.01 cards (CSV S6, so free draws aren't skipped for a tie).
+MctsEvaluator.DrawBonus = 0.5   # Bonus in card units for each card we draw after the searched decision.
 MctsEvaluator.ExplosivenessBase = 0.5   # Their unknown cards' risk scales with this plus their deck's explosiveness (0.5 + explosiveness).
 MctsEvaluator.FaceUpSpellBase = 0.3   # A face-up spell/trap's base worth, before its lasting effect.
 MctsEvaluator.FieldEffectWeight = 0.25   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
@@ -539,7 +539,7 @@ MctsEvaluator.GorzReadyBonus = 0.3   # Gorz in our hand and our field empty at t
 
 # added 2026-11-17 20:01 (new in the code since the file was written)
 # --- DeckBotBrain
-DeckBotBrain.VayuPairShare = 0.15   # A live Vayu pair in our graveyard (Vayu + a non-Tuner Blackwing whose Levels make a Blackwing Synchro in our Extra Deck) counts this share of that synchro's body (its effects are negated). Below 1: a goal stays below what it converts into.
+DeckBotBrain.VayuPairShare = 1   # Combined graveyard value of a live Vayu pair as a share of the negated Synchro's attack-position body.
 
 # added 2026-11-17 20:06 (new in the code since the file was written)
 # --- EffectEvaluator

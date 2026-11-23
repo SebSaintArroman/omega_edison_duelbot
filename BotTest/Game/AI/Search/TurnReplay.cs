@@ -87,11 +87,23 @@ namespace BotTest.Game.AI.Search
             // Our turn: engine turn 3 (2 skipped, with its draw), or turn 1 for the duel's first turn (no attacks there). Theirs: engine turn 2.
             v.SkipTurns = !ours ? 1 : realTurn == 1 ? 0 : 2;
             v.FirstTurnOfDuel = ours && realTurn == 1;
-            // The draw: the card our hand gained by our first prompt. By the cards, not the hand's size (seen 2026-11-18: their Trap Dustshoot
-            // took a card from our hand in the same Draw Phase, so the size didn't change).
-            var handBefore = Count(snapshot.OwnHand);
-            int drawn = !ours || checkpoints.Count == 0 ? 0
-                : checkpoints[0].View.OwnHand.FirstOrDefault(id => handBefore.TryGetValue(Canon(id), out int n) ? (handBefore[Canon(id)] = n - 1) < 0 : true);
+            // Find the draw in the opening snapshots. Omega can hide it until Standby,
+            // so look past passes while our hand still has no newly identified card.
+            int drawn = 0;
+            if (ours)
+            {
+                for (int i = 0; i < checkpoints.Count; i++)
+                {
+                    var cp = checkpoints[i];
+                    if (i > 0 && cp.Phase is not ((int)DuelPhase.Draw or (int)DuelPhase.Standby or (int)DuelPhase.Main1))
+                        break;
+                    var handBefore = Count(snapshot.OwnHand);
+                    drawn = cp.View.OwnHand.FirstOrDefault(id => handBefore.TryGetValue(Canon(id), out int n)
+                        ? (handBefore[Canon(id)] = n - 1) < 0 : true);
+                    if (drawn > 0 || !Declined(cp))
+                        break;
+                }
+            }
             if (drawn > 0)
             {
                 if (v.OwnDeck.Contains(drawn) && (v.KnownTop.Count == 0 || v.KnownTop[0] != drawn))
@@ -369,6 +381,17 @@ namespace BotTest.Game.AI.Search
                     return (Mcts.Passive(prompt) ?? MctsPolicy.Answer(prompt, rng, _line, host), false, null);
                 if (prompt.Player == 0)
                 {
+                    if (prompt.Data is IdleCmdData)
+                    {
+                        while (_next < checkpoints.Count - 1 &&
+                               checkpoints[_next] is { State: BotState.SelectChain, Answer.Key: "pass" } passed &&
+                               passed.Phase <= host.Phase && _r.SameCheckpointBoard(Key(BotState.SelectChain, host),
+                                   Key(BotState.SelectChain, passed.View), passed.Phase))
+                        {
+                            _next++;
+                            _extra = 0;
+                        }
+                    }
                     int k = _r.Match(prompt, host, _next);
                     if (k >= 0)
                     {
@@ -440,6 +463,20 @@ namespace BotTest.Game.AI.Search
                     }
                 }
                 var (guided, stuck) = _r.Guide(prompt, host, _next, _attacked);
+                if (prompt.Data is BattleCmdData && stuck != null)
+                {
+                    string board = Key(BotState.SelectChain, host);
+                    while (_next < checkpoints.Count - 1 &&
+                           checkpoints[_next] is { State: BotState.SelectChain, Answer.Key: "pass" } passed &&
+                           IsBattle(passed.Phase) && board == Key(BotState.SelectChain, passed.View))
+                    {
+                        _next++;
+                        _extra = 0;
+                        (guided, stuck) = _r.Guide(prompt, host, _next, _attacked);
+                        if (stuck == null)
+                            break;
+                    }
+                }
                 if (stuck != null)
                     return (null, false, $"their {prompt.State} (phase 0x{host.Phase:x}): {stuck}{_r.TheirTrail(host, _moves, _next)}");
                 if (guided != null && prompt.Data is IdleCmdData or BattleCmdData)
@@ -487,12 +524,33 @@ namespace BotTest.Game.AI.Search
             for (int k = next; k < Checkpoints.Count; k++)
             {
                 var cp = Checkpoints[k];
-                if (Mcts.SameKind(prompt.State, cp.State) && line == Key(prompt.State, cp.View))
+                if (Mcts.SameKind(prompt.State, cp.State) &&
+                    (host.Phase == cp.Phase || IsBattle(host.Phase) && IsBattle(cp.Phase)) &&
+                    SameCheckpointBoard(line, Key(prompt.State, cp.View), cp.Phase))
                     return k;
                 if (!Declined(cp))
                     break;
             }
             return -1;
+        }
+
+        internal bool SameCheckpointBoard(string line, string real, int phase)
+        {
+            if (line == real)
+                return true;
+            if (!Ours || phase != (int)DuelPhase.Draw)
+                return false;
+            // Omega's early draw windows can hide the drawn card. Require the rest
+            // of the position and every known hand card to match.
+            var actual = line.Split('|');
+            var expected = real.Split('|');
+            var hand = actual[3].Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
+            var known = expected[3].Split(',', StringSplitOptions.RemoveEmptyEntries);
+            if (hand.Count != known.Length + 1 || known.Length != Start.OwnHand.Count ||
+                !known.All(hand.Remove))
+                return false;
+            actual[3] = expected[3];
+            return actual.SequenceEqual(expected);
         }
 
         private static readonly string[] KeyParts = { "prompt", "our LP", "their LP", "our hand", "our monsters", "our spells/traps", "our graveyard",
@@ -555,7 +613,8 @@ namespace BotTest.Game.AI.Search
         private (byte[]? Packet, string? Stuck) Guide(Prompt prompt, DuelHost host, int next, Dictionary<int, int> attacked)
         {
             var cp = Checkpoints[next];
-            var needs = NeedsFor(host.Summary(1), cp.View);
+            var enemy = host.Summary(1);
+            var needs = NeedsFor(enemy, cp.View);
             switch (prompt.Data)
             {
                 case IdleCmdData idle:
@@ -632,8 +691,23 @@ namespace BotTest.Game.AI.Search
                 {
                     var options = SearchActions.Battle(battle);
                     var done = Count(cp.View.EnemyMonsters.Where(m => m.Attacked && m.Code > 0).Select(m => m.Code));
+                    // A damage-triggered window such as Gorz can be the first prompt
+                    // after a direct attack, with the attacker unmarked by Omega.
+                    int directDamage = 0;
+                    if (cp.State == BotState.SelectChain && IsBattle(cp.Phase) && cp.View.OwnMonsters.Count == 0)
+                    {
+                        var own = host.Summary(0);
+                        if (own.Monsters.Count == 0 && enemy.LifePoints == cp.View.LifePoints[1])
+                            directDamage = own.LifePoints - cp.View.LifePoints[0];
+                    }
                     var attack = options.FirstOrDefault(o => o.Key.StartsWith("attack:") &&
                         done.GetValueOrDefault(Canon(SearchActions.KeyCardId(o.Key))) > attacked.GetValueOrDefault(Canon(SearchActions.KeyCardId(o.Key))));
+                    if (attack == null && directDamage > 0)
+                    {
+                        attack = options.FirstOrDefault(o => o.Key.StartsWith("attack:") &&
+                            enemy.Monsters.Any(m => m.FaceUp && m.AttackPosition && m.Attack == directDamage &&
+                                Canon(m.Code) == Canon(SearchActions.KeyCardId(o.Key))));
+                    }
                     if (attack != null)
                     {
                         int code = Canon(SearchActions.KeyCardId(attack.Key));

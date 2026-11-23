@@ -98,6 +98,8 @@ namespace BotTest.Game.AI.Search
         /// breakdown; user, 2026-11-20: "the full best line it's following, with a confidence interval on each score").</summary>
         IReadOnlyDictionary<string, List<LineStepStat>>? ScoredLines = null)
     {
+        public TimeSpan ReportElapsed { get; init; }
+
         public RootStat? Stat(string key) => Root.FirstOrDefault(r => r.Key == key) ??
             (SearchActions.SameMoveIn(key, Root.Select(r => r.Key)) is { } same ? Root.FirstOrDefault(r => r.Key == same) : null);
     }
@@ -105,7 +107,10 @@ namespace BotTest.Game.AI.Search
     /// <summary>One decision in the MCTS tree: its statistics, and the answers tried from it.</summary>
     internal sealed class MctsNode
     {
+        private static long _nextLockOrder;
         public readonly object Lock = new();
+        // A transposition can lock two peers. Their order must be independent of the path that reached them.
+        public readonly long LockOrder = Interlocked.Increment(ref _nextLockOrder);
         public readonly Dictionary<string, MctsNode> Children = new();
         public string Label = "";
         /// <summary>Each child's move as named at this node (its own Label can belong to another parent after a transposition merge: seen
@@ -454,8 +459,26 @@ namespace BotTest.Game.AI.Search
         /// <summary>Nodes whose best line's value fell outside 0-1 (MctsNode.LineValue): should stay 0.</summary>
         public static long DamagedNodes;
 
-        // Where each search thread's line is (thread id -> its last prompt), for the watchdog's report.
-        private readonly ConcurrentDictionary<int, string> _lineStatus = new();
+        // One writer per worker. The watchdog only needs a snapshot when a worker has stalled.
+        private sealed class LineProgress
+        {
+            private int _turn, _phase, _promptCount;
+            private volatile Prompt? _prompt;
+
+            public void Record(int turn, int phase, Prompt prompt, int count)
+            {
+                _turn = turn;
+                _phase = phase;
+                _promptCount = count;
+                _prompt = prompt;
+            }
+
+            public void Reset() => _prompt = null;
+
+            public string Describe() => _prompt is { } prompt
+                ? $"turn {_turn}, phase 0x{_phase:x}, {prompt.State} for player {prompt.Player}, prompt {_promptCount} of the line"
+                : "starting or returning an engine";
+        }
 
         [Tunable("A search thread still busy this long past its budget (ms) is reported as stuck and left behind.", Section = "Search")]
         public static int WatchdogGraceMs = 20000;
@@ -476,12 +499,27 @@ namespace BotTest.Game.AI.Search
         public Func<int, MainAction, bool>? MayChoose { get; init; }
         internal int GladiatorSetForRoutine { get; init; }
 
-        /// <summary>The bot's strategic state for hard card-rule exceptions; transitions are managed by the caller.</summary>
+        /// <summary>The state at the root, or an explicit state for a routine being checked.</summary>
         private TagRules.BotStrategicState? _stateOverride;
         public TagRules.BotStrategicState State
         {
             get => _stateOverride ?? _view.StrategicState;
             init => _stateOverride = value;
+        }
+
+        private readonly System.Runtime.CompilerServices.ConditionalWeakTable<DuelHost, ThreatenedState> _threatHistories = new();
+
+        private ThreatenedState.Assessment AssessThreats(DuelHost host, SideSummary own, SideSummary enemy)
+        {
+            if (!enemy.Monsters.Any(card => card.FaceUp) && !own.SpellCodes.Any(card => SearchHost.Is(card.Code, BlackwingCardId.BottomlessTrapHole)))
+            {
+                if (_threatHistories.TryGetValue(host, out var current))
+                    current.Clear();
+                return new(Array.Empty<StrategicCard>(), 0);
+            }
+            var history = _threatHistories.GetValue(host, _ => _view.ThreatHistory.Copy());
+            return history.Evaluate(own.DeckCodes, own.HandCodes, host.StrategicCards(0, false),
+                host.StrategicCards(0, true), host.StrategicCards(1, false), enemy.Hand, own.LifePoints, enemy.LifePoints);
         }
 
         /// <summary>The deck's strong suggestions: a cost (card units) when the step at this index goes against one.</summary>
@@ -640,13 +678,18 @@ namespace BotTest.Game.AI.Search
             int threads = Math.Max(1, _settings.Threads);
             var iterations = new int[threads];
             var failures = new int[threads];
+            var progress = new LineProgress?[threads];
             string? firstFailure = null;
             var deadline = _settings.BudgetMs <= 0 ? TimeSpan.MaxValue : TimeSpan.FromMilliseconds(_settings.BudgetMs);
             long maxIterations = _settings.MaxIterations;
             long done = 0;
+            using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var lineCancellation = stop.Token;
 
             void Work(int t)
             {
+                var lineProgress = new LineProgress();
+                Volatile.Write(ref progress[t], lineProgress);
                 var rng = new Random(seed * 7919 + t);
                 // A pooled engine duel keeps the card scripts it has loaded from one decision to the next (see WarmUp).
                 var engine = EnginePool.TryTake(out var pooled) ? pooled : new PuzzleEngine(SearchHost.Cards, SearchHost.Scripts, rng.Next());
@@ -654,9 +697,9 @@ namespace BotTest.Game.AI.Search
                 SearchBrain? brain = null;
                 try { brain = _brainFactory?.Invoke(); }
                 catch { /* no brain: the quick policy plays our side */ }
-                while (clock.Elapsed < deadline && Interlocked.Read(ref done) < maxIterations && !ct.IsCancellationRequested)
+                while (clock.Elapsed < deadline && Interlocked.Read(ref done) < maxIterations && !lineCancellation.IsCancellationRequested)
                 {
-                    string? failure = Iterate(rng, engine, brain);
+                    string? failure = Iterate(rng, engine, brain, lineProgress, lineCancellation);
                     iterations[t]++;
                     Interlocked.Increment(ref done);
                     if (failure != null)
@@ -675,29 +718,43 @@ namespace BotTest.Game.AI.Search
             var workers = Enumerable.Range(0, threads).Select(t => new Thread(() =>
             {
                 try { Work(t); }
+                catch (OperationCanceledException) when (lineCancellation.IsCancellationRequested) { }
                 catch (Exception ex) { Interlocked.CompareExchange(ref firstFailure, $"search thread failed: {ex.Message}", null); }
             }) { IsBackground = true, Name = $"mcts {t}", Priority = priority }).ToList();
             foreach (var worker in workers)
                 worker.Start();
             // Watchdog (2026-11-17: bots went silent mid-decision until the server gave up): a thread still busy WatchdogGraceMs past the
             // budget is stuck in one line; it's reported (where its line was) and left behind, and the search returns what it has.
-            var hardStop = _settings.BudgetMs > 0 ? deadline + TimeSpan.FromMilliseconds(WatchdogGraceMs) : TimeSpan.MaxValue;
-            foreach (var worker in workers)
+            var grace = TimeSpan.FromMilliseconds(WatchdogGraceMs);
+            var hardStop = _settings.BudgetMs > 0 ? deadline + grace : TimeSpan.MaxValue;
+            var cancellationStop = TimeSpan.MaxValue;
+            for (int t = 0; t < workers.Count; t++)
             {
-                var left = hardStop - clock.Elapsed;
-                if (_settings.BudgetMs > 0 && !worker.Join(left > TimeSpan.Zero ? left : TimeSpan.Zero))
+                var worker = workers[t];
+                while (!worker.Join(0))
                 {
-                    string where = _lineStatus.TryGetValue(worker.ManagedThreadId, out var s) ? s : "unknown";
-                    string report = $"search WATCHDOG: thread '{worker.Name}' stuck in one line for over {WatchdogGraceMs / 1000} s past the budget " +
-                                    $"(last seen: {where}); left behind, the search decides on what it has";
+                    var now = clock.Elapsed;
+                    if (ct.IsCancellationRequested && cancellationStop == TimeSpan.MaxValue)
+                        cancellationStop = now + grace;
+                    var cutoff = cancellationStop < hardStop ? cancellationStop : hardStop;
+                    if (now < cutoff)
+                    {
+                        worker.Join((int)Math.Clamp(Math.Ceiling((cutoff - now).TotalMilliseconds), 1, 100));
+                        continue;
+                    }
+                    stop.Cancel();
+                    string where = Volatile.Read(ref progress[t])?.Describe() ?? "starting or returning an engine";
+                    string report = $"search WATCHDOG: thread '{worker.Name}' did not return within {WatchdogGraceMs / 1000} s of the search stopping " +
+                                    $"(last seen: {where}); using the lines that finished";
                     Console.WriteLine(report);
                     Interlocked.CompareExchange(ref firstFailure, report, null);
+                    break;
                 }
-                else if (_settings.BudgetMs <= 0)
-                    worker.Join();
             }
             Interlocked.Add(ref _tree.Iterations, iterations.Sum());
-            return Outcome(clock.Elapsed, iterations.Sum(), failures.Sum(), firstFailure);
+            var workerElapsed = clock.Elapsed;
+            var outcome = Outcome(workerElapsed, iterations.Sum(), failures.Sum(), firstFailure);
+            return outcome with { ReportElapsed = clock.Elapsed - workerElapsed };
         }
 
         /// <summary>Lines a follow-up answer needs before a move's value is read through it (MctsNode.LineValue). Tune from logs.</summary>
@@ -756,30 +813,39 @@ namespace BotTest.Game.AI.Search
         /// <summary>The root's answers, most visited first, with the line below each.</summary>
         private SearchOutcome Outcome(TimeSpan elapsed, int iterations, int failures, string? firstFailure)
         {
-            List<RootStat> stats;
+            List<(string Key, string Label, MctsNode Node)> MoveSnapshot(MctsNode parent) =>
+                parent.Children.Where(kv => IsMove(kv.Key)).Select(kv => (kv.Key, parent.LabelOf(kv.Key, kv.Value), kv.Value)).ToList();
+            static List<RootStat> ScoreMoves(List<(string Key, string Label, MctsNode Node)> moves) =>
+                moves.Select(m => new RootStat(m.Key, m.Label, m.Node.Visits, m.Node.LineValue(LineValueVisits),
+                    m.Node.Mean, m.Node.StdErr, m.Node.UnexploredBest(LineValueVisits)))
+                    .OrderByDescending(s => s.Visits).ThenByDescending(s => s.Mean).ToList();
+            List<(string Key, string Label, MctsNode Node)> rootMoves;
+            Dictionary<string, (double Cost, string Rule)>? rootHolds;
             int rootVisits;
             lock (_start.Lock)
             {
-                stats = _start.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, _start.LabelOf(kv.Key, kv.Value), kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr, kv.Value.UnexploredBest(LineValueVisits)))
-                    .OrderByDescending(s => s.Visits).ThenByDescending(s => s.Mean).ToList();
+                rootMoves = MoveSnapshot(_start);
                 rootVisits = _start.Visits;
-            }
-            string? followUp = null;
-            if (stats.Count > 0 && _start.Children.TryGetValue(stats[0].Key, out var bestChild))
-                lock (bestChild.Lock)
-                    if (bestChild.ChildState is BotState.SelectCard && bestChild.ChildPlayer == 0)
-                        followUp = bestChild.Children.Where(kv => IsMove(kv.Key)).OrderByDescending(kv => kv.Value.Visits).Select(kv => kv.Key).FirstOrDefault();
-            Dictionary<string, (double Cost, string Rule)>? rootHolds;
-            lock (_start.Lock)
                 rootHolds = _start.Holds == null ? null : new Dictionary<string, (double, string)>(_start.Holds);
+            }
+            // Scoring walks the graph and locks each node it visits. Never hold a parent lock across that walk.
+            var stats = ScoreMoves(rootMoves);
+            var rootNodes = rootMoves.ToDictionary(m => m.Key, m => m.Node);
+            string? followUp = null;
             // Per root choice whose next decision is our own card pick (an attack target): every pick tried there, with its stats.
             var followUps = new Dictionary<string, List<RootStat>>();
             foreach (var s in stats.Take(8))
-                if (_start.Children.TryGetValue(s.Key, out var child))
-                    lock (child.Lock)
-                        if (child.ChildState is BotState.SelectCard && child.ChildPlayer == 0)
-                            followUps[s.Key] = child.Children.Where(kv => IsMove(kv.Key)).Select(kv => new RootStat(kv.Key, child.LabelOf(kv.Key, kv.Value), kv.Value.Visits, kv.Value.LineValue(LineValueVisits), kv.Value.Mean, kv.Value.StdErr, kv.Value.UnexploredBest(LineValueVisits)))
-                                .OrderByDescending(v => v.Visits).ToList();
+            {
+                var child = rootNodes[s.Key];
+                List<(string Key, string Label, MctsNode Node)>? picks;
+                lock (child.Lock)
+                    picks = child.ChildState is BotState.SelectCard && child.ChildPlayer == 0 ? MoveSnapshot(child) : null;
+                if (picks == null)
+                    continue;
+                if (s == stats[0])
+                    followUp = picks.OrderByDescending(p => p.Node.Visits).Select(p => p.Key).FirstOrDefault();
+                followUps[s.Key] = ScoreMoves(picks);
+            }
             return new SearchOutcome(stats, iterations, failures, elapsed, firstFailure, followUp, _mismatch, Plans(stats), _traces.ToList(),
                 rootVisits, _maxDepth, BestLine(), rootHolds, _start.PriorKey,
                 stats.Take(5).ToDictionary(s => s.Key, s => BestLine(s.Key)), followUps, Details(), Transposed(stats),
@@ -859,20 +925,22 @@ namespace BotTest.Game.AI.Search
         }
 
         /// <summary>One iteration. Returns a failure note, or null when it scored a line.</summary>
-        private string? Iterate(Random rng, PuzzleEngine engine, SearchBrain? brain)
+        private string? Iterate(Random rng, PuzzleEngine engine, SearchBrain? brain, LineProgress progress, CancellationToken ct)
         {
             long start = Stopwatch.GetTimestamp();
             var position = _view.Determinize(rng);
             SearchTimings.Add(ref SearchTimings.Cards, position.Cards.Count);
+            long dealt = Stopwatch.GetTimestamp();
             var lua = position.ToLua(_view.FirstTurnOfDuel ? DuelHost.PuzzleFlags & ~0x02UL : DuelHost.PuzzleFlags); // 0x02: attacks on the first turn
-            SearchTimings.Add(ref SearchTimings.Deal, Stopwatch.GetTimestamp() - start);
+            SearchTimings.Add(ref SearchTimings.Deal, dealt - start);
+            SearchTimings.Add(ref SearchTimings.GeneratePuzzle, Stopwatch.GetTimestamp() - dealt);
             var host = engine.Load(lua, out var error);
             if (host == null)
                 return $"position: {error}";
             try
             {
                 brain?.Attach(host, Math.Max(0, _view.RealTurn - (1 + _view.SkipTurns))); // engine turn -> the real turn the brain sees
-                var failure = Play(rng, host, position, brain);
+                var failure = Play(rng, host, position, brain, progress, ct);
                 if (failure != null)
                     engine.Discard(); // a line that went wrong: start the next one on a fresh duel
                 return failure;
@@ -881,6 +949,7 @@ namespace BotTest.Game.AI.Search
             {
                 long disposing = Stopwatch.GetTimestamp();
                 host.Dispose();
+                progress.Reset();
                 SearchTimings.Add(ref SearchTimings.Dispose, Stopwatch.GetTimestamp() - disposing);
                 SearchTimings.Add(ref SearchTimings.Lines, 1);
             }
@@ -891,7 +960,7 @@ namespace BotTest.Game.AI.Search
         // A step of the path: the node entered, and the virtual loss put on it while the line is played.
         private readonly record struct PathStep(MctsNode Node, double VirtualLoss);
 
-        private string? Play(Random rng, DuelHost host, SearchPosition position, SearchBrain? brain)
+        private string? Play(Random rng, DuelHost host, SearchPosition position, SearchBrain? brain, LineProgress progress, CancellationToken ct)
         {
             var trace = _settings.TraceLines > 0 ? new List<string>() : null;
             string? rootKey = null;
@@ -959,17 +1028,17 @@ namespace BotTest.Game.AI.Search
             Cost("Brain rules our turn already broke", tally.Start);
             tally.Charged = Cost;
             Action<string>? note = trace != null ? trace.Add : null;
-            void NoteOurMainMove(Prompt p, byte[] packet)
+            void NoteOurMainMove(Prompt p, byte[] packet, List<Option>? knownOptions = null)
             {
                 if (trace != null && p.Player == 0 && p.Data is IdleCmdData or SelectChainData or SelectEffectYnData &&
                     OptionsFor(p, host.TurnPlayer == 0, rng, host, setWindowChosen) is { Count: > 0 } traceOptions &&
-                    MatchKey(traceOptions, packet, p.State) is { } traceKey &&
-                    traceOptions.First(option => option.Key == traceKey) is { MandatoryReason: { } reason } required)
+                    MatchOption(traceOptions, packet, p.State) is { MandatoryReason: { } reason } required)
                     trace.Add($"  mandatory action: {required.Label} ({reason})");
                 // Outside the tree, our moves to the end of our turn: the new leaf's rollout tail (for the log's line).
                 if (tail != null && !inTree && rootReached && p.Player == 0 && host.Turn == SearchTurn && tail.Count < 60 &&
-                    OptionsFor(p, true, rng, host, setWindowChosen) is { Count: > 0 } offered && MatchKey(offered, packet, p.State) is { } taken && taken != "pass")
-                    tail.Add(offered.First(o => o.Key == taken).Label);
+                    (knownOptions ?? OptionsFor(p, true, rng, host, setWindowChosen)) is { Count: > 0 } offered &&
+                    MatchOption(offered, packet, p.State) is { Key: not "pass" } taken)
+                    tail.Add(taken.Label);
                 if (rootReached && p.Player == 0 && host.Turn == SearchTurn)
                     penalty += tally.OnOurAnswer(p, packet, note);
                 else if (rootReached && p.Player == 0 && host.TurnPlayer != 0 && p.Data is SelectChainData theirTurnChain)
@@ -1005,8 +1074,9 @@ namespace BotTest.Game.AI.Search
                 ownSpot = Math.Max(ownSpot, _evaluator.SpotExposure(own, t));
                 ownIcarus = Math.Max(ownIcarus, _evaluator.IcarusExposure(own, t));
             }
-            int ourMonsters = -1, ourSpells = -1, ourDeck = -1, ourHand = -1, drawn = 0;
-            int OurCards() => host.CountIn(0, SearchPosition.LocHand) + host.CountIn(0, SearchPosition.LocMZone) + host.CountIn(0, SearchPosition.LocSZone);
+            int ourMonsters = -1, ourSpells = -1, drawsAtRoot = 0;
+            int OurCards() => host.Summary(0).HandCodes.Count(code => code != SearchView.InertCard) +
+                host.CountIn(0, SearchPosition.LocMZone) + host.CountIn(0, SearchPosition.LocSZone);
             int ourCardsAtRoot = -1; // CSV S15: a won line's cards spent
             var main2Codes = new List<int>(_view.Main2Summoned); // our Main Phase 2 summons (the real turn's, then the line's)
             IReadOnlyCollection<int> activatedInTurn = Array.Empty<int>(); // as our turn ended: the cards we activated in it
@@ -1055,11 +1125,6 @@ namespace BotTest.Game.AI.Search
                 if (ourSpells >= 0 && spellsNow > ourSpells)
                     NoteLesser(host.Summary(0), host.Summary(1));
                 ourSpells = spellsNow;
-                // Cards from our deck to our hand (a draw, or a search: a free card either way) for the draw bonus (CSV S6).
-                int deckNow = host.CountIn(0, SearchPosition.LocDeck), handNow = host.CountIn(0, SearchPosition.LocHand);
-                if (ourDeck >= 0 && deckNow < ourDeck && handNow > ourHand)
-                    drawn += Math.Min(ourDeck - deckNow, handNow - ourHand);
-                (ourDeck, ourHand) = (deckNow, handNow);
             }
 
             void Undo()
@@ -1079,16 +1144,17 @@ namespace BotTest.Game.AI.Search
             Prompt? prompt;
             try
             {
-                while ((prompt = host.NextPrompt(StopTurn)) != null)
+                while ((prompt = host.NextPrompt(StopTurn, ct)) != null)
                 {
                     prompts++;
                     if (trace != null && prompt.Player == 0)
                     {
-                        var strategicState = State;
+                        var strategicState = State == TagRules.BotStrategicState.Desperate
+                            ? State : AssessThreats(host, host.Summary(0), host.Summary(1)).State;
                         trace.Add($"  strategic state: {TagRules.DescribeStrategicState(strategicState, lastTracedStrategicState)} at {prompt.State}");
                         lastTracedStrategicState = strategicState;
                     }
-                    _lineStatus[Environment.CurrentManagedThreadId] = $"turn {host.Turn}, phase 0x{host.Phase:x}, {prompt.State} for player {prompt.Player}, prompt {prompts} of the line";
+                    progress.Record(host.Turn, host.Phase, prompt, prompts);
                     // Chance (a coin, a die, a random selection) during our turn, while the line is still in the tree: what came
                     // up couldn't be known, so the decision after it is re-planned (marked on the node it happened under).
                     if (host.RandomEvents != randomSeen)
@@ -1146,10 +1212,11 @@ namespace BotTest.Game.AI.Search
                         rootReached = true;
                         ourMonsters = host.CountIn(0, SearchPosition.LocMZone);
                         ourSpells = host.CountIn(0, SearchPosition.LocSZone);
-                        (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
+                        drawsAtRoot = host.OurCardsDrawn;
+                        host.HideUnseenDeckReveals();
                         ourCardsAtRoot = OurCards();
                         dustshootsAtRoot = DustshootsGone();
-                        rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
+                        rootAdvantage = _evaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
                         SetCenter(host); // the curve's centre: this decision's position
                         long at = Stopwatch.GetTimestamp();
                         SearchTimings.Add(ref SearchTimings.ToRoot, at - phaseStart);
@@ -1209,25 +1276,25 @@ namespace BotTest.Game.AI.Search
                                     Undo();
                                     return ReplayMiss($"step {replayNext + 1} ({step.Label}, {step.State}) not on offer at {prompt.State}");
                                 }
-                                var windowOptions = OptionsFor(prompt, true, rng, host, setWindowChosen)?.Select(o => o.Key).ToList() ?? new List<string>();
                                 if (!IsRootPrompt(prompt, host, replay.TargetKey, rng))
                                 {
-                                    if (prompt.State != _rootState && Passive(prompt) is { } skip && extraPrompts++ < 8)
+                                    if (Passive(prompt) is { } skip && extraPrompts++ < 8)
                                     {
                                         Answer(host, prompt, skip);
                                         continue;
                                     }
                                     Undo();
-                                    return ReplayMiss($"reached {prompt.State} [{DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), windowOptions)}], " +
+                                    return ReplayMiss($"reached {prompt.State} [{DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), ReplayOptionKeys(prompt, host, rng))}], " +
                                                       $"not the window [{replay.TargetKey}]");
                                 }
                                 rootReached = true;
                                 ourMonsters = host.CountIn(0, SearchPosition.LocMZone);
                                 ourSpells = host.CountIn(0, SearchPosition.LocSZone);
-                                (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
+                                drawsAtRoot = host.OurCardsDrawn;
+                                host.HideUnseenDeckReveals();
                                 ourCardsAtRoot = OurCards();
                                 dustshootsAtRoot = DustshootsGone();
-                                rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
+                                rootAdvantage = _evaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
                                 SetCenter(host); // the curve's centre: this decision's position
                                 long reachedAt = Stopwatch.GetTimestamp();
                                 SearchTimings.Add(ref SearchTimings.ToRoot, reachedAt - phaseStart);
@@ -1239,10 +1306,11 @@ namespace BotTest.Game.AI.Search
                             rootReached = true;
                             ourMonsters = host.CountIn(0, SearchPosition.LocMZone);
                             ourSpells = host.CountIn(0, SearchPosition.LocSZone);
-                            (ourDeck, ourHand) = (host.CountIn(0, SearchPosition.LocDeck), host.CountIn(0, SearchPosition.LocHand));
+                            drawsAtRoot = host.OurCardsDrawn;
+                            host.HideUnseenDeckReveals();
                             ourCardsAtRoot = OurCards();
                             dustshootsAtRoot = DustshootsGone();
-                            rootAdvantage = MctsEvaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
+                            rootAdvantage = _evaluator.CardAdvantage(host.Summary(0), host.Summary(1)); rootTheirDeck = host.Summary(1).Deck;
                             SetCenter(host); // the curve's centre: this decision's position
                             CheckPosition(host);
                             long now = Stopwatch.GetTimestamp();
@@ -1300,13 +1368,15 @@ namespace BotTest.Game.AI.Search
                                 MctsPolicy.NoteAttacker(line, battle, SearchActions.AttackerFor(battle, BitConverter.ToUInt16(packet, 2)));
                             }
                             trace?.Add($"  routine step: {routineKey}");
-                            NoteOurMainMove(prompt, packet);
+                            NoteOurMainMove(prompt, packet, offeredNow);
                             Answer(host, prompt, packet);
                             continue;
                         }
                         routineNext = routine.Steps.Count; // a step not on offer: the routine breaks off here
                     }
-                    if (rootReached && inTree && OptionsFor(prompt, ours, rng, host, setWindowChosen) is { Count: > 1 } options)
+                    if (rootReached && inTree && OptionsFor(prompt, ours, rng, host, setWindowChosen) is { Count: > 0 } options &&
+                        (options.Count > 1 || ours && (prompt.Data is IdleCmdData ||
+                         prompt.Data is SelectChainData && (node == _start || FromTurnStart != null))))
                     {
                         // One kind of prompt per node (seen 2026-11-18: a Main Phase search continued from a node that also held the "yes" / "no"
                         // of Armageddon Knight's trigger, and listed "no" among its moves): a line meeting another kind of prompt (or the other
@@ -1329,13 +1399,19 @@ namespace BotTest.Game.AI.Search
                         // Our main / battle decisions are filed by board and answers, so a later decision finds them again.
                         if (ours && prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd)
                         {
-                            string decision = DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), options.Select(o => o.Key));
+                            // Match the live idle prompt's legal actions even when search policy leaves
+                            // only one move, for example ending the turn after the last set.
+                            var legalKeys = prompt.Data is IdleCmdData idle
+                                ? SearchActions.IdleOptionKeys(idle)
+                                : options.Select(o => o.Key);
+                            string decision = DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), legalKeys);
                             // A transposition (user, 2026-11-15: "the same moves in a different order"): this board and these answers were
                             // reached by another order of moves this turn. The line carries on in that node, so both orders share what
                             // follows (one position, one score below the meeting point). Each line's own costs (order penalties, broken
                             // holds) stay with the moves it made above it.
 
-                            string strictPosition = decision + "#" + host.Fingerprint(); // as strict as possible (user, 2026-11-15)
+                            // The same legal prompt can have different search choices after entering the set window.
+                            string strictPosition = decision + "#" + host.Fingerprint() + "#" + (setWindowChosen ? "set" : "");
                             // Only a node at the same depth (the same number of steps into the line): the same board can't be reached
                             // with a different number of moves, and a merge with one further down would make a loop in the tree.
                             if (_tree.FindPosition(strictPosition) is { } same && same != node && same != _start && node != _start && path.Count > 0 &&
@@ -1351,8 +1427,10 @@ namespace BotTest.Game.AI.Search
                                     }
                                 if (linked)
                                 {
-                                    lock (node.Lock)
-                                        lock (same.Lock)
+                                    var first = node.LockOrder < same.LockOrder ? node : same;
+                                    var second = first == node ? same : node;
+                                    lock (first.Lock)
+                                        lock (second.Lock)
                                         {
                                             same.Visits += node.Visits;
                                             same.Total += node.Total;
@@ -1384,7 +1462,10 @@ namespace BotTest.Game.AI.Search
                         else if (ours && FromTurnStart != null)
                         {
                             node.Origin ??= _start;
-                            _tree.Register(DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), options.Select(o => o.Key)), node);
+                            var legalKeys = prompt.Data is SelectChainData chain
+                                ? SearchActions.ChainOptionKeys(chain)
+                                : options.Select(o => o.Key);
+                            _tree.Register(DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), legalKeys), node);
                         }
                         // Our brain's own answer here, once per node: the progressive bias toward the brain's play.
                         if (prompt.Player == 0 && brain != null && !node.PriorAsked)
@@ -1426,14 +1507,15 @@ namespace BotTest.Game.AI.Search
                         }
                         if (ours && key.StartsWith("attack:"))
                             { attacked = true; NoteMirror(); }
-                        if (ours && options.First(o => o.Key == key).Key.StartsWith("3:", StringComparison.Ordinal))
+                        var selectedOption = options.First(o => o.Key == key);
+                        if (ours && selectedOption.Key.StartsWith("3:", StringComparison.Ordinal))
                             setWindowChosen = true;
-                        if (ours && options.First(o => o.Key == key).Key.StartsWith("4:", StringComparison.Ordinal))
+                        if (ours && selectedOption.Key.StartsWith("4:", StringComparison.Ordinal))
                             setWindowChosen = true;
                         if (key.StartsWith("attack:") && prompt.Data is BattleCmdData attacking)
                         {
-                            var packet = options.First(o => o.Key == key).Packet;
-                            MctsPolicy.NoteAttacker(line, attacking, SearchActions.AttackerFor(attacking, BitConverter.ToUInt16(packet, 2)));
+                            MctsPolicy.NoteAttacker(line, attacking, SearchActions.AttackerFor(attacking,
+                                BitConverter.ToUInt16(selectedOption.Packet, 2)));
                         }
                         // The deck's strong suggestions, for our own choices in our turn.
                         if (ours && Suggestions != null)
@@ -1449,11 +1531,11 @@ namespace BotTest.Game.AI.Search
                         }
                         node = child;
                         inTree = !isNew;
-                        NoteOurMainMove(prompt, options.First(o => o.Key == key).Packet);
+                        NoteOurMainMove(prompt, selectedOption.Packet, options);
                         // A new leaf in our turn: record our moves after it (the rollout) until our turn ends.
                         if (isNew && rootReached && host.Turn == SearchTurn && child.RolloutTail == null)
                             (tailNode, tail) = (child, new List<string>());
-                        Answer(host, prompt, options.First(o => o.Key == key).Packet);
+                        Answer(host, prompt, selectedOption.Packet);
                         continue;
                     }
                     // Before our decision the rebuilt turn only replays phases the real turn has already had (Draw, Standby):
@@ -1464,16 +1546,23 @@ namespace BotTest.Game.AI.Search
                         Answer(host, prompt, pass);
                         continue;
                     }
+                    if (ReinforcementGardnaPick(prompt, host) is byte gardna)
+                    {
+                        trace?.Add("  Reinforcement of the Army searches Necro Gardna for Dark Grepher");
+                        Answer(host, prompt, new byte[] { 1, gardna });
+                        continue;
+                    }
                     // Rollout: our side by our own brain (as the bot really would play), theirs by the quick policy.
                     if (prompt.Player == 0 && brain != null && brain.Decide(prompt) is { } brainPacket)
                     {
+                        List<Option>? legal = null;
                         // A rollout brain is a proposal, not permission to bypass a hard search rule or phase window.
                         // If its answer is outside the current legal set, take the first surviving legal answer instead.
-                        if (prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd &&
-                            OptionsFor(prompt, true, rng, host, setWindowChosen) is { Count: > 0 } legal)
+                        if (prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd or BotState.SelectChain &&
+                            OptionsFor(prompt, true, rng, host, setWindowChosen) is { Count: > 0 } offered)
                         {
-                            string? legalKey = MatchKey(legal, brainPacket, prompt.State);
-                            brainPacket = legalKey == null ? legal[0].Packet : legal.First(o => o.Key == legalKey).Packet;
+                            legal = offered;
+                            brainPacket = (MatchOption(legal, brainPacket, prompt.State) ?? legal[0]).Packet;
                         }
                         if (prompt.Data is IdleCmdData && brainPacket.Length >= 2 &&
                             (BitConverter.ToUInt16(brainPacket, 0) is (ushort)MainAction.SetMonster or (ushort)MainAction.SetSpell))
@@ -1482,7 +1571,7 @@ namespace BotTest.Game.AI.Search
                             { attacked = true; NoteMirror(); }
                         if (prompt.Data is BattleCmdData battling && brainPacket.Length >= 4 && BitConverter.ToUInt16(brainPacket, 0) == (ushort)BattleAction.Attack)
                             MctsPolicy.NoteAttacker(line, battling, SearchActions.AttackerFor(battling, BitConverter.ToUInt16(brainPacket, 2)));
-                        NoteOurMainMove(prompt, brainPacket);
+                        NoteOurMainMove(prompt, brainPacket, legal);
                         Answer(host, prompt, brainPacket);
                         continue;
                     }
@@ -1491,26 +1580,30 @@ namespace BotTest.Game.AI.Search
                     if (prompt.Player == 1 && rootReached && inTree && host.Turn == SearchTurn && TheirPickCards(prompt) is { } pickFrom)
                         MarkOpen(node, pickFrom);
                     var policyPacket = MctsPolicy.Answer(prompt, rng, line, host);
-                    if (prompt.Player == 0 && prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd &&
+                    List<Option>? policyLegalOptions = null;
+                    if (prompt.Player == 0 && prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd or BotState.SelectChain &&
                         OptionsFor(prompt, true, rng, host, setWindowChosen) is { Count: > 0 } policyLegal)
                     {
-                        string? policyKey = MatchKey(policyLegal, policyPacket, prompt.State);
-                        policyPacket = policyKey == null ? policyLegal[0].Packet : policyLegal.First(o => o.Key == policyKey).Packet;
+                        policyLegalOptions = policyLegal;
+                        policyPacket = (MatchOption(policyLegal, policyPacket, prompt.State) ?? policyLegal[0]).Packet;
                     }
                     if (prompt.Player == 0 && host.Turn == SearchTurn && prompt.Data is BattleCmdData && policyPacket.Length >= 1 && policyPacket[0] == (byte)BattleAction.Attack)
                         { attacked = true; NoteMirror(); }
-                    NoteOurMainMove(prompt, policyPacket);
+                    NoteOurMainMove(prompt, policyPacket, policyLegalOptions);
                     Answer(host, prompt, policyPacket);
                 }
+                ct.ThrowIfCancellationRequested();
             }
             catch
             {
                 Undo();
                 throw;
             }
-
-            SearchTimings.Add(ref SearchTimings.Prompts, prompts);
-            SearchTimings.Add(ref (rootReached ? ref SearchTimings.Playout : ref SearchTimings.ToRoot), Stopwatch.GetTimestamp() - phaseStart);
+            finally
+            {
+                SearchTimings.Add(ref SearchTimings.Prompts, prompts);
+                SearchTimings.Add(ref (rootReached ? ref SearchTimings.Playout : ref SearchTimings.ToRoot), Stopwatch.GetTimestamp() - phaseStart);
+            }
             if (!rootReached)
             {
                 Undo();
@@ -1522,6 +1615,18 @@ namespace BotTest.Game.AI.Search
                 return $"line stopped: {host.Result.Reason}";
             }
             long scoring = Stopwatch.GetTimestamp();
+            int drawn = (host.Turn >= StopTurn ? host.OurCardsDrawnAtTurnStart : host.OurCardsDrawn) - drawsAtRoot;
+            double drawBonus = drawn * MctsEvaluator.DrawBonus;
+            if (drawn > 0)
+                trace?.Add($"  drew {drawn} card(s), draw bonus {drawBonus:+0.##;-0.##;0} card units");
+            if (trace != null)
+            {
+                var ours = host.Summary(0);
+                int blankHand = ours.HandCodes.Count(code => code == SearchView.InertCard);
+                int blankGrave = ours.GraveCodes.Count(code => code == SearchView.InertCard);
+                if (blankHand + blankGrave > 0)
+                    trace.Add($"  unscored placeholders: {blankHand} in hand, {blankGrave} in grave");
+            }
             // A line that ended within our turn (a win, or a horizon of 1): its board now is the one their backrow would hit.
             if (turnEnd == null && host.Turn == SearchTurn)
             {
@@ -1540,13 +1645,13 @@ namespace BotTest.Game.AI.Search
                            $"single removal {peakSpot:0.00}, Icarus Attack {peakIcarus:0.00}, sitting duck {sittingDuck:0.00})");
             // Card advantage won or lost in our turn (user, 2026-11-16: "a +1 - getting a new card without losing a card - should get a very
             // large bonus per card"; DAD's free removal is the same idea, a card of theirs for nothing): our cards minus theirs (hand and
-            // field, tokens aside) as our turn ended, against the same at the decision.
+            // field and live Vayu pairs, tokens aside) as our turn ended, against the same at the decision.
             double advantage = 0;
             if (rootAdvantage is int atRoot && turnEnd is { } advEnd)
             {
                 // Taken at their turn's first prompt, after their Draw Phase draw: that draw isn't a card we lost (seen 2026-11-19: "card
                 // advantage -1" on a line that only ended the turn).
-                int gained = MctsEvaluator.CardAdvantage(advEnd.Ours, advEnd.Theirs) - atRoot + Math.Max(0, rootTheirDeck - advEnd.Theirs.Deck);
+                int gained = _evaluator.CardAdvantage(advEnd.Ours, advEnd.Theirs) - atRoot + Math.Max(0, rootTheirDeck - advEnd.Theirs.Deck);
                 advantage = gained * MctsEvaluator.PlusOneBonus;
                 if (gained != 0)
                     trace?.Add($"  (card advantage {gained:+0;-0} in our turn: {advantage:+0.0;-0.0})");
@@ -1589,9 +1694,9 @@ namespace BotTest.Game.AI.Search
                 Add("Exposure to single removal", -peakSpot * risk);
                 Add("Exposure to Icarus Attack", -peakIcarus * risk);
                 Add("Sitting duck (attackable monsters)", -sittingDuck * risk);
-                Add("Cards drawn", drawn * MctsEvaluator.DrawBonus);
+                Add("Cards drawn", drawBonus);
             }
-            double value = _evaluator.Evaluate(host, penalty - advantage + exposure * _evaluator.RiskDiscount - drawn * MctsEvaluator.DrawBonus, turnEnd,
+            double value = _evaluator.Evaluate(host, penalty - advantage + exposure * _evaluator.RiskDiscount - drawBonus, turnEnd,
                 winRisk: exposure, cardsSpent: ourCardsAtRoot >= 0 ? Math.Max(0, ourCardsAtRoot - OurCards()) : 0, length: prompts,
                 center: double.IsNaN(_tree.Center) ? 0 : _tree.Center, noClock: main2Codes, activatedThisTurn: activatedInTurn,
                 parts: parts, centerParts: _tree.CenterParts);
@@ -1650,6 +1755,8 @@ namespace BotTest.Game.AI.Search
         {
             // A visit that would look bad to whoever picks here, so the other threads spread out meanwhile.
             double loss = player == 0 ? 0 : 1;
+            MctsNode chosen;
+            string chosenKey;
             lock (node.Lock)
             {
                 node.ChildState = state;
@@ -1695,50 +1802,77 @@ namespace BotTest.Game.AI.Search
                         if (node.Children.TryGetValue(key, out var child) && child.Visits < _settings.FocusLines &&
                             (focused == null || child.Visits < focused.Visits) && options.FirstOrDefault(o => o.Key == key) is { } option)
                             (focused, focusOption) = (child, option);
-                    if (focused != null)
+                    best = focusOption;
+                }
+                if (best == null)
+                {
+                    foreach (var option in options)
                     {
-                        lock (focused.Lock)
+                        if (!node.Children.TryGetValue(option.Key, out var child))
+                            continue;
+                        double mean = player == 0 ? child.Mean : 1 - child.Mean;
+                        double score = mean + _settings.Exploration * Math.Sqrt(Math.Log(Math.Max(1, child.Available)) / Math.Max(1, child.Visits));
+                        if (player == 0 && option.Key == node.PriorKey)
+                            score += _settings.PriorBonus / Math.Sqrt(1 + child.Visits);
+                        if (score > bestScore)
                         {
-                            focused.Visits++;
-                            focused.Total += loss;
+                            bestScore = score;
+                            best = option;
                         }
-                        return (focused, focusOption!.Key, false, loss);
                     }
                 }
-                foreach (var option in options)
-                {
-                    if (!node.Children.TryGetValue(option.Key, out var child))
-                        continue;
-                    double mean = player == 0 ? child.Mean : 1 - child.Mean;
-                    double score = mean + _settings.Exploration * Math.Sqrt(Math.Log(Math.Max(1, child.Available)) / Math.Max(1, child.Visits));
-                    if (player == 0 && option.Key == node.PriorKey)
-                        score += _settings.PriorBonus / Math.Sqrt(1 + child.Visits);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        best = option;
-                    }
-                }
-                var chosen = node.Children[best!.Key];
-                lock (chosen.Lock)
-                {
-                    chosen.Visits++;
-                    chosen.Total += loss;
-                }
-                return (chosen, best.Key, false, loss);
+                chosenKey = best!.Key;
+                chosen = node.Children[chosenKey];
             }
+            lock (chosen.Lock)
+            {
+                chosen.Visits++;
+                chosen.Total += loss;
+            }
+            return (chosen, chosenKey, false, loss);
         }
 
         /// <summary>The option key our brain's answer (a bot packet) means, or null.</summary>
-        private static string? MatchKey(List<Option> options, byte[] packet, BotState state)
+        private static Option? MatchOption(List<Option> options, byte[] packet, BotState state)
         {
             if (state is BotState.SelectCard or BotState.SelectTribute && packet.Length >= 1)
             {
-                var want = packet.Skip(1).OrderBy(b => b).ToArray();
-                return options.FirstOrDefault(o => o.Packet.Length == packet.Length && o.Packet.Skip(1).OrderBy(b => b).SequenceEqual(want))?.Key;
+                foreach (var option in options)
+                    if (SamePickPacket(option.Packet, packet))
+                        return option;
+                return null;
             }
-            return options.FirstOrDefault(o => o.Packet.AsSpan().SequenceEqual(packet))?.Key;
+            foreach (var option in options)
+                if (option.Packet.AsSpan().SequenceEqual(packet))
+                    return option;
+            return null;
         }
+
+        // A multi-card selection is the same answer whichever order its card indexes were written in. Picks are tiny
+        // (normally one to three cards), so counting in place is cheaper than allocating and sorting two arrays per option.
+        private static bool SamePickPacket(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
+        {
+            if (left.Length != right.Length)
+                return false;
+            for (int i = 1; i < left.Length; i++)
+            {
+                byte value = left[i];
+                if (left[1..i].Contains(value))
+                    continue;
+                int leftCount = 0, rightCount = 0;
+                for (int j = 1; j < left.Length; j++)
+                {
+                    if (left[j] == value) leftCount++;
+                    if (right[j] == value) rightCount++;
+                }
+                if (leftCount != rightCount)
+                    return false;
+            }
+            return true;
+        }
+
+        private static string? MatchKey(List<Option> options, byte[] packet, BotState state) =>
+            MatchOption(options, packet, state)?.Key;
 
         // ---------------------------------------------------------------- reporting
 
@@ -1761,10 +1895,15 @@ namespace BotTest.Game.AI.Search
             bool sumForPick = p.State == BotState.SelectSum && _rootState == BotState.SelectUnselectCard;
             if (key == null || p.State != _rootState && !sumForPick)
                 return false;
-            var options = OptionsFor(p, true, rng, h)?.Select(o => o.Key) ?? Enumerable.Empty<string>();
-            string mine = DecisionKey.Of(_rootState, h.Summary(0), h.Summary(1), options);
+            string mine = DecisionKey.Of(_rootState, h.Summary(0), h.Summary(1), ReplayOptionKeys(p, h, rng));
+            if (FromTurnStart is { } replay && replay.SameCheckpointBoard(mine, key, replay.Checkpoints[^1].Phase))
+                return true;
             return sumForPick ? WithoutCancel(mine) == WithoutCancel(key) : mine == key;
         }
+
+        private IEnumerable<string> ReplayOptionKeys(Prompt prompt, DuelHost host, Random rng) =>
+            prompt.Data is SelectChainData chain ? SearchActions.ChainOptionKeys(chain)
+                : OptionsFor(prompt, true, rng, host)?.Select(option => option.Key) ?? Enumerable.Empty<string>();
 
         // A decision key without its "cancel" answer (the last '#' part lists the answers, ';'-separated).
         private static string WithoutCancel(string key) =>
@@ -1795,7 +1934,8 @@ namespace BotTest.Game.AI.Search
                 lock (_start.Lock)
                     node = _start.Children.GetValueOrDefault(stat.Key);
                 var steps = new List<PlanStep>();
-                while (node != null)
+                var seen = new HashSet<MctsNode>(ReferenceEqualityComparer.Instance);
+                while (node != null && seen.Add(node))
                 {
                     KeyValuePair<string, MctsNode> next;
                     string planLabel = "";
@@ -1999,6 +2139,8 @@ namespace BotTest.Game.AI.Search
                                 continue;
                             }
                             rootReached = prompt.State == _rootState;
+                            if (rootReached)
+                                host.HideUnseenDeckReveals();
                         }
                         if (!rootReached && Passive(prompt) is { } pass)
                         {
@@ -2034,7 +2176,9 @@ namespace BotTest.Game.AI.Search
                             Answer(host, prompt, options.First(o => o.Key == key).Packet);
                             continue;
                         }
-                        var answer = brain?.Decide(prompt) ?? MctsPolicy.Answer(prompt, rng, line, host);
+                        var answer = ReinforcementGardnaPick(prompt, host) is byte gardna
+                            ? new byte[] { 1, gardna }
+                            : brain?.Decide(prompt) ?? MctsPolicy.Answer(prompt, rng, line, host);
                         if (prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd &&
                             OptionsFor(prompt, true, rng, host, setWindowChosen) is { Count: > 0 } legal)
                         {
@@ -2118,6 +2262,33 @@ namespace BotTest.Game.AI.Search
             return BoardAssessment.TurnsToWin(attackers, defenders, enemy.LifePoints) == 1;
         }
 
+        private bool SearchGrepherAvailable(DuelHost? host, SideSummary? own)
+        {
+            const int grepher = BlackwingCardId.DarkGrepher;
+            return !(FromTurnStart == null && (_view.ActivatedThisTurn.Any(id => SearchHost.Is(id, grepher)) ||
+                    EffectUsed(grepher, grepher * 16L + 1))) &&
+                host?.ActivatedInTurn(0, host.Turn).Any(id => SearchHost.Is(id, grepher)) != true &&
+                ((own?.HandCodes ?? _view.OwnHand).Any(id => SearchHost.Is(id, grepher)) ||
+                 (own?.Monsters.Any(m => SearchHost.Is(m.Code, grepher)) ??
+                  _view.OwnMonsters.Any(m => SearchHost.Is(m.Code, grepher))));
+        }
+
+        private byte? ReinforcementGardnaPick(Prompt prompt, DuelHost host)
+        {
+            if (prompt.Player != 0 ||
+                prompt.Data is not SelectCardData { SelectionHint: (int)DHint.ATOHAND, Minimum: 1, Maximum: 1, SelectableCards: { } offered } ||
+                host.ResolvingChainEffect is not { Player: 0, Code: var id } ||
+                !SearchHost.Is(id, BlackwingCardId.ReinforcementOfTheArmy))
+                return null;
+            int index = Array.FindIndex(offered, card => SearchHost.Is(card.ID, BlackwingCardId.NecroGardna));
+            if (index < 0)
+                return null;
+            var own = host.Summary(0);
+            var context = new CardRuleRegistry.Context(own.DeckCodes, own.HandCodes, 0, 0, 0, false,
+                DarkGrepherAvailable: SearchGrepherAvailable(host, own));
+            return CardRules.ReinforcementNeedsGardna(context) ? (byte)index : null;
+        }
+
         /// <param name="ourTurn">Our own decision in our turn: drop field effects we already used this turn, and moves the deck bans.</param>
         private List<Option>? OptionsFor(Prompt prompt, bool ourTurn, Random rng, DuelHost? host = null, bool setWindowChosen = false)
         {
@@ -2126,28 +2297,54 @@ namespace BotTest.Game.AI.Search
                 case IdleCmdData idle:
                 {
                     bool potRequired = false;
-                    var own = ourTurn && prompt.Player == 0 ? host?.Summary(0) : null;
-                    var theirs = ourTurn && prompt.Player == 0 ? host?.Summary(1) : null;
+                    bool checkRules = ourTurn && prompt.Player == 0;
+                    var own = checkRules ? host?.Summary(0) : null;
+                    var theirs = checkRules ? host?.Summary(1) : null;
+                    ThreatenedState.Assessment? threatAssessment = host != null && own != null && theirs != null
+                        ? AssessThreats(host, own, theirs) : null;
+                    var strategicState = State == TagRules.BotStrategicState.Desperate ? State : threatAssessment?.State ?? State;
                     bool? plagueMayRevive = null;
+                    int phase = host?.Phase ?? 0;
+                    var repositionable = idle.ReposableCards ?? Array.Empty<DynamicCard>();
+                    bool faceUpPositionChangeAvailable = checkRules && repositionable.Any(c => (c.Position & 0x5) != 0);
+                    bool otherPlayAvailable = (idle.SummonableCards?.Length ?? 0) > 0 ||
+                        (idle.SpecialSummonableCards?.Length ?? 0) > 0 || (idle.ActivableCards?.Length ?? 0) > 0;
+                    var summons = checkRules ? (idle.SummonableCards ?? Array.Empty<DynamicCard>())
+                        .Concat(idle.SpecialSummonableCards ?? Array.Empty<DynamicCard>()) : Enumerable.Empty<DynamicCard>();
+                    var ownMonsterIds = own?.Monsters.Select(monster => monster.Code).ToArray();
+                    int opponentLp = theirs?.LifePoints ?? _view.LifePoints[1];
+                    int ownLp = host?.LifePoints(0) ?? _view.LifePoints[0];
+                    var baseContext = checkRules ? new CardRuleRegistry.Context(own?.DeckCodes ?? _view.OwnDeck,
+                        own?.HandCodes ?? _view.OwnHand, theirs?.Hand ?? 0, ownLp, opponentLp, false) : null;
+                    CardRuleRegistry.Context[]? threatContexts = null;
+                    IReadOnlyList<BoardAssessment.Defender>? threats = null;
+                    Dictionary<(int Id, int Attack), bool>? threatAnswers = null;
+                    bool AnswersOne(DynamicCard card)
+                    {
+                        var key = (card.ID, card.Attack);
+                        threatAnswers ??= new();
+                        if (threatAnswers.TryGetValue(key, out bool answers))
+                            return answers;
+                        for (int i = 0; i < threats!.Count; i++)
+                            if ((CardRuleRegistry.TagsFor(card.ID, threatContexts![i]) & TagRules.Tag.AnswersAnyThreat) != 0 ||
+                                (SearchHost.Type(card.ID) & 0x1) != 0 && card.Attack > threats[i].Power)
+                                return threatAnswers[key] = true;
+                        return threatAnswers[key] = false;
+                    }
                     var choices = SearchActions.Idle(idle, ourTurn && UsedEffects == null ? _usedThisTurn : null,
                         (id, action) =>
                         {
-                            if (!ourTurn || prompt.Player != 0) return true;
+                            if (baseContext == null) return true;
                             // These are mandatory search windows: reposition face-up monsters in MP1; set cards
                             // after battle in MP2, or in MP1 when no Battle Phase is available this turn.
-                            int phase = host?.Phase ?? 0;
-                            if (State != TagRules.BotStrategicState.Desperate && setWindowChosen &&
+                            if (strategicState != TagRules.BotStrategicState.Desperate && setWindowChosen &&
                                 action is not (MainAction.SetMonster or MainAction.SetSpell or MainAction.ToEndPhase))
                                 return false;
-                            bool otherPlayAvailable = (idle.SummonableCards?.Length ?? 0) > 0 ||
-                                (idle.SpecialSummonableCards?.Length ?? 0) > 0 || (idle.ActivableCards?.Length ?? 0) > 0;
-                            var repositionable = (idle.ReposableCards ?? Array.Empty<DynamicCard>()).ToList();
-                            bool faceUpPositionChangeAvailable = repositionable.Any(c => (c.Position & 0x5) != 0);
                             if (action == MainAction.Repos)
                             {
-                                var matching = repositionable.Where(c => SearchHost.Is(c.ID, id)).ToList();
-                                if (matching.Count == 0) return false;
-                                var card = matching[0];
+                                int match = Array.FindIndex(repositionable, c => SearchHost.Is(c.ID, id));
+                                if (match < 0) return false;
+                                var card = repositionable[match];
                                 // Flip Summons stay available throughout Main Phase 1. Face-up position changes
                                 // wait until other Main Phase plays are done, just before battle/end or setting.
                                 if ((card.Position & 0x5) == 0) return phase == (int)OmegaBotWrapper.Enum.DuelPhase.Main1;
@@ -2161,61 +2358,62 @@ namespace BotTest.Game.AI.Search
                                     SearchHost.Is(id, GladiatorSetForRoutine);
                                 bool requiredTrap = action == MainAction.SetSpell && SearchHost.Is(id, 64697231) &&
                                     (theirs?.Hand ?? 0) >= 3;
-                                if (State != TagRules.BotStrategicState.Desperate && !routineSet && !requiredTrap &&
+                                if (strategicState != TagRules.BotStrategicState.Desperate && !routineSet && !requiredTrap &&
                                     (!setWindowPhase || faceUpPositionChangeAvailable)) return false;
                             }
                             if (action == MainAction.Activate && SearchHost.Is(id, BlackwingCardId.PlaguespreaderZombie) && own != null && theirs != null)
                                 plagueMayRevive ??= CardRules.PlaguespreaderMayRevive(own, theirs, host!.ExtraDeckCodes(0),
                                     idle.CanBattlePhase);
-                            int opponentLp = theirs?.LifePoints ?? _view.LifePoints[1];
                             bool noOtherAnswer = false;
                             bool noHandAnswer = false;
-                            IReadOnlyList<BoardAssessment.Defender> threats = Array.Empty<BoardAssessment.Defender>();
                             if (host != null && own != null && theirs != null)
                             {
-                                var defenders = theirs.Monsters.Where(m => m.FaceUp)
-                                    .Select(m => new BoardAssessment.Defender(m.AttackPosition ? m.Attack : m.Defense,
-                                        m.AttackPosition, false, m.Code)).ToList();
-                                threats = BoardAssessment.Threats(own.Monsters.Where(m => m.FaceUp && m.AttackPosition)
-                                    .Select(m => m.Attack), defenders);
-                                var availableSummons = (idle.SummonableCards ?? Array.Empty<DynamicCard>())
-                                    .Concat(idle.SpecialSummonableCards ?? Array.Empty<DynamicCard>())
-                                    .Where(card => !SearchHost.Is(card.ID, id)).ToList();
-                                bool opponentHasStardust = theirs.Monsters.Any(monster => SearchHost.Is(monster.Code, 44508094));
-                                bool AnswersOne(DynamicCard card)
+                                if (threats == null)
                                 {
-                                    return threats.Any(threat =>
+                                    var defenders = theirs.Monsters.Where(m => m.FaceUp)
+                                        .Select(m => new BoardAssessment.Defender(m.AttackPosition ? m.Attack : m.Defense,
+                                            m.AttackPosition, false, m.Code)).ToList();
+                                    threats = BoardAssessment.Threats(own.Monsters.Where(m => m.FaceUp && m.AttackPosition)
+                                        .Select(m => m.Attack), defenders);
+                                    bool opponentHasStardust = theirs.Monsters.Any(monster => SearchHost.Is(monster.Code, 44508094));
+                                    threatContexts = threats.Select(threat => baseContext with
                                     {
-                                        string? text = SearchHost.Cards.Get(threat.Id)?.Text;
-                                        bool triggersOnNormalSummon = text != null &&
-                                            text.Contains("Normal Summoned", StringComparison.OrdinalIgnoreCase) &&
-                                            (text.Contains("If this card", StringComparison.OrdinalIgnoreCase) ||
-                                             text.Contains("When this card", StringComparison.OrdinalIgnoreCase));
-                                        var threatContext = new CardRuleRegistry.Context(own.DeckCodes, own.HandCodes,
-                                            theirs.Hand, host.LifePoints(0), opponentLp, false,
-                                            ThreatCardId: threat.Id, OpponentHasStardustDragon: opponentHasStardust,
-                                            ThreatAttackPosition: threat.AttackPosition,
-                                            ThreatTriggersWhenNormalSummoned: triggersOnNormalSummon);
-                                        var tags = CardRuleRegistry.TagsFor(card.ID, threatContext);
-                                        return (tags & TagRules.Tag.AnswersAnyThreat) != 0 ||
-                                            (SearchHost.Type(card.ID) & 0x1) != 0 && card.Attack > threat.Power;
-                                    });
+                                        ThreatCardId = threat.Id,
+                                        OpponentHasStardustDragon = opponentHasStardust,
+                                        ThreatAttackPosition = threat.AttackPosition,
+                                        ThreatTriggersWhenNormalSummoned = CardRules.ThreatTriggersOnNormalSummon(threat.Id)
+                                    }).ToArray();
                                 }
-                                noOtherAnswer = threats.Count > 0 &&
-                                    !availableSummons.Any(card => AnswersOne(card) &&
-                                        (CardRuleRegistry.TagsFor(card.ID, new CardRuleRegistry.Context(own.DeckCodes,
-                                            own.HandCodes, theirs.Hand, host.LifePoints(0), opponentLp, false)) & TagRules.Tag.DoNotSummon) == 0);
-                                noHandAnswer = threats.Count > 0 && !availableSummons
-                                    .Concat(idle.ActivableCards ?? Array.Empty<DynamicCard>())
-                                    .Any(card => card.CurrentCoordinates.Location == (byte)CardLocation.Hand && AnswersOne(card));
+                                if (threats.Count > 0)
+                                {
+                                    var availableSummons = summons.Where(card => !SearchHost.Is(card.ID, id));
+                                    noOtherAnswer = !availableSummons.Any(card => AnswersOne(card) &&
+                                        (CardRuleRegistry.TagsFor(card.ID, baseContext) & TagRules.Tag.DoNotSummon) == 0);
+                                    noHandAnswer = !availableSummons.Concat(idle.ActivableCards ?? Array.Empty<DynamicCard>())
+                                        .Any(card => card.CurrentCoordinates.Location == (byte)CardLocation.Hand && AnswersOne(card));
+                                }
                             }
-                            var ruleContext = new CardRuleRegistry.Context(own?.DeckCodes ?? _view.OwnDeck, own?.HandCodes ?? _view.OwnHand,
-                                theirs?.Hand ?? 0,
-                                host?.LifePoints(0) ?? _view.LifePoints[0], opponentLp, noOtherAnswer,
-                                OwnMonsterIds: own?.Monsters.Select(monster => monster.Code).ToArray(),
-                                DrawTrapException: noHandAnswer || (idle.SummonableCards?.Length ?? 0) == 0 &&
+                            var ruleContext = baseContext with
+                            {
+                                NoOtherAnswer = noOtherAnswer,
+                                OwnMonsterIds = ownMonsterIds,
+                                DrawTrapException = noHandAnswer || (idle.SummonableCards?.Length ?? 0) == 0 &&
                                     (idle.MonsterSetableCards?.Length ?? 0) == 0,
-                                PlaguespreaderMayRevive: plagueMayRevive == true);
+                                PlaguespreaderMayRevive = plagueMayRevive == true
+                            };
+                            if (action == MainAction.Activate && SearchHost.Is(id, BlackwingCardId.ReinforcementOfTheArmy))
+                            {
+                                bool usedSummon = host?.SearchNormalSummonOrSetUsed == true || _view.NormalSummonUsed;
+                                ruleContext = ruleContext with
+                                {
+                                    NormalSummonUsed = usedSummon,
+                                    DarkGrepherAvailable = SearchGrepherAvailable(host, own),
+                                    ReinforcementHasSingleTarget = usedSummon && ruleContext.OwnDeck
+                                        .Select(SearchHost.Cards.Get)
+                                        .Where(card => card != null && CardRules.ReinforcementCanSearch(card.Type, card.Race, card.Level))
+                                        .Select(card => card!.Alias > 0 ? card.Alias : card.Id).Distinct().Take(2).Count() == 1,
+                                };
+                            }
                             var cardTags = CardRuleRegistry.TagsFor(id, ruleContext);
                             if (action == MainAction.Activate && (cardTags & TagRules.Tag.DoNotActivate) != 0)
                                 return false;
@@ -2228,8 +2426,7 @@ namespace BotTest.Game.AI.Search
                             if (action is MainAction.Summon or MainAction.SpSummon or MainAction.SetMonster &&
                                 (cardTags & TagRules.Tag.DoNotSummon) != 0)
                             {
-                                bool anotherSummonAvailable = (idle.SummonableCards ?? Array.Empty<DynamicCard>())
-                                    .Concat(idle.SpecialSummonableCards ?? Array.Empty<DynamicCard>())
+                                bool anotherSummonAvailable = summons
                                     .Where(card => !SearchHost.Is(card.ID, id))
                                     .Any(card => (CardRuleRegistry.TagsFor(card.ID, ruleContext) & TagRules.Tag.DoNotSummon) == 0);
                                 var enemyAttack = theirs?.Monsters.Where(monster => monster.FaceUp && monster.AttackPosition)
@@ -2256,13 +2453,17 @@ namespace BotTest.Game.AI.Search
                                     .FirstOrDefault(card => SearchHost.Is(card.ID, id)).Attack;
                                 bool hasTuner = own != null && own.HandCodes.Concat(own.Monsters.Where(m => m.FaceUp).Select(m => m.Code))
                                     .Any(code => (SearchHost.Type(code) & 0x1000) != 0);
+                                var strategicThreats = threatAssessment?.Threats ?? Array.Empty<StrategicCard>();
                                 bool hasAlternativeSynchro = (idle.SpecialSummonableCards ?? Array.Empty<DynamicCard>())
-                                    .Any(card => (SearchHost.Type(card.ID) & 0x2000) != 0 && threats.Any(threat =>
-                                        card.Attack > threat.Power ||
+                                    .Any(card => (SearchHost.Type(card.ID) & 0x2000) != 0 && strategicThreats.Any(threat =>
+                                        card.Attack > (threat.AttackPosition ? threat.Attack : threat.Defense) ||
                                         (CardRuleRegistry.TagsFor(card.ID, ruleContext with
                                         {
-                                            ThreatCardId = threat.Id,
-                                            ThreatAttackPosition = threat.AttackPosition
+                                            ThreatCardId = threat.Code,
+                                            ThreatAttackPosition = threat.AttackPosition,
+                                            ThreatTriggersWhenNormalSummoned = CardRules.ThreatTriggersOnNormalSummon(threat.Code),
+                                            OpponentHasStardustDragon = theirs!.Monsters.Any(monster =>
+                                                monster.FaceUp && SearchHost.Is(monster.Code, 44508094))
                                         }) & TagRules.Tag.AnswersAnyThreat) != 0));
                                 int projectedDamage = 0;
                                 if (idle.CanBattlePhase && own != null && theirs != null)
@@ -2276,7 +2477,7 @@ namespace BotTest.Game.AI.Search
                                     if (BoardAssessment.TurnsToWin(attackers, defenders, damageRequired, maxTurns: 1) == 1)
                                         projectedDamage = damageRequired;
                                 }
-                                if (TagRules.ForbidsNormalSummon(cardTags, State, hasTuner,
+                                if (TagRules.ForbidsNormalSummon(cardTags, strategicState, hasTuner,
                                     hasAlternativeSynchro, opponentLp, projectedDamage))
                                     return false;
                             }
@@ -2289,7 +2490,7 @@ namespace BotTest.Game.AI.Search
                         .Where(c => !ourTurn || MayChoose == null || c.Response.Action is MainAction.ToBattlePhase or MainAction.ToEndPhase ||
                                     MayChoose(SearchActions.KeyCardId(c.Key), c.Response.Action))
                         .ToList();
-                    if (State != TagRules.BotStrategicState.Desperate && prompt.Player == 0 &&
+                    if (strategicState != TagRules.BotStrategicState.Desperate && prompt.Player == 0 &&
                         choices.Any(c => c.Response.Action is MainAction.Summon or MainAction.SpSummon or MainAction.Activate))
                         choices.RemoveAll(c => c.Response.Action is MainAction.SetMonster or MainAction.SetSpell &&
                             !(c.Response.Action == MainAction.SetMonster && GladiatorSetForRoutine > 0 &&
@@ -2311,7 +2512,7 @@ namespace BotTest.Game.AI.Search
                             host?.LifePoints(0) ?? _view.LifePoints[0], host?.LifePoints(1) ?? _view.LifePoints[1], false,
                             CanWinThisTurn: host != null && CanWinThisTurn(host),
                             OwnMonsterIds: host?.Summary(0).Monsters.Select(monster => monster.Code).ToArray(),
-                            StrategicState: State);
+                            StrategicState: strategicState);
                         var mandatorySets = choices.Where(c => c.Response.Action == MainAction.SetSpell &&
                             (CardRuleRegistry.TagsFor(SearchActions.KeyCardId(c.Key), ruleContext) & TagRules.Tag.AlwaysSet) != 0).ToList();
                         var mandatoryActivations = choices.Where(c =>
@@ -2357,6 +2558,9 @@ namespace BotTest.Game.AI.Search
                 // attack is decided at the battle prompt (seen 2026-11-10: "attack, then cancel" cancelled the brain's attacks).
                 case SelectCardData select when (select.SelectableCards?.Length ?? 0) is var n && n > 0 && n <= MaxTreePickCards:
                 {
+                    if (host != null && ReinforcementGardnaPick(prompt, host) is byte gardna)
+                        return Picks(SearchActions.CardPicks(select.SelectableCards!, 1, 1, false)
+                            .Where(pick => pick.Indexes[0] == gardna).ToList());
                     bool attackTarget = select.SelectionHint == (int)DHint.ATTACKTARGET;
                     var picks = Picks(SearchActions.CardPicks(select.SelectableCards!, attackTarget ? Math.Max(1, select.Minimum) : select.Minimum, select.Maximum,
                         select.Cancelable && !attackTarget && prompt.Player != 0, rng, MaxPickOptions));
@@ -2510,7 +2714,8 @@ namespace BotTest.Game.AI.Search
                             }) & TagRules.Tag.DoNotActivate) != 0)
                             continue;
                         // A once-per-turn effect of ours already used this turn (the rebuilt card forgot): as at main decisions.
-                        if (ourTurn && prompt.Player == 0 && (UsedEffects != null ? EffectUsed(cards[i].ID, i < descs.Length ? descs[i] : 0) : _usedThisTurn.Contains(cards[i].ID)) &&
+                        if (ourTurn && prompt.Player == 0 && !chain.Forced &&
+                            (UsedEffects != null ? EffectUsed(cards[i].ID, i < descs.Length ? descs[i] : 0) : _usedThisTurn.Contains(cards[i].ID)) &&
                             cards[i].CurrentCoordinates.Location is (byte)CardLocation.MonsterZone or (byte)CardLocation.SpellZone)
                             continue;
                         list.Add(new Option($"chain:{SearchActions.CardKey(cards[i])}:{(i < descs.Length ? descs[i] : 0)}",

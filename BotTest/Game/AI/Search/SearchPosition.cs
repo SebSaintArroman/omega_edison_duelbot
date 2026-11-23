@@ -14,6 +14,7 @@ namespace BotTest.Game.AI.Search
         public int Sequence;
         /// <summary>Engine position (POS_*: 1 face-up attack, 2 face-down attack, 4 face-up defence, 8 face-down defence).</summary>
         public uint Position;
+        public bool KnownDeckTop;
         /// <summary>Already attacked this turn (it can't attack again in the rebuilt turn).</summary>
         public bool Attacked;
         /// <summary>Index (in SearchPosition.Cards) of the monster this card is equipped to, or -1.</summary>
@@ -60,6 +61,60 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>Gladiator Beast Darius: its revived monster goes back to the deck when it leaves (see ToLua).</summary>
         public const int DariusId = 25924653;
+
+        internal static readonly string BlindRevealSetup = $$"""
+
+            local blank={{SearchView.InertCard}}
+            local restrictions={EFFECT_CANNOT_SUMMON,EFFECT_CANNOT_FLIP_SUMMON,EFFECT_CANNOT_SPECIAL_SUMMON,
+                                EFFECT_CANNOT_MSET,EFFECT_CANNOT_SSET}
+            local get_top=Duel.GetDecktopGroup
+            function _st_blank_card(c)
+                if _st_known_deck[c] or _st_blanks[c] then return end
+                c:Recreate(blank,nil,nil,0,nil,nil,nil,nil,nil,nil,nil,nil,true)
+                _st_blanks[c]=true
+                for _,code in ipairs(restrictions) do
+                    local e=Effect.CreateEffect(c)
+                    e:SetType(EFFECT_TYPE_SINGLE)
+                    e:SetProperty(EFFECT_FLAG_CANNOT_DISABLE|EFFECT_FLAG_UNCOPYABLE)
+                    e:SetCode(code)
+                    e:SetValue(1)
+                    c:RegisterEffect(e,true)
+                end
+            end
+            function _st_blank_top(p,n)
+                if _st_hide_new and p==0 and n>0 then
+                    for c in aux.Next(get_top(p,n)) do _st_blank_card(c) end
+                end
+            end
+            local discard_deck=Duel.DiscardDeck
+            Duel.DiscardDeck=function(p,n,r)
+                if _st_hide_new and p==0 and Duel.IsPlayerCanDiscardDeck(p,0) then _st_blank_top(p,n) end
+                return discard_deck(p,n,r)
+            end
+            Duel.GetDecktopGroup=function(p,n)
+                local g=get_top(p,n)
+                if _st_hide_new and p==0 then _st_blind_groups[g]=true end
+                return g
+            end
+            for _,name in ipairs({"SendtoGrave","Remove","SendtoHand"}) do
+                local move=Duel[name]
+                Duel[name]=function(g,...)
+                    if _st_hide_new and _st_blind_groups[g] then
+                        for c in aux.Next(g) do
+                            if c:IsLocation(LOCATION_DECK) and c:IsControler(0) then _st_blank_card(c) end
+                        end
+                        _st_blind_groups[g]=nil
+                    end
+                    return move(g,...)
+                end
+            end
+            local shuffle_deck=Duel.ShuffleDeck
+            Duel.ShuffleDeck=function(p,...)
+                if p==0 then _st_known_deck={} end
+                return shuffle_deck(p,...)
+            end
+
+            """;
 
         public int[] LifePoints { get; } = { 8000, 8000 };
         public List<PlacedCard> Cards { get; } = new();
@@ -133,6 +188,16 @@ namespace BotTest.Game.AI.Search
                         .Append(type).Append(',').Append(count).Append(") end\n");
             }
             lua.Append("Debug.ReloadFieldEnd()\n");
+            lua.Append("_st_hide_new=false _st_known_deck={} _st_blanks={} _st_blind_groups=setmetatable({},{__mode='k'})\n");
+            for (int i = 0; i < Cards.Count; i++)
+                if (Cards[i].KnownDeckTop)
+                    lua.Append("if c[").Append(i + 1).Append("] then _st_known_deck[c[").Append(i + 1).Append("]]=true end\n");
+                else if (Cards[i] is { Controller: 0, Location: LocHand, Code: SearchView.InertCard })
+                    lua.Append("if c[").Append(i + 1).Append("] then _st_blank_card(c[").Append(i + 1).Append("]) end\n");
+            // The engine's normal turn draw does not call the Lua Duel.Draw wrapper.
+            lua.Append("do local e=Effect.GlobalEffect() e:SetType(EFFECT_TYPE_FIELD|EFFECT_TYPE_CONTINUOUS) e:SetCode(EVENT_DRAW) ")
+                .Append("e:SetOperation(function(e,tp,eg,ep) if _st_hide_new and ep==0 then for c in aux.Next(eg) do _st_blank_card(c) end end end) ")
+                .Append("Duel.RegisterEffect(e,0) end\n");
             // Monsters controlled by the player who doesn't own them: a control effect keeps them where they are (without one the
             // engine sends a card home to its owner). Borrowed ones (C1, user 2026-11-16: Brain Control) go back at the End Phase, as
             // the card's own effect does it; taken ones (Goyo Guardian) stay.
@@ -200,6 +265,7 @@ namespace BotTest.Game.AI.Search
                 .Append("local keep={} for _,id in ipairs(_st_draws) do if Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_DECK,0,1,nil,id) then table.insert(keep,id) end end _st_draws=keep ")
                 .Append("local k=math.min(n,#_st_draws) for i=k,1,-1 do local tc=Duel.GetMatchingGroup(Card.IsCode,0,LOCATION_DECK,0,nil,_st_draws[i]):GetFirst() ")
                 .Append("if tc then Duel.MoveSequence(tc,0) end end for i=1,k do table.remove(_st_draws,1) end end ")
+                .Append("if _st_hide_new and p==0 and Duel.IsPlayerCanDraw(p,n) then _st_blank_top(p,n) end ")
                 .Append("return _st_draw(p,n,r) end end\n");
             // Our monsters that attacked this turn battled: a Gladiator Beast's tag-out checks GetBattledGroupCount() > 0, which a
             // rebuilt card reads as 0 (seen 2026-11-15: a mid-chain replay after Laquari's attack never got its tag-out window).

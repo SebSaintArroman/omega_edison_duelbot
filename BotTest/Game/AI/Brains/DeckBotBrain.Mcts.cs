@@ -147,7 +147,6 @@ namespace BotTest.Game.AI.Brains
                 attackerOdds = OpponentDeck.AttackerChances(MctsEvaluator.AttackerThresholds, unknownForAttack, AttackerStats);
             }
             attackerOdds ??= MctsEvaluator.GenericAttackerOdds(unknownForAttack);
-            _searchExtra = view.OwnExtra.ToList(); // the Vayu pairs' synchros (VayuPairsValue)
             // Their hand monsters that stop a lethal battle (a win's chance): known in their hand = 1, else the deck read's chance. Honest
             // only with an attack-position LIGHT monster of theirs out, Kalut only with a Blackwing (user, 2026-11-17).
             var knownHand = KnownEnemyHand();
@@ -175,6 +174,7 @@ namespace BotTest.Game.AI.Brains
             return new(new SearchCardValues(view.OwnGrave, view.EnemyGrave), SearchSetupFor(view), SearchCardBonus, unknownHand, explosiveness)
             {
                 AttackerOdds = attackerOdds,
+                GraveSetup = SearchGraveSetup,
                 RewardGladiatorBattles = RewardGladiatorBattles,
                 BackrowDoomRule = SearchBackrowDoomRule,
                 TheirNormalAttack = biggest?.Normal ?? MctsEvaluator.NoListNormalAttack,

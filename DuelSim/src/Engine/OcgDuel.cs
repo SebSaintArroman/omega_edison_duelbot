@@ -20,6 +20,8 @@ internal sealed class OcgDuel : IDisposable
     private readonly ScriptStore _scripts;
     private GCHandle _self;
     private IntPtr _handle;
+    private byte[] _searchMessages = Array.Empty<byte>();
+    private byte[] _queryBuffer = Array.Empty<byte>();
 
     public event Action<string>? EngineLog;
 
@@ -112,22 +114,54 @@ internal sealed class OcgDuel : IDisposable
         return OcgApi.Copy(ptr, length);
     }
 
+    /// <summary>Reads messages into duel-owned storage. Consume them before reading the next batch.</summary>
+    public ArraySegment<byte> GetSearchMessages()
+    {
+        var ptr = OcgApi.OCG_DuelGetMessage(_handle, out uint length);
+        int count = CopyToBuffer(ptr, length, ref _searchMessages);
+        return new ArraySegment<byte>(_searchMessages, 0, count);
+    }
+
     public void SetResponse(byte[] response) => OcgApi.OCG_DuelSetResponse(_handle, response, (uint)response.Length);
 
     public uint QueryCount(int team, uint location) => OcgApi.OCG_DuelQueryCount(_handle, (byte)team, location);
 
-    public byte[] Query(int controller, uint location, uint sequence, uint flags, uint overlaySequence = 0)
+    public CardQuery? Query(int controller, uint location, uint sequence, uint flags, uint overlaySequence = 0)
     {
         var info = new QueryInfo { Flags = flags, Controller = (byte)controller, Location = location, Sequence = sequence, OverlaySequence = overlaySequence };
         var ptr = OcgApi.OCG_DuelQuery(_handle, out uint length, ref info);
-        return OcgApi.Copy(ptr, length);
+        int count = CopyToBuffer(ptr, length, ref _queryBuffer);
+        return count == 0 ? null : CardQuery.Read(new MessageReader(_queryBuffer, 0, count));
     }
 
-    public byte[] QueryLocation(int controller, uint location, uint flags)
+    public List<CardQuery?> QueryLocation(int controller, uint location, uint flags)
+    {
+        int count = ReadLocationToBuffer(controller, location, flags);
+        return CardQuery.ReadLocation(_queryBuffer, count);
+    }
+
+    public List<int?> QueryLocationCodes(int controller, uint location)
+    {
+        int count = ReadLocationToBuffer(controller, location, Ocg.QueryCode);
+        return CardQuery.ReadLocationCodes(_queryBuffer, count);
+    }
+
+    private int ReadLocationToBuffer(int controller, uint location, uint flags)
     {
         var info = new QueryInfo { Flags = flags, Controller = (byte)controller, Location = location };
         var ptr = OcgApi.OCG_DuelQueryLocation(_handle, out uint length, ref info);
-        return OcgApi.Copy(ptr, length);
+        return CopyToBuffer(ptr, length, ref _queryBuffer);
+    }
+
+    private static int CopyToBuffer(IntPtr ptr, uint length, ref byte[] buffer)
+    {
+        if (ptr == IntPtr.Zero || length == 0)
+            return 0;
+        int count = checked((int)length);
+        if (count > buffer.Length)
+            buffer = new byte[Math.Max(count, buffer.Length * 2)];
+        Marshal.Copy(ptr, buffer, 0, count);
+        return count;
     }
 
     public void Dispose()

@@ -10,10 +10,7 @@ namespace BotTest.Game.Field
         /// Get detailed information from the Player field (using cheating perspective).
         /// </summary>
         /// <returns>FieldInfo structure with the Player field data.</returns>
-        public async Task<FieldInfo> GetPlayerField()
-        {
-            return await RefreshFieldAsync(FieldPerspective.Player);
-        }
+        public Task<FieldInfo> GetPlayerField() => RefreshFieldAsync(FieldPerspective.Player);
 
         /// <summary>
         /// Gets information about a specific card in the Player field (using cheating perspective).
@@ -68,10 +65,8 @@ namespace BotTest.Game.Field
         /// <param name="location">Location to check (e.g., CardLocation.Hand, CardLocation.MonsterZone).</param>
         /// <param name="controller">Controller of the cards (0 for player, 1 for opponent [BOT]).</param>
         /// <returns>List of DynamicCard in the specified location.</returns>
-        public async Task<IEnumerable<DynamicCard>> GetPlayerCardsInLocation(CardLocation location, int controller = 0)
-        {
-            return await GetCardsInLocationAsync(FieldPerspective.Player, location, controller);
-        }
+        public Task<List<DynamicCard>> GetPlayerCardsInLocation(CardLocation location, int controller = 0) =>
+            GetCardsInLocationAsync(FieldPerspective.Player, location, controller);
 
         /// <summary>
         /// Gets all cards in a specific location with a specific type.

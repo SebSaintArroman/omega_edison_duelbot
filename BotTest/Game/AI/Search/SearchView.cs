@@ -1,4 +1,5 @@
 ﻿using BotTest.Game.AI.Brains;
+using System.Runtime.InteropServices;
 
 namespace BotTest.Game.AI.Search
 {
@@ -80,6 +81,7 @@ namespace BotTest.Game.AI.Search
         /// <summary>The real turn number at the decision (the rebuilt turn is turn 1; our brain playing the line sees the real one).</summary>
         public int RealTurn { get; set; } = 1;
         public TagRules.BotStrategicState StrategicState { get; init; } = TagRules.BotStrategicState.Base;
+        public ThreatenedState ThreatHistory { get; init; } = new();
 
         /// <summary>The turn on which we observed the opponent summon and attack with a threat.</summary>
         public int OpponentSummonedAndAttackedWithThreatTurn { get; init; } = -1;
@@ -167,6 +169,7 @@ namespace BotTest.Game.AI.Search
                 EnemyHandCount = EnemyHandCount, EnemyExtraCount = EnemyExtraCount, NormalSummonUsed = NormalSummonUsed,
                 BattlePhaseDone = BattlePhaseDone, FirstTurnOfDuel = FirstTurnOfDuel, RealTurn = RealTurn, InBattlePhase = InBattlePhase,
                 StrategicState = StrategicState,
+                ThreatHistory = ThreatHistory.Copy(),
                 OpponentSummonedAndAttackedWithThreatTurn = OpponentSummonedAndAttackedWithThreatTurn,
                 DrawsAtStart = DrawsAtStart, Record = Record, SkipTurns = SkipTurns, BlankNextDraw = BlankNextDraw, OnlyAttackerZone = OnlyAttackerZone,
             };
@@ -416,28 +419,30 @@ namespace BotTest.Game.AI.Search
                         }
                     }
             }
-            // Our deck: the cards we know are on top in that order (KnownTop), the rest shuffled; the turn's draw (DrawsAtStart)
-            // comes off the top into the hand, so a projected next turn deals its draw afresh in every line.
+            // Keep the known top in order and sample the order of the remaining real cards.
             var rest = new List<int>(OwnDeck);
-            var top = new List<int>();
+            var deck = new List<int>(OwnDeck.Count + (BlankNextDraw ? 1 : 0));
             foreach (int id in KnownTop)
-                if (rest.Remove(id))
-                    top.Add(id);
-            var deck = top.Concat(rest.OrderBy(_ => rng.Next())).ToList();
+                if (Known(id) && rest.Remove(id))
+                    deck.Add(id);
+            int knownTopCount = deck.Count;
             // Our next draw unknown and not to be counted on (a search from their turn, plan step 3: "with the bot's draw a blank card").
             if (BlankNextDraw)
-                deck.Insert(top.Count, InertCard);
+                deck.Add(InertCard);
+            rng.Shuffle(CollectionsMarshal.AsSpan(rest));
+            deck.AddRange(rest);
             int draws = Math.Min(DrawsAtStart, deck.Count);
-            Pile(OwnHand.Concat(deck.Take(draws)), 0, SearchPosition.LocHand, SearchPosition.PosFaceDown);
+            Pile(OwnHand.Concat(deck.Take(draws).Select((code, index) => index < knownTopCount ? code : InertCard)),
+                0, SearchPosition.LocHand, SearchPosition.PosFaceDown);
             Pile(OwnGrave, 0, SearchPosition.LocGrave, SearchPosition.PosFaceUp, OwnGraveImproper, ArrivedThisTurn);
             Pile(OwnBanished, 0, SearchPosition.LocRemoved, SearchPosition.PosFaceUp, thisTurn: ArrivedThisTurn);
             Pile(OwnExtra, 0, SearchPosition.LocExtra, SearchPosition.PosFaceDown);
             // The deck in order, bottom first, each at sequence 0: the engine puts a sequence-0 card on top (push_back) and
             // shuffles the deck for any sequence of 2 or more, so the old 0,1,2... numbering lost the known top cards. A replay
             // to a chain window needs them (DeckBotBrain.MidChain: Card Trooper's cost mills the three cards it really milled).
-            foreach (int id in deck.Skip(draws).Reverse())
-                if (Known(id))
-                    position.Add(id, 0, SearchPosition.LocDeck, 0, SearchPosition.PosFaceDown);
+            for (int i = deck.Count - 1; i >= draws; i--)
+                if (Known(deck[i]))
+                    position.Add(deck[i], 0, SearchPosition.LocDeck, 0, SearchPosition.PosFaceDown).KnownDeckTop = i < knownTopCount;
             Pile(EnemyGrave, 1, SearchPosition.LocGrave, SearchPosition.PosFaceUp, EnemyGraveImproper, EnemyArrivedThisTurn);
             Pile(EnemyBanished, 1, SearchPosition.LocRemoved, SearchPosition.PosFaceUp, thisTurn: EnemyArrivedThisTurn);
             // No guessing at their unknown cards (user, 2026-11-11): only the cards we know are in their hand; their draws

@@ -77,6 +77,53 @@ namespace BotTest.Game.AI.Search
             return choices;
         }
 
+        /// <summary>
+        /// Every action in an idle prompt, as keys only. Decision/transposition keys need the engine's full legal
+        /// prompt, not the policy-filtered choices, but do not need labels, responses, or response packets.
+        /// Keep this in the same order and with the same duplicate handling as <see cref="Idle"/>.
+        /// </summary>
+        internal static List<string> IdleOptionKeys(IdleCmdData data)
+        {
+            var keys = new List<string>();
+            var seen = new HashSet<string>();
+            void Add(string key)
+            {
+                if (seen.Add(key))
+                    keys.Add(key);
+            }
+            void List(DynamicCard[]? cards, MainAction action)
+            {
+                foreach (var card in cards ?? Array.Empty<DynamicCard>())
+                    if (card.ActionIndex != null && card.ActionIndex.Length > (int)action)
+                        Add($"{(int)action}:{CardKey(card)}");
+            }
+            List(data.SummonableCards, MainAction.Summon);
+            List(data.SpecialSummonableCards, MainAction.SpSummon);
+            List(data.ReposableCards, MainAction.Repos);
+            List(data.MonsterSetableCards, MainAction.SetMonster);
+            List(data.SpellSetableCards, MainAction.SetSpell);
+            foreach (var card in data.ActivableCards ?? Array.Empty<DynamicCard>())
+                foreach (var activation in card.ActionActivateIndex ?? Array.Empty<ActivationCardIndex>())
+                    Add($"{(int)MainAction.Activate}:{CardKey(card)}:{activation.ActionDescription}");
+            if (data.CanBattlePhase)
+                Add("battle");
+            if (data.CanEndPhase)
+                Add("end");
+            return keys;
+        }
+
+        internal static List<string> ChainOptionKeys(SelectChainData chain)
+        {
+            var cards = chain.SelectableCards ?? Array.Empty<DynamicCard>();
+            var descs = chain.Descriptions ?? Array.Empty<int>();
+            var keys = new List<string>();
+            if (!chain.Forced)
+                keys.Add("pass");
+            for (int i = 0; i < cards.Length; i++)
+                keys.Add($"chain:{CardKey(cards[i])}:{(i < descs.Length ? descs[i] : 0)}");
+            return keys.Distinct().ToList();
+        }
+
         internal static DynamicCard AttackerFor(BattleCmdData data, ushort index) =>
             (data.AttackableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault(card =>
                 card.ActionIndex is { Length: > (int)BattleAction.Attack } indexes && indexes[(int)BattleAction.Attack] == index);
@@ -121,20 +168,72 @@ namespace BotTest.Game.AI.Search
             var picks = new List<Pick>();
             int n = cards.Length;
             var seen = new HashSet<string>();
+            var cardKeys = cards.Select(CardKey).ToArray();
+            var cardNames = cards.Select(Name).ToArray();
+            PriorityQueue<(string Key, int[] Indexes, int RandomOrder, int Ordinal), (int RandomOrder, int Ordinal)>? sampled = null;
+            int ordinal = 0;
+
+            Pick Materialize(string key, IReadOnlyList<int> indexes)
+            {
+                var packet = new byte[indexes.Count + 1];
+                packet[0] = (byte)indexes.Count;
+                for (int i = 0; i < indexes.Count; i++)
+                    packet[i + 1] = (byte)indexes[i];
+                return new Pick(key, $"pick {string.Join(" + ", indexes.Select(i => cardNames[i]))}", packet,
+                    indexes is int[] array ? array : indexes.ToArray());
+            }
+
+            void Sample(string key, int[] indexes)
+            {
+                int randomOrder = rng!.Next();
+                int order = ordinal++;
+                if (cap <= 0)
+                    return;
+                var candidate = (key, indexes, randomOrder, order);
+                // PriorityQueue is a min-heap. Negative priorities put the worst retained candidate at the top.
+                var priority = (-randomOrder, -order);
+                if (sampled!.Count < cap)
+                    sampled.Enqueue(candidate, priority);
+                else
+                {
+                    var worst = sampled.Peek();
+                    if (randomOrder < worst.RandomOrder || randomOrder == worst.RandomOrder && order < worst.Ordinal)
+                    {
+                        sampled.Dequeue();
+                        sampled.Enqueue(candidate, priority);
+                    }
+                }
+            }
+
+            void AddPick(string key, List<int> chosen)
+            {
+                if (sampled != null)
+                {
+                    Sample(key, chosen.ToArray());
+                    return;
+                }
+                if (rng != null && picks.Count >= cap)
+                {
+                    // The old implementation assigned one random key to every pick, then took the lowest cap.
+                    // Delay that work until a cap is actually exceeded, so <= cap keeps its order and consumes no RNG.
+                    sampled = new();
+                    foreach (var pick in picks)
+                        Sample(pick.Key, pick.Indexes.ToArray());
+                    picks.Clear();
+                    Sample(key, chosen.ToArray());
+                    return;
+                }
+                picks.Add(Materialize(key, chosen));
+            }
+
             void Combos(int start, List<int> chosen, int size)
             {
                 if (chosen.Count == size)
                 {
-                    var keys = chosen.Select(i => CardKey(cards[i])).OrderBy(k => k, StringComparer.Ordinal).ToList();
+                    var keys = chosen.Select(i => cardKeys[i]).OrderBy(k => k, StringComparer.Ordinal).ToList();
                     string key = size == 1 ? $"card:{keys[0]}" : $"cards:{string.Join('+', keys)}";
                     if (seen.Add(key))
-                    {
-                        var packet = new byte[size + 1];
-                        packet[0] = (byte)size;
-                        for (int i = 0; i < size; i++)
-                            packet[i + 1] = (byte)chosen[i];
-                        picks.Add(new Pick(key, $"pick {string.Join(" + ", chosen.Select(i => Name(cards[i])))}", packet, chosen.ToList()));
-                    }
+                        AddPick(key, chosen);
                     return;
                 }
                 for (int i = start; i < n; i++)
@@ -146,8 +245,10 @@ namespace BotTest.Game.AI.Search
             }
             for (int size = Math.Max(1, min); size <= Math.Min(Math.Min(max, n), MaxPickSize); size++)
                 Combos(0, new List<int>(), size);
-            if (rng != null && picks.Count > cap)
-                picks = picks.OrderBy(_ => rng.Next()).Take(cap).ToList();
+            if (sampled != null)
+                picks = sampled.UnorderedItems.Select(item => item.Element)
+                    .OrderBy(candidate => candidate.RandomOrder).ThenBy(candidate => candidate.Ordinal)
+                    .Select(candidate => Materialize(candidate.Key, candidate.Indexes)).ToList();
             if (min == 0 || cancelable)
                 picks.Add(new Pick("cancel", "cancel", new byte[] { 0 }, Array.Empty<int>()));
             return picks;

@@ -36,8 +36,8 @@ namespace BotTest.Game.AI.Brains
         }
 
         private TurnStartSnapshot? _turnStart;
-        private DuelBotWrapper? _strategicStateLogBot;
         private TagRules.BotStrategicState? _lastLoggedStrategicState;
+        private readonly ThreatenedState _threatenedState = new();
         private readonly List<TurnCheckpoint> _checkpoints = new();
 
         /// <summary>The wrapper's new-turn callback (IDecisionRefiner.TurnStartedAsync, from the adapter as soon as the bot exists, so
@@ -132,13 +132,14 @@ namespace BotTest.Game.AI.Brains
         {
             if (!IsSearchTwin)
             {
-                if (_strategicStateLogBot != bot)
-                {
-                    _strategicStateLogBot = bot;
-                    _lastLoggedStrategicState = null;
-                }
+                if (_trackedBot != bot || _gameField == null)
+                    AttachToBot(bot);
+                (int Threats, int Answers)? coverage = null;
+                try { coverage = await AssessStrategicStateAsync(bot); }
+                catch (Exception ex) { bot.LogNote($"strategic state assessment failed: {ex.Message}"); }
                 var strategicState = StrategicState;
-                bot.LogNote($"strategic state: {TagRules.DescribeStrategicState(strategicState, _lastLoggedStrategicState)} at {state}");
+                string detail = coverage is { } counts ? $" ({counts.Answers}/{counts.Threats} threats covered)" : "";
+                bot.LogNote($"strategic state: {TagRules.DescribeStrategicState(strategicState, _lastLoggedStrategicState)} at {state}{detail}");
                 _lastLoggedStrategicState = strategicState;
 
                 try { await TrackTemporaryMonstersAsync(); }
@@ -161,6 +162,26 @@ namespace BotTest.Game.AI.Brains
             catch { return; }
             _checkpoints.Add(new TurnCheckpoint { State = state, Phase = header.CurrentPhase, View = view, Generation = generation });
             (_lastSeenOwnHand, _lastSeenTheirHand) = (view.OwnHand.ToList(), view.EnemyHandCount);
+        }
+
+        private async Task<(int Threats, int Answers)> AssessStrategicStateAsync(DuelBotWrapper bot)
+        {
+            var field = await CurrentField.GetBotField();
+            var own = field.OwnSide;
+            var hand = own.Hand ?? Array.Empty<int>();
+            var monsters = await CurrentField.GetBotCardsInZone(CardLocation.MonsterZone, true);
+            var spells = await CurrentField.GetBotCardsInZone(CardLocation.SpellZone, true);
+            var enemy = await CurrentField.GetBotCardsInZone(CardLocation.MonsterZone, false);
+            var seen = hand.Concat(own.Grave ?? Array.Empty<int>()).Concat(own.Banish ?? Array.Empty<int>())
+                .Concat(monsters.Concat(spells).Where(card => card.Owner == 0).Select(card => card.ID));
+            var deck = SearchHost.Available && enemy.Count > 0 ? RemainingOwnDeck(bot, seen) : new List<int>();
+            StrategicCard Convert(DynamicCard card) => new(card.ID, card.CurrentCoordinates.Sequence,
+                card.Attack, card.Defense, card.IsFaceup(), card.IsAttack(), card.IsDisabled());
+            var result = _threatenedState.Evaluate(deck, hand, monsters.Select(Convert).ToArray(),
+                spells.Select(Convert).ToArray(), enemy.Select(Convert).ToArray(),
+                field.EnemySide.Hand?.Length ?? 0, own.LifePoints, field.EnemySide.LifePoints);
+            _assessedStrategicState = result.State;
+            return (result.Threats.Count, result.Answers);
         }
 
         // ------------------------------------------------------------------ temporary monsters (user, 2026-11-18)
@@ -385,6 +406,8 @@ namespace BotTest.Game.AI.Brains
                 if (best == null)
                     return null;
                 bot.LogNote($"search: {best.Key} (score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(best.Mean, best.StdErr)} over {best.Visits} lines, from the turn's start)");
+                if (state == BotState.SelectPosition && outcome != null)
+                    LogBreakdowns(bot, outcome, best.Key, list.ToHashSet());
                 return best.Key;
             }
             catch (Exception ex)
@@ -487,7 +510,7 @@ namespace BotTest.Game.AI.Brains
                     misses += search.ReplayMisses;
                     firstMiss ??= search.FirstReplayMiss;
                     return more;
-                }, brainKey, options.ToHashSet());
+                }, brainKey, options.ToHashSet(), rootState);
             }
             finally
             {

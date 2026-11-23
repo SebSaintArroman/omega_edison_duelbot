@@ -22,20 +22,6 @@ namespace BotTest.Game.AI.Search
 
         public SearchBrainApi() : base("http://search.invalid") { }
 
-        /// <summary>Calls and time (ticks) per API method, for the bench: where a brain decision's time goes.</summary>
-        public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Calls, long Ticks)> Usage = new();
-
-        private static T Timed<T>(string name, Func<T> call)
-        {
-            long start = System.Diagnostics.Stopwatch.GetTimestamp();
-            try { return call(); }
-            finally
-            {
-                long ticks = System.Diagnostics.Stopwatch.GetTimestamp() - start;
-                Usage.AddOrUpdate(name, (1, ticks), (_, u) => (u.Calls + 1, u.Ticks + ticks));
-            }
-        }
-
         public BotStateHeader Header()
         {
             var header = Duel.Header(0);
@@ -43,12 +29,12 @@ namespace BotTest.Game.AI.Search
             return header;
         }
 
-        public override Task<BotStateHeader> GetBotStateHeader(int botId, CancellationToken ct = default) => Timed("header", () => Task.FromResult(Header()));
+        public override Task<BotStateHeader> GetBotStateHeader(int botId, CancellationToken ct = default) => Task.FromResult(Header());
 
         // The board can't change while the brain makes one decision, but it re-reads the whole field before every card it looks at
         // (2026-11-17 profile: a third of the brain's time in the lines). Each view is read once per decision; Reset starts the next.
-        private readonly FieldInfo?[] _fields = new FieldInfo?[2];
-        private readonly Dictionary<(int Viewer, int Controller, int Location, int Sequence), DynamicCard?> _cards = new();
+        private readonly Task<FieldInfo>?[] _fields = new Task<FieldInfo>?[2];
+        private readonly Dictionary<(int Viewer, int Controller, int Location, int Sequence), Task<DynamicCard>> _cards = new();
 
         /// <summary>Forgets the board views read so far: call whenever the line's duel may have moved on (a new decision, a new line).</summary>
         public void Reset()
@@ -57,34 +43,30 @@ namespace BotTest.Game.AI.Search
             _cards.Clear();
         }
 
-        private FieldInfo Field(int viewer) => _fields[viewer] ??= Duel.FieldView(viewer);
+        private Task<FieldInfo> Field(int viewer) => _fields[viewer] ??= Task.FromResult(Duel.FieldView(viewer));
 
         private Task<DynamicCard> Card(int viewer, int controller, int location, int sequence)
         {
             var key = (viewer, controller, location, sequence);
-            if (!_cards.TryGetValue(key, out var card))
-                _cards[key] = card = Duel.CardAt(viewer, controller, location, sequence);
-            return card is { } found
+            if (_cards.TryGetValue(key, out var task))
+                return task;
+            var card = Duel.CardAt(viewer, controller, location, sequence);
+            return _cards[key] = card is { } found
                 ? Task.FromResult(found)
                 : Task.FromException<DynamicCard>(new HttpRequestException("No card found", null, System.Net.HttpStatusCode.NotFound));
         }
 
-        public override Task<FieldInfo> GetBotFieldInfo(int botId, CancellationToken ct = default) => Timed("field", () => Task.FromResult(Field(0)));
+        public override Task<FieldInfo> GetBotFieldInfo(int botId, CancellationToken ct = default) => Field(0);
 
-        public override Task<FieldInfo> GetPlayerFieldInfo(CancellationToken ct = default) => Task.FromResult(Field(1));
+        public override Task<FieldInfo> GetPlayerFieldInfo(CancellationToken ct = default) => Field(1);
 
         public override Task<DynamicCard> GetBotFieldCardInfo(int botId, int controller, int location, int sequence, CancellationToken ct = default) =>
-            Timed("card", () => Card(0, controller, location, sequence));
+            Card(0, controller, location, sequence);
 
         public override Task<DynamicCard> GetPlayerFieldCardInfo(int controller, int location, int sequence, CancellationToken ct = default) =>
             Card(1, controller, location, sequence);
 
         public override Task<DBCardList> GetMatchingCards(int[]? filters = null, CancellationToken ct = default)
-        {
-            return Timed(filters is { Length: 2 } && filters[1] == 0x40000100 ? "card-db (id)" : "card-db (filter)", () => MatchingCards(filters));
-        }
-
-        private Task<DBCardList> MatchingCards(int[]? filters)
         {
             filters ??= Array.Empty<int>();
             var cards = SearchHost.Cards;

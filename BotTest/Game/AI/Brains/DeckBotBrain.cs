@@ -1181,6 +1181,9 @@ namespace BotTest.Game.AI.Brains
             if (!IsSearchTwin)
                 bot.KnownOpponentHand = () => KnownEnemyHand(); // the log's "their hand" line
             _trackedTurn = -1;
+            _threatenedState.Clear();
+            _assessedStrategicState = TagRules.BotStrategicState.Base;
+            _lastLoggedStrategicState = null;
             _theirAttackedZones = (-1, new());
             _opponentBeforeTheirTurn = (-1, new());
             _opponentSummonedAndAttackedWithThreat = -1;

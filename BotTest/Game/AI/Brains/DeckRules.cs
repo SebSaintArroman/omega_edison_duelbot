@@ -140,7 +140,7 @@ namespace BotTest.Game.AI.Brains
         public const string IdleMaterialsSynchro = "deck.idle-materials-synchro";
         /// <summary>Normal Summon a monster that destroys a face-up defence-position effect monster of theirs in battle this turn (Lyla at 200 DEF), even if it doesn't beat their best attacker.</summary>
         public const string SummonToKill = "deck.summon-to-kill";
-        /// <summary>A set card of ours about to be removed by their effect is activated if that does any good at all (Torrential only when it takes more of theirs than ours).</summary>
+        /// <summary>A set card of ours about to be removed by their effect is activated if it helps, including Torrential when the wipe is favorable.</summary>
         public const string DoomedCardUsed = "deck.doomed-card-used";
         public const string BrionacBounce = "deck.brionac-bounce";
         public const string TurnPlannerCombo = "deck.turn-planner-combo";

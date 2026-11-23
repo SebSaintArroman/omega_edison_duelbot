@@ -19,15 +19,32 @@ internal sealed partial class DuelHost
     {
         lock (_core)
         {
-            var bytes = _duel.Query(controller, location, sequence, _queryFlags, overlaySequence);
-            return bytes.Length == 0 ? null : CardQuery.Read(new MessageReader(bytes));
+            if (_ownsDuel)
+                return _duel.Query(controller, location, sequence, _queryFlags, overlaySequence);
+            var cache = _searchCardQueries ??= new();
+            var key = (controller, location, sequence, overlaySequence);
+            if (!cache.TryGetValue(key, out var card))
+                cache[key] = card = _duel.Query(controller, location, sequence, _queryFlags, overlaySequence);
+            return card;
         }
     }
 
     private List<CardQuery?> QueryList(int controller, uint location, uint flags = Ocg.QueryCode | Ocg.QueryPosition | Ocg.QueryIsPublic | Ocg.QueryOverlayCard)
     {
         lock (_core)
-            return CardQuery.ReadLocation(_duel.QueryLocation(controller, location, flags));
+            return _duel.QueryLocation(controller, location, flags);
+    }
+
+    private List<int?> QueryCodes(int controller, uint location)
+    {
+        lock (_core)
+        {
+            var cache = _searchCodeQueries ??= new();
+            var key = (controller, location);
+            if (!cache.TryGetValue(key, out var cards))
+                cache[key] = cards = _duel.QueryLocationCodes(controller, location);
+            return cards;
+        }
     }
 
     private bool IsHidden(int viewer, int controller, uint location, CardQuery card, bool offered)
@@ -171,15 +188,23 @@ internal sealed partial class DuelHost
 
     private CardInfo SideView(int viewer, int side)
     {
-        int[] Ids(uint location) =>
-            QueryList(side, location).Select((card, i) => card == null ? 0
-                : IsHidden(viewer, side, location, card, offered: false) ? 0 : card.Code).ToArray();
+        int[] Ids(uint location)
+        {
+            if (!_ownsDuel && (location == Ocg.LocGrave || side == viewer))
+                return QueryCodes(side, location).Select(code => code.GetValueOrDefault()).ToArray();
+            return QueryList(side, location).Select(card => card == null || IsHidden(viewer, side, location, card, offered: false)
+                ? 0 : card.Code).ToArray();
+        }
 
         CardArray[] Zones(uint location) =>
-            QueryList(side, location).Select(card => new CardArray
+            QueryList(side, location).Select(card =>
             {
-                Cards = card == null ? Array.Empty<int>()
-                    : new[] { IsHidden(viewer, side, location, card, offered: false) ? 0 : card.Code }.Concat(card.Overlays).ToArray(),
+                if (card == null)
+                    return new CardArray { Cards = Array.Empty<int>() };
+                var ids = new int[1 + card.Overlays.Length];
+                ids[0] = IsHidden(viewer, side, location, card, offered: false) ? 0 : card.Code;
+                card.Overlays.CopyTo(ids, 1);
+                return new CardArray { Cards = ids };
             }).ToArray();
 
         var info = new CardInfo

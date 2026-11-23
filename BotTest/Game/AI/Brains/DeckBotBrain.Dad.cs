@@ -15,49 +15,53 @@ namespace BotTest.Game.AI.Brains
     public abstract partial class DeckBotBrain
     {
         protected const int VayuId = 72714392;
-        /// <summary>A live Vayu pair in our graveyard counts this share of the synchro it makes (its body: the synchro's effects are negated).
-        /// Below 1: a goal stays below what it converts into (user, 2026-11-16).</summary>
-        [Tunable("A live Vayu pair in our graveyard (Vayu + a non-Tuner Blackwing whose Levels make a Blackwing Synchro in our Extra Deck) counts this share of that synchro's body (its effects are negated). Below 1: a goal stays below what it converts into.")]
-        internal static double VayuPairShare = 0.15; // user, 2026-11-17: weighted toward the cards, less toward the pairing (was 0.5)
+        /// <summary>A live Vayu pair in our graveyard counts this share of the body it can summon.</summary>
+        [Tunable("Combined graveyard value of a live Vayu pair as a share of the negated Synchro's attack-position body.")]
+        internal static double VayuPairShare = 1;
 
         private readonly record struct CardBits(string Name, int Type, int Level, int Attack);
 
-        // Our Extra Deck when the search started (the Vayu pairs' synchros).
-        private List<int> _searchExtra = new();
+        internal Func<DuelSim.Engine.SideSummary, Func<int, double>?, (int Pairs, double Value)>? SearchGraveSetup =>
+            VayuPartnerIds.Length > 0 ? VayuPairsValue : null;
 
         /// <summary>
         /// The Vayu pairs in our graveyard (user, 2026-11-17: "special graveyard scores for vayu pairings. they're an exception - they can be
         /// a specific adjustment"): each Vayu with its own non-Tuner Blackwing partner there, whose Levels add up to a Blackwing Synchro still
         /// in our Extra Deck, is worth VayuPairShare of that synchro's body (base worth + ATK; Vayu negates its effects). Each Vayu, partner
-        /// and synchro copy used once, best synchro first. A Vayu with no pair is the deck's own lone-Vayu value (SearchCardBonus).
+        /// and synchro copy used once, best synchro first. Subtract the two individual readings already counted in the graveyard.
         /// </summary>
-        internal double VayuPairsValue(DuelSim.Engine.SideSummary own)
+        private static (int Pairs, double Value) VayuPairsValue(DuelSim.Engine.SideSummary own, Func<int, double>? graveValue)
         {
             if (!Search.SearchHost.Available)
-                return 0;
+                return default;
             static CardBits? Card(int code) => Search.SearchHost.Cards.Get(code) is { } r ? new CardBits(r.Name ?? "", r.Type, r.Level, r.Attack) : null;
-            int vayus = own.GraveCodes.Count(code => Search.SearchHost.Is(code, VayuId));
-            if (vayus == 0)
-                return 0;
+            var vayus = own.GraveCodes.Where(code => Search.SearchHost.Is(code, VayuId)).ToList();
+            if (vayus.Count == 0)
+                return default;
             var partners = own.GraveCodes.Where(code => !Search.SearchHost.Is(code, VayuId))
-                .Select(Card).Where(c => c is { } p && p.Name.StartsWith("Blackwing") && (p.Type & 0x1) != 0 && (p.Type & 0x1000) == 0)
-                .Select(c => c!.Value.Level).ToList();
-            var synchros = _searchExtra.Select(Card).Where(c => c is { } s && s.Name.StartsWith("Blackwing") && (s.Type & 0x2000) != 0)
+                .Select(code => (Code: code, Card: Card(code)))
+                .Where(c => c.Card is { } p && p.Name.StartsWith("Blackwing ", StringComparison.Ordinal) && (p.Type & 0x1) != 0 && (p.Type & 0x1000) == 0)
+                .ToList();
+            var synchros = own.ExtraCodes.Select(Card).Where(c => c is { } s && s.Name.StartsWith("Blackwing ", StringComparison.Ordinal) && (s.Type & 0x2000) != 0)
                 .Select(c => c!.Value).ToList();
             double value = 0;
-            for (int v = 0; v < vayus; v++)
+            int pairs = 0;
+            foreach (int vayu in vayus)
             {
                 // The best synchro any remaining partner makes with this Vayu (Level 1 + the partner's Level).
-                var best = partners.Distinct()
-                    .SelectMany(level => synchros.Where(s => s.Level == 1 + level).Select(s => (Level: level, Synchro: s)))
+                var best = partners
+                    .SelectMany(partner => synchros.Where(s => s.Level == 1 + partner.Card!.Value.Level).Select(s => (Partner: partner, Synchro: s)))
                     .OrderByDescending(x => x.Synchro.Attack).FirstOrDefault();
                 if (best.Synchro.Name == null)
                     break;
-                partners.Remove(best.Level);
+                partners.Remove(best.Partner);
                 synchros.Remove(best.Synchro);
-                value += VayuPairShare * (Search.MctsEvaluator.MonsterBase + Search.MctsEvaluator.AtkValue(best.Synchro.Attack));
+                pairs++;
+                if (graveValue != null)
+                    value += VayuPairShare * (Search.MctsEvaluator.MonsterBase + Search.MctsEvaluator.AtkValue(best.Synchro.Attack))
+                        - graveValue(vayu) - graveValue(best.Partner.Code);
             }
-            return value;
+            return (pairs, value);
         }
         protected const int PlaguespreaderId = 33420078;
         protected const int ChaosSorcererId = 9596126;

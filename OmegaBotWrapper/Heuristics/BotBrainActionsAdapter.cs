@@ -91,11 +91,16 @@ namespace OmegaBotWrapper.Heuristics
         private async Task<IList<byte>?> RefinedPick(BotState state, object data) =>
             _brain is IDecisionRefiner refiner ? await refiner.RefinePickAsync(state, data) : null;
 
-        public async Task<IList<byte>?> OnSelectCard(SelectCardData state) =>
-            await RefinedPick(BotState.SelectCard, state) ??
-            (Planned(BotState.SelectCard, state.SelectableCards, state.Minimum, state.Maximum, state.Cancelable) is { } planned
+        public async Task<IList<byte>?> OnSelectCard(SelectCardData state)
+        {
+            // The attack decision already commits to attacking. The plan only chooses a defender.
+            bool attackTarget = state.SelectionHint == (int)DHint.ATTACKTARGET;
+            return await RefinedPick(BotState.SelectCard, state) ??
+            (Planned(BotState.SelectCard, state.SelectableCards, attackTarget ? Math.Max(1, state.Minimum) : state.Minimum,
+                state.Maximum, state.Cancelable && !attackTarget) is { } planned
                 ? planned
                 : await _brain.OnSelectCardAsync(CreateContext(BotState.SelectCard, state, includeFieldSnapshot: true)));
+        }
 
         public async Task<IList<byte>?> OnSelectTribute(SelectTributeData state) =>
             await RefinedPick(BotState.SelectTribute, state) ??

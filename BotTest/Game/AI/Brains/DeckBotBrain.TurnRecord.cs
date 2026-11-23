@@ -135,6 +135,7 @@ namespace BotTest.Game.AI.Brains
         {
             bool battle = _recBattle; // a fact, not a commitment: sets after it are Main Phase 2's
             int enemyHand = _recEnemyHand, enemyDeck = _recEnemyDeck;
+            // Keep the observed baseline so the next prompt can detect a mill immediately after a wipe.
             int ownDeck = _recOwnDeck;
             ResetTurnRecord(_recordTurn);
             _recBattle = battle;

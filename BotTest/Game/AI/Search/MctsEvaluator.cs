@@ -87,10 +87,9 @@ namespace BotTest.Game.AI.Search
         [Tunable("Our life points lost by the end of a line count against it at this share of DamageBonusPer1000 (continuous: 0.5 x 0.1 per 1000 = 0.05 per 1000 lost). User, 2026-11-18: \"make it count 50% of the opponent's one\".")]
         public static double OwnDamageShare = 0.8333; // user, 2026-11-19: taking damage doubled to 0.10 per 1000 (0.8333 x 0.12); was 0.5 x 0.1
 
-        /// <summary>Per card we draw in our turn, on top of the card itself: a drawn card counts as 1.01 cards (CSV S6, so free draws aren't
-        /// skipped for a tie).</summary>
-        [Tunable("Per card we draw in our turn, on top of the card itself: a drawn card counts as 1.01 cards (CSV S6, so free draws aren't skipped for a tie).")]
-        public static double DrawBonus = 0.01;
+        /// <summary>Bonus in card units for each card we draw after the searched decision.</summary>
+        [Tunable("Bonus in card units for each card we draw after the searched decision.")]
+        public static double DrawBonus = 0.5;
 
         /// <summary>
         /// Per card of advantage won in our turn (card units, on top of the cards' own worth): a +1 (a card gained without losing one:
@@ -100,11 +99,22 @@ namespace BotTest.Game.AI.Search
         [Tunable("Per card of advantage won in our turn (card units, on top of the cards' own worth): a +1 (a card gained without losing one: Black Whirlwind's search, Pot of Greed) or a card of theirs taken for nothing (DAD's effect). A 1-for-1 trade is 0; a card spent for nothing (Kalut into a battle that changes nothing) is -1. User, 2026-11-16: \"a very large bonus (per card)\".")]
         public static double PlusOneBonus = 1.0;
 
-        /// <summary>Our cards minus theirs: hand and field (monsters and spells/traps), tokens aside.</summary>
-        public static int CardAdvantage(SideSummary ours, SideSummary theirs)
+        /// <summary>Our cards minus theirs, with each live Vayu pair counting as one available summon.</summary>
+        public int CardAdvantage(SideSummary ours, SideSummary theirs)
         {
+            ours = ScoringSide(ours);
             static int Cards(SideSummary s) => s.Hand + s.Monsters.Count(m => (m.Type & 0x4000) == 0) + s.SpellCodes.Count;
-            return Cards(ours) - Cards(theirs);
+            int gravePairs = GraveSetup != null && ours.ExtraCodes.Count > 0 ? GraveSetup(ours, null).Pairs : 0;
+            return Cards(ours) - Cards(theirs) + gravePairs;
+        }
+
+        private static SideSummary ScoringSide(SideSummary side)
+        {
+            if (!side.HandCodes.Contains(SearchView.InertCard) && !side.GraveCodes.Contains(SearchView.InertCard))
+                return side;
+            var hand = side.HandCodes.Where(code => code != SearchView.InertCard).ToList();
+            var grave = side.GraveCodes.Where(code => code != SearchView.InertCard).ToList();
+            return side with { Hand = hand.Count, HandCodes = hand, Grave = grave.Count, GraveCodes = grave };
         }
 
         public double RiskDiscount => 1 - RiskDiscountMax * Math.Clamp(RiskPress, 0, 1);
@@ -217,7 +227,7 @@ namespace BotTest.Game.AI.Search
             bool won = host.Result is { Winner: 0 };
             if (host.Result is { Winner: >= 0 } && !won)
                 return 0;
-            var ours = host.Summary(0);
+            var ours = ScoringSide(host.Summary(0));
             var theirs = host.Summary(1);
             // With a breakdown: each side's categories as sub-rows of its part (their side negated, as it counts against us).
             double ourSide = parts == null ? SideScore(ours, 0, theirs) : SideScore(ours, 0, theirs, (c, v) => Part(OurCardsPart + SubPart + c, v));
@@ -336,7 +346,7 @@ namespace BotTest.Game.AI.Search
         /// SubPart in them are the two sides' categories, a split of their cards' parts.</summary>
         public Dictionary<string, double> PositionParts(DuelHost host)
         {
-            var ours = host.Summary(0);
+            var ours = ScoringSide(host.Summary(0));
             var theirs = host.Summary(1);
             // Each side's categories too, as sub-rows (theirs negated): not added into PositionDiff, only the breakdown's yardstick.
             var subRows = new Dictionary<string, double>();
@@ -363,7 +373,7 @@ namespace BotTest.Game.AI.Search
         /// </summary>
         public double PositionDiff(DuelHost host)
         {
-            var ours = host.Summary(0);
+            var ours = ScoringSide(host.Summary(0));
             var theirs = host.Summary(1);
             return SideScore(ours, 0, theirs) - SideScore(theirs, 1, ours) + Dominance(ours, theirs, 0) - Dominance(theirs, ours, 1) - Threat(ours) +
                    ClockValue(ours, theirs) - TheirClockShare * ClockValue(theirs, ours, TheirNextAttack(theirs));
@@ -395,6 +405,7 @@ namespace BotTest.Game.AI.Search
         /// <see cref="GenericAttackerOdds"/>. Null: no lethal-exposure check.
         /// </summary>
         public double[]? AttackerOdds { get; init; }
+        public Func<SideSummary, Func<int, double>?, (int Pairs, double Value)>? GraveSetup { get; init; }
 
         // ------------------------------------------------------------------ monster size and dominance
 
@@ -596,7 +607,8 @@ namespace BotTest.Game.AI.Search
                 int power = m.AttackPosition ? m.Attack : m.Defense;
                 bool destroyed = TheirHonestKnown || (m.AttackPosition ? power <= attack : power < attack);
                 if (destroyed)
-                    worst = Math.Max(worst, MonsterLoss(m, 0));
+                    // Losing a monster in DEF also loses the attacker it could be next turn.
+                    worst = Math.Max(worst, MonsterLoss(Power(m) < m.Attack ? m with { AttackPosition = true } : m, 0));
             }
             return SittingDuckWeight * worst;
         }
@@ -805,8 +817,17 @@ namespace BotTest.Game.AI.Search
                 : card.LikesSet ? SetFlipBase + SetFlipEffectWeight * Taper(card.Held) : WallValue;
             field += Bonus(m.Code, m.FaceUp ? CardPlace.Field : CardPlace.Set, side);
             bool token = (m.Type & 0x4000) != 0;
-            double grave = token ? 0 : (card.Grave > 0 ? card.Grave : GraveMonsterShare * (MonsterBase + AtkValue(Math.Max(0, SearchHost.Cards.Get(m.Code)?.Attack ?? 0)) + FieldEffectWeight * Taper(card.Field))) + Bonus(m.Code, CardPlace.Grave, side);
+            double grave = token ? 0 : GraveValue(m.Code, side);
             return Math.Max(0, field - grave);
+        }
+
+        private double GraveValue(int code, int side)
+        {
+            var card = _values.Get(code, side);
+            double value = card.Grave;
+            if (value <= 0 && SearchHost.Cards.Get(code) is { } printed && (printed.Type & 0x1) != 0)
+                value = GraveMonsterShare * (MonsterBase + AtkValue(printed.Attack) + FieldEffectWeight * Taper(card.Field));
+            return value + Bonus(code, CardPlace.Grave, side);
         }
 
         /// <summary>Torrential Tribute springing now (on our summon): what we'd lose, net of what they'd lose, by its chance now.</summary>
@@ -1103,7 +1124,7 @@ namespace BotTest.Game.AI.Search
                 Add(SideOverrides, Bonus(code, faceUp ? CardPlace.Field : CardPlace.Set, side));
             }
             // Hand: every card is an option; strong effects and big bodies more so.
-            foreach (int code in s.HandCodes.Where(c => c != SearchView.InertCard))
+            foreach (int code in s.HandCodes.Where(code => code != SearchView.InertCard))
             {
                 var card = _values.Get(code, side);
                 int atk = SearchHost.Cards.Get(code) is { } r && (r.Type & 0x1) != 0 ? r.Attack : 0;
@@ -1114,15 +1135,14 @@ namespace BotTest.Game.AI.Search
             // Graveyard: the grave scorer's value as it is (user, 2026-11-18: "graveyard weights should be their weight according to the grave
             // scorer, not 15% of anything"). A card without a graveyard effect (or an override, Bonus): a spell/trap 0, a monster 5% of
             // its field worth (face-up in attack, its printed ATK and field effects).
-            foreach (int code in s.GraveCodes)
+            foreach (int code in s.GraveCodes.Where(code => code != SearchView.InertCard))
             {
-                var card = _values.Get(code, side);
-                double grave = card.Grave;
-                if (grave <= 0 && SearchHost.Cards.Get(code) is { } r && (r.Type & 0x1) != 0)
-                    grave = GraveMonsterShare * (MonsterBase + AtkValue(Math.Max(0, r.Attack)) + Effect(card.Field, FieldEffectWeight));
-                Add(SideGraveyard, grave);
-                Add(SideOverrides, Bonus(code, CardPlace.Grave, side));
+                double bonus = Bonus(code, CardPlace.Grave, side);
+                Add(SideGraveyard, GraveValue(code, side) - bonus);
+                Add(SideOverrides, bonus);
             }
+            if (side == 0 && GraveSetup != null && s.ExtraCodes.Count > 0)
+                Add(SideGraveyard, GraveSetup(s, code => GraveValue(code, 0)).Value);
             Add(SideTributeSetup, TributeSetup(s, side));
             if (side == 0 && _setup != null)
             {

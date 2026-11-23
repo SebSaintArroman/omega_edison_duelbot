@@ -155,8 +155,7 @@ namespace BotTest.Game.AI.Search
                 double field = EffectEvaluator.ScoreOnFieldAsync(code, grave).GetAwaiter().GetResult().Score - atk;
                 double held = EffectEvaluator.ScoreAsync(code, grave).GetAwaiter().GetResult().Score - atk;
                 double inGrave = EffectEvaluator.ScoreInGraveAsync(code, grave).GetAwaiter().GetResult().Score;
-                // Vayu is the exception (user, 2026-11-17): its graveyard worth is its pairing, which the Vayu / Blackwing brains score
-                // (VayuPairsValue, plus their lone-Vayu value), so the generic reading and its floor don't apply.
+                // An unmatched Vayu gets its own reading. The graveyard evaluator replaces the individual readings of a live pair.
                 bool vayu = SearchHost.Is(code, 72714392);
                 string text = card.CardText ?? "";
                 bool fromGrave = EffectEvaluator.HasGraveyardEffect(text) || EffectEvaluator.HasGraveyardPlay(text);

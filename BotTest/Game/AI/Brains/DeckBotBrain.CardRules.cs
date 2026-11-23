@@ -3,11 +3,63 @@ using OmegaBotWrapper.Enum;
 using OmegaBotWrapper.Heuristics;
 using OmegaBotWrapper.States;
 using OmegaBotWrapper.Struct;
+using BotTest.Game.AI.Search;
 
 namespace BotTest.Game.AI.Brains
 {
     public abstract partial class DeckBotBrain
     {
+        private const int GrepherId = 14536035;
+
+        private async Task<CardRuleRegistry.Context> ReinforcementContextAsync(BotStateHeader header,
+            DuelBotWrapper? bot = null, IReadOnlyCollection<int>? offered = null)
+        {
+            var field = await CurrentField.GetBotField();
+            var own = field.OwnSide;
+            var hand = own.Hand ?? Array.Empty<int>();
+            bool grepherAvailable = !WasCardActivatedThisTurn(GrepherId) &&
+                (hand.Any(id => SearchHost.Is(id, GrepherId)) ||
+                 (await GetBotMonsterCardsAsync()).Any(card => card.IsCode(GrepherId)));
+            if (offered == null && own.Main is { Length: > 0 } knownDeck && knownDeck.All(id => id > 0))
+                offered = knownDeck;
+            if (offered == null && bot != null && SearchHost.Available)
+            {
+                var fieldCards = (await GetBotMonsterCardsAsync())
+                    .Concat(await GetPlayerCardsInZoneAsync(CardLocation.SpellZone))
+                    .Where(card => card.Owner == 0).Select(card => card.ID);
+                var seen = hand.Concat(own.Grave ?? Array.Empty<int>()).Concat(own.Banish ?? Array.Empty<int>()).Concat(fieldCards);
+                offered = RemainingOwnDeck(bot, seen);
+            }
+            return new CardRuleRegistry.Context(offered ?? Array.Empty<int>(), hand, 0, 0, 0, false,
+                NormalSummonUsed: NormalSummonUsed(header), DarkGrepherAvailable: grepherAvailable);
+        }
+
+        private async Task<bool> ReinforcementAllowedAsync(DecisionContext<IdleCmdData> decision)
+        {
+            var header = decision.Header;
+            if (!NormalSummonUsed(header))
+                return true;
+            var context = await ReinforcementContextAsync(header, decision.Bot);
+            if (CardRules.ReinforcementNeedsGardna(context))
+                return true;
+            var targets = new HashSet<int>();
+            foreach (int id in context.OwnDeck.Where(id => id > 0).Distinct())
+            {
+                if (SearchHost.Available && SearchHost.Cards.Get(id) is { } card)
+                {
+                    if (CardRules.ReinforcementCanSearch(card.Type, card.Race, card.Level))
+                        targets.Add(card.Alias > 0 ? card.Alias : id);
+                }
+                else if (await CardDatabase.GetAsync(id) is DBCardInfo info &&
+                         CardRules.ReinforcementCanSearch(info.Type, info.Race, info.Level))
+                    targets.Add(info.Alias > 0 ? info.Alias : id);
+                if (targets.Count > 1)
+                    break;
+            }
+            context = context with { ReinforcementHasSingleTarget = targets.Count == 1 };
+            return (CardRuleRegistry.TagsFor(ReinforcementOfTheArmyId, context) & TagRules.Tag.DoNotActivate) == 0;
+        }
+
         private async Task<bool> SharedSpellSetAllowedAsync(DynamicCard card)
         {
             if (card.HasType(CardType.Spell) && !card.HasType(CardType.QuickPlay))
@@ -55,6 +107,12 @@ namespace BotTest.Game.AI.Brains
                     (card.ActionActivateIndex ?? Array.Empty<ActivationCardIndex>()).Any(activation =>
                         activation.ActionIndex == move.Index)))
                 return await CanRevivePlaguespreaderAsync(context, state, (await GetBotHandCardsAsync()).Count - 1);
+            if (move.Action == MainAction.Activate &&
+                (state.ActivableCards ?? Array.Empty<DynamicCard>()).Any(card =>
+                    card.IsCode(ReinforcementOfTheArmyId) &&
+                    (card.ActionActivateIndex ?? Array.Empty<ActivationCardIndex>()).Any(activation =>
+                        activation.ActionIndex == move.Index)))
+                return await ReinforcementAllowedAsync(context);
             return true;
         }
 
@@ -64,6 +122,15 @@ namespace BotTest.Game.AI.Brains
                 return null;
 
             var cards = context.StateData.SelectableCards ?? Array.Empty<DynamicCard>();
+            // Omega can offer Sirocco's boost after its summon even when the card rule leaves only pass.
+            if (cards.Length > 0 && cards.All(card => card.CurrentCoordinates.Controller == 0 && card.IsCode(SiroccoId)))
+            {
+                var ownMonsters = await GetBotMonsterCardsAsync();
+                var ruleContext = new CardRuleRegistry.Context(Array.Empty<int>(), Array.Empty<int>(), 0, 0, 0, false,
+                    OwnMonsterIds: ownMonsters.Select(monster => monster.ID).ToArray());
+                if ((CardRuleRegistry.TagsFor(SiroccoId, ruleContext) & TagRules.Tag.DoNotActivate) != 0)
+                    return -1;
+            }
             var phase = (DuelPhase)context.Header.CurrentPhase;
             bool ourTurn = IsOwnTurn(context.Header);
             int FirstOffered(params int[] ids) => Array.FindIndex(cards, card =>

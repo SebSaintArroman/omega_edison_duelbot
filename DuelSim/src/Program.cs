@@ -14,7 +14,7 @@ public static class Program
           DuelSim run <deckA> <deckB> [--duels N] [--seed N] [--format MasterDuel] [--no-bot-logs] [--timeout-min N]
           DuelSim run ... [--out DIR] [--result FILE.json]   (also: a deck can be a tuned variant from tuning/, e.g. vayu-test-1)
           DuelSim run ... [--search MS] [--search-a MS] [--search-b MS] [--search-horizon N]   [--dead-time MS]   (MCTS: ms per decision, turns ahead; optional simulated dead-time search, off by default)
-          DuelSim search-bench <deckA> <deckB> | --scenario FILE.json  [--ms MS] [--threads N] [--horizon N] [--repeat N] [--trace KEY]   (MCTS on one position: best line, lines/s)
+          DuelSim search-bench <deckA> <deckB> | --scenario FILE.json  [--ms MS] [--threads N] [--horizon N] [--repeat N] [--trace KEY] [--profile-puzzle-parse]   (MCTS on one position: best line, lines/s)
           DuelSim evolve [--base Vayu] [--name vayu-test] [--generations N] [--duels 100] [--workers N]
                          [--mutations 8] [--strength 0.3] [--accept 0.55] [--baseline-every 5] [--baseline-duels 100]
                          [--seed N] [--keep-duels]
@@ -374,6 +374,7 @@ public static class Program
                 var root = OmegaBotWrapper.Enum.BotState.SelectIdleCmd;
                 string benchDeck = scenario ? "" : args[1];
                 string benchOpponent = scenario ? "" : args[2];
+                IReadOnlyList<string>? usedEffects = null;
                 BotTest.Game.AI.Search.SearchView view;
                 if (scenario)
                 {
@@ -382,6 +383,7 @@ public static class Program
                     root = loaded.Root;
                     benchDeck = loaded.Deck;
                     benchOpponent = loaded.Opponent;
+                    usedEffects = loaded.UsedEffects;
                     console.WriteLine($"scenario: {loaded.Deck} vs {loaded.Opponent}, {root}");
                 }
                 else
@@ -416,12 +418,13 @@ public static class Program
                     Math.Max(0, view.EnemyHandCount - view.EnemyKnownHand.Count) + view.EnemySpells.Count(c => c.Code <= 0), 0.5)
                     {
                         AttackerOdds = BenchAttackerOdds(benchOpponent, view, sc, ss),
+                        GraveSetup = deckBrain?.SearchGraveSetup,
                         RewardGladiatorBattles = deckBrain?.RewardGladiatorBattles == true,
                         BackrowDoomRule = deckBrain?.SearchBackrowDoomRule
                     };
                 var tree = new BotTest.Game.AI.Search.MctsTree { Label = "bench" };
                 BotTest.Game.AI.Search.Mcts NewSearch() => new(view, tree, tree.Root, root, null, Array.Empty<int>(), settings, evaluator, brains)
-                    { Suggestions = deckBrain == null ? null : deckBrain.PlanSuggestions };
+                    { Suggestions = deckBrain == null ? null : deckBrain.PlanSuggestions, UsedEffects = usedEffects };
                 int repeat = int.Parse(Option2(args, "--repeat", "1"));
                 for (int r = 1; r < repeat; r++)
                 {
@@ -429,6 +432,7 @@ public static class Program
                     var warm = NewSearch().Run(seed + r);
                     console.WriteLine($"run {r}: {warm.Iterations} lines in {warm.Elapsed.TotalMilliseconds:0} ms, {warm.TreeVisits} in the tree, depth {warm.Depth}");
                 }
+                DuelSim.Engine.SearchTimings.MeasurePuzzleParse = args.Contains("--profile-puzzle-parse");
                 DuelSim.Engine.SearchTimings.Reset();
                 var outcome = NewSearch().Run(seed);
                 console.WriteLine($"{outcome.Iterations} lines in {outcome.Elapsed.TotalMilliseconds:0} ms " +

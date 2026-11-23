@@ -1318,7 +1318,6 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 value += darks == 3 ? DadLiveSetupValue : darks == 2 ? DadNearSetupValue : 0;
             }
             // Vayu pairs in the graveyard: each worth a share of the synchro it makes (user, 2026-11-17; replaces the Sirocco-only pair).
-            value += VayuPairsValue(own);
             return value;
         }
 
@@ -2138,14 +2137,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         }
 
         // DARK monsters that are fine to discard to Dark Grepher's effect (or its summon cost, for the level 5+ ones).
-        private static readonly int[] GoodDarkDiscards =
-        {
-            BlackwingCardId.NecroGardna,
-            BlackwingCardId.PlaguespreaderZombie,
-            BlackwingCardId.BlackwingVayuTheEmblemOfHonor,
-            BlackwingCardId.BlackwingSiroccoTheDawn,
-            BlackwingCardId.BlackwingElphinTheRaven
-        };
+        private static readonly int[] GoodDarkDiscards = CardRules.GrepherDiscards;
 
         /// <summary>
         /// Special Summoning Dark Grepher from hand costs a level 5+ DARK, so it's rarely right. Only do it when:

@@ -154,18 +154,7 @@ namespace BotTest.Game.AI.Brains
             }
         }
 
-        /// <summary>The answers at a chain prompt as the search keys them (OptionsFor in Mcts).</summary>
-        private static List<string> ChainOptionKeys(SelectChainData chain)
-        {
-            var cards = chain.SelectableCards ?? Array.Empty<DynamicCard>();
-            var descs = chain.Descriptions ?? Array.Empty<int>();
-            var keys = new List<string>();
-            if (!chain.Forced)
-                keys.Add("pass");
-            for (int i = 0; i < cards.Length; i++)
-                keys.Add($"chain:{SearchActions.CardKey(cards[i])}:{(i < descs.Length ? descs[i] : 0)}");
-            return keys.Distinct().ToList();
-        }
+        private static List<string> ChainOptionKeys(SelectChainData chain) => SearchActions.ChainOptionKeys(chain);
 
         private static int ChainIndexOf(SelectChainData chain, string key)
         {
@@ -306,18 +295,27 @@ namespace BotTest.Game.AI.Brains
             if (_planStart is not { } last || last.Turn != _currentHeader.CurrentTurn)
                 return null;
             var node = last.Start;
+            var seen = new HashSet<MctsNode>(ReferenceEqualityComparer.Instance);
+            bool FollowPasses()
+            {
+                while (true)
+                {
+                    MctsNode? passed;
+                    lock (node.Lock)
+                    {
+                        if (node.ChildPlayer != 1)
+                            return true;
+                        passed = node.Children.GetValueOrDefault("pass");
+                    }
+                    if (passed == null || !seen.Add(node))
+                        return false;
+                    node = passed;
+                }
+            }
             foreach (var step in _sinceAnchor.Skip(last.From))
             {
-                lock (node.Lock)
-                {
-                    // Their decisions on the way: nothing of theirs came into play, so they passed.
-                    while (node.ChildPlayer == 1)
-                    {
-                        if (!node.Children.TryGetValue("pass", out var passed))
-                            return null;
-                        node = passed;
-                    }
-                }
+                if (!FollowPasses())
+                    return null;
                 lock (node.Lock)
                 {
                     if (node.ChildPlayer < 0)
@@ -330,12 +328,10 @@ namespace BotTest.Game.AI.Brains
                     node = child;
                 }
             }
+            if (!FollowPasses())
+                return null;
             lock (node.Lock)
-            {
-                while (node.ChildPlayer == 1 && node.Children.TryGetValue("pass", out var passed))
-                    node = passed;
                 return node.ChildPlayer == 0 && SamePrompt(node.ChildState, state) ? (last.Tree, node) : null;
-            }
         }
 
         private int _deckCountNow = -1;
@@ -399,10 +395,11 @@ namespace BotTest.Game.AI.Brains
         private (string Key, double Mean, int Visits, double StdErr)? PlanNodeStep(MctsNode node, IEnumerable<string> offered)
         {
             var byLoose = offered.GroupBy(NodeLoose).ToDictionary(g => g.Key, g => g.First());
-            List<(string Key, double Mean, int Visits, double StdErr)> tried;
+            List<(string Key, MctsNode Node)> children;
             lock (node.Lock)
-                tried = node.Children.Where(kv => kv.Value.Visits > 0 && byLoose.ContainsKey(NodeLoose(kv.Key)))
-                    .Select(kv => (byLoose[NodeLoose(kv.Key)], kv.Value.LineValue(Mcts.LineValueVisits), kv.Value.Visits, kv.Value.StdErr)).ToList();
+                children = node.Children.Select(kv => (Key: NodeLoose(kv.Key), Node: kv.Value))
+                    .Where(kv => kv.Node.Visits > 0 && byLoose.ContainsKey(kv.Key)).ToList();
+            var tried = children.Select(c => (Key: byLoose[c.Key], Mean: c.Node.LineValue(Mcts.LineValueVisits), c.Node.Visits, c.Node.StdErr)).ToList();
             if (tried.Count == 0)
                 return null;
             var sure = tried.Where(t => t.Visits >= StartLines).OrderByDescending(t => t.Mean).ToList();
@@ -417,6 +414,16 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         public async Task<IList<byte>?> RefinePickAsync(BotState state, object data, CancellationToken ct = default)
         {
+            if (data is SelectCardData { SelectionHint: (int)DHint.ATOHAND, Minimum: 1, Maximum: 1, SelectableCards: { } offered } &&
+                LastMainMove.Turn == _currentHeader.CurrentTurn && LastMainMove.Action == MainAction.Activate &&
+                SearchHost.Is(LastMainMove.CardId, ReinforcementOfTheArmyId) &&
+                Array.FindIndex(offered, card => card.IsCode(NecroGardnaDadId)) is int gardna && gardna >= 0 &&
+                CardRules.ReinforcementNeedsGardna(await ReinforcementContextAsync(_currentHeader,
+                    offered: offered.Select(card => card.ID).ToArray())))
+            {
+                _trackedBot?.LogNote("Reinforcement of the Army: search Necro Gardna to give Dark Grepher a discard");
+                return new[] { (byte)gardna };
+            }
             // The next card of a sum Omega asks one card at a time (Machina Fortress's discard): the search chose the sum at its first card (the
             // engine asks it whole, Mcts.OptionsFor); the rest is completed by the brain, no new search.
             if (!IsSearchTwin && state == BotState.SelectUnselectCard && _checkpoints.Count >= 2 && _checkpoints[^1].Answer == null &&
@@ -624,7 +631,7 @@ namespace BotTest.Game.AI.Brains
                     misses += search.ReplayMisses;
                     firstMiss ??= search.FirstReplayMiss;
                     return more;
-                }, brainKey, options.ToHashSet());
+                }, brainKey, options.ToHashSet(), rootState);
             }
             finally
             {

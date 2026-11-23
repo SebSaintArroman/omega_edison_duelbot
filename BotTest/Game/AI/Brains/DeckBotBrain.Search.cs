@@ -594,6 +594,30 @@ namespace BotTest.Game.AI.Brains
 
         private static bool _searchProblemLogged;
         private DeckList? _ownDeckList;
+
+        private List<int> RemainingOwnDeck(DuelBotWrapper bot, IEnumerable<int> seen)
+        {
+            _ownDeckList ??= string.IsNullOrEmpty(bot.DeckHash) ? null :
+                DeckCode.Decode(bot.DeckName ?? "own", bot.DeckHash, SearchHost.Cards, SearchHost.Scripts);
+            if (_ownDeckList == null)
+                return new List<int>();
+            var left = _ownDeckList.Main.GroupBy(id => id).ToDictionary(group => group.Key, group => group.Count());
+            foreach (int id in seen)
+            {
+                if (left.TryGetValue(id, out int copies) && copies > 0)
+                    left[id] = copies - 1;
+                else
+                {
+                    static int Canonical(int code) => SearchHost.CanonicalId(code) is > 0 and var alias ? alias : code;
+                    int canonical = Canonical(id);
+                    int match = _ownDeckList.Main.FirstOrDefault(code => left[code] > 0 &&
+                        Canonical(code) == canonical);
+                    if (match > 0)
+                        left[match]--;
+                }
+            }
+            return left.SelectMany(entry => Enumerable.Repeat(entry.Key, entry.Value)).ToList();
+        }
         private int _searchSeed = Environment.TickCount;
         // Whether our Normal Summon looked used at this turn's last main-phase decision (for battle decisions).
         private (int Turn, bool Used) _normalSummonSeen = (-1, false);
@@ -700,7 +724,7 @@ namespace BotTest.Game.AI.Brains
         private async Task<IdleCmdResponse> SearchIdleAsync(DecisionContext<IdleCmdData> context, IdleCmdResponse brainChoice, CancellationToken ct)
         {
             var data = context.StateData;
-            bool summonUsed = (data.SummonableCards?.Length ?? 0) == 0 && (data.MonsterSetableCards?.Length ?? 0) == 0;
+            bool summonUsed = NormalSummonUsed(context.Header);
             _normalSummonSeen = (context.Header.CurrentTurn, summonUsed);
             // The line the search committed to when it replaced the brain's move: its next step, while it's on offer.
             var idleChoices = SearchActions.Idle(data);
@@ -1019,6 +1043,12 @@ namespace BotTest.Game.AI.Brains
             outcome.Root.Where(s => legal.Contains(s.Key) && (HasItsLines(s) || s.Key == brainKey))
                 .OrderByDescending(s => s.Mean).FirstOrDefault();
 
+        private RootStat? SearchVerdictCandidate(SearchOutcome outcome, string brainKey, IReadOnlySet<string> legal) =>
+            BestByScore(outcome, brainKey, legal) ?? outcome.Root.FirstOrDefault(s => legal.Contains(s.Key));
+
+        private static bool SearchOverrides(RootStat best, RootStat mine, string brainKey, bool protectedChoice) =>
+            best.Key != brainKey && !protectedChoice && best.Mean > mine.Mean;
+
         /// <summary>Fewest lines behind a move before its score can make it the move played (so a lucky few lines can't). Tune from logs.</summary>
         public int MinPlayLines { get; set; } = DefaultMinPlayLines; // was 20 (user, 2026-11-15: more lines behind a move, a truer score)
 
@@ -1042,7 +1072,7 @@ namespace BotTest.Game.AI.Brains
                 _extraBudgetMs = budget;
                 try { return await SearchAsync(bot, rootState, brainKey, offered, summonUsed, battleDone, inBattle, ct); }
                 finally { _extraBudgetMs = null; }
-            }, brainKey, legal);
+            }, brainKey, legal, rootState);
         }
 
         // The decision being searched (its key, turn, tree and node): its extra runs continue it.
@@ -1088,13 +1118,17 @@ namespace BotTest.Game.AI.Brains
         /// continues the same tree. <paramref name="run"/> runs one search with the given budget (null: the decision's own budget).
         /// While it takes longer than ProgressNoteMs, a small progress note every ProgressNoteMs.
         /// </summary>
-        private async Task<SearchOutcome?> ThinkUntilSureAsync(DuelBotWrapper bot, Func<int?, Task<SearchOutcome?>> run, string brainKey, IReadOnlySet<string> legal)
+        private async Task<SearchOutcome?> ThinkUntilSureAsync(DuelBotWrapper bot, Func<int?, Task<SearchOutcome?>> run, string brainKey,
+            IReadOnlySet<string> legal, BotState rootState)
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
             MinPlayLines = StartLines;
             _noProgressRuns = 0;
             string decidedBy = "first run";
-            var outcome = await run(null);
+            (long Ms, string Move, int TreeVisits, bool ClearlyAhead, int MissingMoves)? early = null;
+            int runs = 0;
+            TimeSpan runElapsed = TimeSpan.Zero, workerElapsed = TimeSpan.Zero, reportElapsed = TimeSpan.Zero;
+            var outcome = await TimedRunAsync(null);
             long nextNote = ProgressNoteMs;
             while (outcome != null && !IsSearchTwin && outcome.Root.Count > 0)
             {
@@ -1127,7 +1161,8 @@ namespace BotTest.Game.AI.Brains
                          !double.IsNaN(s.Unexplored) && s.Unexplored >= top.Mean - 2 * Math.Sqrt(top.StdErr * top.StdErr + s.StdErr * s.StdErr)) &&
                         !transposed.Any(p => p.A == top.Key && p.B == s.Key || p.A == s.Key && p.B == top.Key))
                     .ToList();
-                bool enough = elapsed >= MinThinkMs && Met(top) && (replaced == null || Met(replaced)) && unscreened.Count == 0 && challengers.All(Met);
+                bool hasEvidence = Met(top) && (replaced == null || Met(replaced)) && unscreened.Count == 0 && challengers.All(Met);
+                bool enough = elapsed >= MinThinkMs && hasEvidence;
                 // The time limit (user, 2026-11-16: "if it gets to 30s, just take the best move available whatever it is and flag it really
                 // loudly in the logs ... give a full breakdown as to what went wrong").
                 if (!enough && elapsed >= MaxThinkMs)
@@ -1152,9 +1187,22 @@ namespace BotTest.Game.AI.Brains
                 bool clearlyAhead = runnerUp == null || top.Mean - runnerUp.Mean > tieMargin;
                 bool tieSettled = runnerUp != null && BotTest.Game.AI.Search.MctsEvaluator.CardUnitsErr(top.Mean, tieMargin) <= TieCardUnits;
                 bool resolved = clearlyAhead || tieSettled;
-                if (enough && (elapsed < TaperAfterMs ? !Unsure(outcome, brainKey, legal) : resolved || elapsed >= MaxThinkMs))
+                bool canStop = hasEvidence &&
+                    (elapsed < TaperAfterMs ? !Unsure(outcome, brainKey, legal) : resolved || elapsed >= MaxThinkMs);
+                int missingMoves = legal.Count - outcome.Root.Count(s => legal.Contains(s.Key));
+                if (canStop && elapsed < MinThinkMs)
+                    early ??= (elapsed, VerdictKey(outcome), outcome.TreeVisits, clearlyAhead, missingMoves);
+                // The early exit needs actual samples for every legal move, a clear winner, and no
+                // promising follow-up that could reverse the ranking. Keep the floor for battle prompts.
+                bool stopEarly = elapsed < MinThinkMs && canStop && missingMoves == 0 && runnerUp != null &&
+                    clearlyAhead && rootState != BotState.SelectBattleCmd && top.Key != "battle" &&
+                    double.IsNaN(top.Unexplored) &&
+                    !outcome.Root.Any(s => legal.Contains(s.Key) && s.Key != top.Key &&
+                        s.Unexplored >= top.Mean - 2 * Math.Sqrt(top.StdErr * top.StdErr + s.StdErr * s.StdErr));
+                if (stopEarly || (enough && canStop))
                 {
-                    decidedBy = elapsed >= TaperAfterMs && !resolved ? "time limit (still a close call)"
+                    decidedBy = stopEarly ? "clear winner before the floor"
+                        : elapsed >= TaperAfterMs && !resolved ? "time limit (still a close call)"
                         : elapsed >= TaperAfterMs && !clearlyAhead ? "a settled tie"
                         : top.Visits >= need && (replaced == null || replaced.Visits >= need) ? "line count" : "settled score";
                     if (!resolved && runnerUp != null)
@@ -1187,9 +1235,11 @@ namespace BotTest.Game.AI.Brains
                     : elapsed >= TaperAfterMs && !resolved && runnerUp != null ? (new List<string> { top.Key, runnerUp.Key }, Math.Max(top.Visits, runnerUp.Visits) + need)
                     : null;
                 SearchOutcome? more;
-                // Longer runs than the taper step: each run rebuilds the view and the holds (about a second), so 0.5 s runs spent two
-                // thirds of the time outside the search (seen 2026-11-16: a run every 1.5 s).
-                try { more = await run(ExtraRunMs); }
+                // When the floor alone holds up a decision, check again at the floor instead of running a full extra batch.
+                int budget = canStop && elapsed < MinThinkMs
+                    ? (int)Math.Min(ExtraRunMs, Math.Max(1, MinThinkMs - clock.ElapsedMilliseconds))
+                    : ExtraRunMs;
+                try { more = await TimedRunAsync(budget); }
                 finally { _focusRoot = null; }
                 if (more == null)
                     break;
@@ -1199,7 +1249,7 @@ namespace BotTest.Game.AI.Brains
                 int linesAfter = more.Root.Where(s => legal.Contains(s.Key)).Sum(s => s.Visits);
                 if (linesAfter <= linesBefore)
                 {
-                    if (++_noProgressRuns >= NoProgressRunsToStop)
+                    if (budget == ExtraRunMs && ++_noProgressRuns >= NoProgressRunsToStop)
                     {
                         bot.LogNote($"search: no new lines reach this decision ({more.Iterations} played, {more.Failures} failed); deciding on the " +
                                     $"{linesAfter} it has");
@@ -1220,6 +1270,20 @@ namespace BotTest.Game.AI.Brains
                 };
             }
             _prepared = null; // the next decision reads its own board
+            if (outcome != null && !IsSearchTwin)
+            {
+                string finalMove = VerdictKey(outcome);
+                string earlyStats = early is { } candidate
+                    ? $"early_ms={candidate.Ms}|early_move={candidate.Move}|early_tree_visits={candidate.TreeVisits}|" +
+                      $"clearly_ahead={candidate.ClearlyAhead}|missing_moves={candidate.MissingMoves}|same_move={candidate.Move == finalMove}"
+                    : "early_ms=none";
+                // The pipe prefix keeps this note out of the duel narration.
+                bot.LogNote($"search-floor|prompt={rootState}|legal_moves={legal.Count}|floor_ms={MinThinkMs}|" +
+                            $"final_ms={clock.ElapsedMilliseconds}|final_move={finalMove}|final_tree_visits={outcome.TreeVisits}|" +
+                            $"stop={decidedBy}|{earlyStats}");
+                bot.LogNote(FormattableString.Invariant(
+                    $"search-timing|prompt={rootState}|runs={runs}|workers_ms={workerElapsed.TotalMilliseconds:0.0}|report_ms={reportElapsed.TotalMilliseconds:0.0}|run_overhead_ms={(runElapsed - workerElapsed - reportElapsed).TotalMilliseconds:0.0}|between_runs_ms={(clock.Elapsed - runElapsed).TotalMilliseconds:0.0}"));
+            }
             // How settled each move's score was (user, 2026-11-17: "get an idea of how settled these lines become"): one line per decision.
             if (outcome != null && !IsSearchTwin)
                 bot.LogNote($"search: settle stats: decided by {decidedBy} after {clock.ElapsedMilliseconds / 1000.0:0.0} s; " +
@@ -1228,6 +1292,28 @@ namespace BotTest.Game.AI.Brains
             if (clock.ElapsedMilliseconds > SearchBudgetMs + 1000)
                 bot.LogNote($"search: thought {clock.ElapsedMilliseconds / 1000.0:0.#} s in all (best move needed {MinPlayLines} lines)");
             return outcome;
+
+            async Task<SearchOutcome?> TimedRunAsync(int? budget)
+            {
+                var start = clock.Elapsed;
+                var result = await run(budget);
+                runElapsed += clock.Elapsed - start;
+                runs++;
+                if (result != null)
+                {
+                    workerElapsed += result.Elapsed;
+                    reportElapsed += result.ReportElapsed;
+                }
+                return result;
+            }
+
+            string VerdictKey(SearchOutcome snapshot)
+            {
+                var best = SearchVerdictCandidate(snapshot, brainKey, legal);
+                var mine = snapshot.Stat(brainKey);
+                return best != null && mine != null && SearchOverrides(best, mine, brainKey, SearchMustKeep(_decisionRules))
+                    ? best.Key : brainKey;
+            }
         }
 
         [Tunable("Every legal move needs this many lines before a decision is made (a fair look at each), however far ahead another is.", Section = "Search")]
@@ -1338,7 +1424,7 @@ namespace BotTest.Game.AI.Brains
         private RootStat? Better(DuelBotWrapper bot, SearchOutcome outcome, string brainKey, IReadOnlySet<string> legal, string phase, int turn)
         {
             var mine = outcome.Stat(brainKey);
-            var best = BestByScore(outcome, brainKey, legal) ?? outcome.Root.FirstOrDefault(s => legal.Contains(s.Key));
+            var best = SearchVerdictCandidate(outcome, brainKey, legal);
             var holds = HoldsFor(legal);
             // What a move's lines ended in this search (user, 2026-11-13: "the log should show more"; later, familiar board
             // states found this way become routines).
@@ -1357,7 +1443,7 @@ namespace BotTest.Game.AI.Brains
                     bot.LogNote($"search: {outcome.Stat(a)?.Label ?? a} and {outcome.Stat(b)?.Label ?? b} reach the same position (another order of the same play)");
             bool protectedChoice = SearchMustKeep(_decisionRules);
             // Any better score wins (no bar): the extra thinking above already ran until one side was significantly ahead or time ran out.
-            bool overrides = best.Key != brainKey && !protectedChoice && best.Mean > mine.Mean;
+            bool overrides = SearchOverrides(best, mine, brainKey, protectedChoice);
             var rules = _decisionRules.Distinct().ToList();
 
             // What the user reads (2026-11-12: "make them clearer, more relevant to me: what was the best line it didn't use"):
@@ -1692,6 +1778,7 @@ namespace BotTest.Game.AI.Brains
             {
                 RealTurn = _currentHeader.CurrentTurn,
                 StrategicState = StrategicState,
+                ThreatHistory = _threatenedState.Copy(),
                 OpponentSummonedAndAttackedWithThreatTurn = _opponentSummonedAndAttackedWithThreat
             };
             view.LifePoints[0] = own.LifePoints;
@@ -1766,21 +1853,13 @@ namespace BotTest.Game.AI.Brains
             view.EnemyExtraCount = enemy.Extra?.Length ?? 0;
 
             // Our deck: the list minus every main-deck card of ours we can see.
-            _ownDeckList ??= string.IsNullOrEmpty(bot.DeckHash) ? null : DeckCode.Decode(bot.DeckName ?? "own", bot.DeckHash, SearchHost.Cards, SearchHost.Scripts);
-            if (_ownDeckList != null)
-            {
-                var left = _ownDeckList.Main.GroupBy(id => id).ToDictionary(g => g.Key, g => g.Count());
-                var seen = view.OwnHand.Concat(view.OwnGrave).Concat(view.OwnBanished)
-                    .Concat(view.OwnMonsters.Where(c => c.Owner == 0).Select(c => c.Code))
-                    .Concat(view.OwnSpells.Where(c => c.Owner == 0).Select(c => c.Code));
-                foreach (int id in seen)
-                    if (left.TryGetValue(id, out int n) && n > 0)
-                        left[id] = n - 1;
-                var deck = left.SelectMany(kv => Enumerable.Repeat(kv.Key, kv.Value)).ToList();
-                int deckCount = own.Main?.Length ?? deck.Count;
-                var rng = new Random(_searchSeed);
-                view.OwnDeck.AddRange(deck.OrderBy(_ => rng.Next()).Take(Math.Max(0, deckCount)));
-            }
+            var seen = view.OwnHand.Concat(view.OwnGrave).Concat(view.OwnBanished)
+                .Concat(view.OwnMonsters.Where(c => c.Owner == 0).Select(c => c.Code))
+                .Concat(view.OwnSpells.Where(c => c.Owner == 0).Select(c => c.Code));
+            var deck = RemainingOwnDeck(bot, seen);
+            int deckCount = own.Main?.Length ?? deck.Count;
+            var rng = new Random(_searchSeed);
+            view.OwnDeck.AddRange(deck.OrderBy(_ => rng.Next()).Take(Math.Max(0, deckCount)));
 
             // Their hidden cards: no guessing (user, 2026-11-11: "play the opponent's turn with known cards only"). The cards we
             // know are in their hand are dealt; face-down ones we remember are named above (OpponentMemory: a Des Lacooda

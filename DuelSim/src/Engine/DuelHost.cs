@@ -54,6 +54,10 @@ internal sealed partial class DuelHost : IDisposable
     internal bool IsDirectAttack => _attack is { Target: null };
     private readonly List<(int Player, int Code, int Location)> _pendingChainEffects = new();
     internal IReadOnlyList<(int Player, int Code, int Location)> PendingChainEffects => _pendingChainEffects;
+    private int _resolvingChainIndex = -1;
+    internal (int Player, int Code, int Location)? ResolvingChainEffect =>
+        _resolvingChainIndex >= 0 && _resolvingChainIndex < _pendingChainEffects.Count
+            ? _pendingChainEffects[_resolvingChainIndex] : null;
     internal bool InDamageStep { get; private set; }
     private readonly List<(int Player, int Code)> _survivingAttackers = new();
     internal IReadOnlyList<(int Player, int Code)> SurvivingAttackers => _survivingAttackers;
@@ -128,6 +132,8 @@ internal sealed partial class DuelHost : IDisposable
 
     /// <summary>Random outcomes so far: coin tosses, dice rolls, random card selections.</summary>
     public int RandomEvents { get; private set; }
+    internal int OurCardsDrawn { get; private set; }
+    internal int OurCardsDrawnAtTurnStart { get; private set; }
     /// <summary>Problems worth surfacing: engine script errors, rejected bot answers, fallbacks.</summary>
     public event Action<string>? Warning;
 
@@ -172,7 +178,7 @@ internal sealed partial class DuelHost : IDisposable
                     status = _duel.Process();
                     messages = _duel.GetMessages();
                 }
-                var prompt = HandleMessages(messages);
+                var prompt = HandleMessages(messages, messages.Length);
                 if (_turnHold)
                     await TurnHoldAsync(ct);
                 if (Result != null)
@@ -408,15 +414,15 @@ internal sealed partial class DuelHost : IDisposable
     // ---------------------------------------------------------------- message stream
 
     /// <summary>Applies every message to the tracked state; returns the decision the engine now waits on, if any.</summary>
-    private Prompt? HandleMessages(byte[] buffer)
+    private Prompt? HandleMessages(byte[] buffer, int count)
     {
         Prompt? prompt = null;
         int offset = 0;
-        while (offset + 4 <= buffer.Length)
+        while (count - offset >= 4)
         {
             int length = BitConverter.ToInt32(buffer, offset);
             offset += 4;
-            if (length <= 0 || offset + length > buffer.Length)
+            if (length <= 0 || length > count - offset)
                 break;
             var reader = new MessageReader(buffer, offset, length);
             offset += length;
@@ -460,6 +466,7 @@ internal sealed partial class DuelHost : IDisposable
             }
             case Msg.NewTurn:
             {
+                OurCardsDrawnAtTurnStart = OurCardsDrawn;
                 TurnPlayer = r.U8() & 1;
                 Turn++;
                 _attackedThisTurn.Clear();
@@ -534,7 +541,14 @@ internal sealed partial class DuelHost : IDisposable
                 }
                 return null;
             }
+            case Msg.ChainSolving:
+                _resolvingChainIndex = r.U8() - 1;
+                return null;
+            case Msg.ChainSolved:
+                _resolvingChainIndex = -1;
+                return null;
             case Msg.ChainEnd:
+                _resolvingChainIndex = -1;
                 _pendingChainEffects.Clear();
                 _chainTargets.Clear();
                 _wipeInChain[0] = _wipeInChain[1] = false;
@@ -633,6 +647,14 @@ internal sealed partial class DuelHost : IDisposable
                     _lp[player] = (int)lp;
                 return null;
             }
+            case Msg.Draw:
+            {
+                int player = r.U8();
+                int count = (int)r.U32();
+                if (player == 0)
+                    OurCardsDrawn += count;
+                return null;
+            }
             // Chance: a coin toss, a dice roll, a card picked at random. Counted for the play search (a random outcome the plan
             // can't know: its decisions after one are re-planned, Mcts / DeckBotBrain.TurnRecord).
             case Msg.TossCoin:
@@ -681,7 +703,15 @@ internal sealed partial class DuelHost : IDisposable
     {
         // A search duel belongs to its PuzzleEngine, which reuses it for the next line.
         if (!_ownsDuel)
+        {
+            // Publish each line's timings once instead of updating shared counters every engine batch.
+            if (_searchEngineTicks != 0)
+                SearchTimings.Add(ref SearchTimings.Engine, _searchEngineTicks);
+            if (_searchMessageTicks != 0)
+                SearchTimings.Add(ref SearchTimings.Messages, _searchMessageTicks);
+            _searchEngineTicks = _searchMessageTicks = 0;
             return;
+        }
         lock (_core)
             _duel.Dispose();
     }

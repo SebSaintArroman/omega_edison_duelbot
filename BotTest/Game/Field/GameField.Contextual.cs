@@ -6,31 +6,25 @@ namespace BotTest.Game.Field
 {
     public partial class GameField
     {
-        public async Task<List<DynamicCard>> GetBotHandCards()
-        {
-            return (await GetCardsInLocation(CardLocation.Hand)).ToList();
-        }
+        public Task<List<DynamicCard>> GetBotHandCards() => GetCardsInLocation(CardLocation.Hand);
 
-        public async Task<List<DynamicCard>> GetBotGraveyardCards()
-        {
-            return (await GetCardsInLocation(CardLocation.Grave)).ToList();
-        }
+        public Task<List<DynamicCard>> GetBotGraveyardCards() => GetCardsInLocation(CardLocation.Grave);
 
         public async Task<List<DynamicCard>> GetBotMonsterCards(bool onlyFaceUp = false)
         {
-            var monsters = (await GetCardsInLocation(CardLocation.MonsterZone)).ToList();
+            var monsters = await GetCardsInLocation(CardLocation.MonsterZone);
             return onlyFaceUp ? monsters.Where(card => card.IsFaceup()).ToList() : monsters;
         }
 
         public async Task<List<DynamicCard>> GetEnemyMonsterCards(bool onlyFaceUp = false)
         {
-            var monsters = (await GetPlayerCardsInLocation(CardLocation.MonsterZone)).ToList();
+            var monsters = await GetPlayerCardsInLocation(CardLocation.MonsterZone);
             return onlyFaceUp ? monsters.Where(card => card.IsFaceup()).ToList() : monsters;
         }
 
         public async Task<List<DynamicCard>> GetEnemySpellCards(bool onlyFaceUp = false)
         {
-            var spells = (await GetPlayerCardsInLocation(CardLocation.SpellZone)).ToList();
+            var spells = await GetPlayerCardsInLocation(CardLocation.SpellZone);
             return onlyFaceUp ? spells.Where(card => card.IsFaceup()).ToList() : spells;
         }
 

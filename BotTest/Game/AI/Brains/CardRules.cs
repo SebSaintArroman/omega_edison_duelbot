@@ -16,6 +16,22 @@ namespace BotTest.Game.AI.Brains
         private const int FlipFlopFrog = 81278754;
         private const int ThoughtRulerArchfiend = 70780151;
 
+        internal static bool ThreatTriggersOnNormalSummon(int code) =>
+            Search.SearchHost.Available && Search.SearchHost.Cards.Get(code)?.Text is { } text &&
+            text.Contains("Normal Summoned", StringComparison.OrdinalIgnoreCase) &&
+            (text.Contains("If this card", StringComparison.OrdinalIgnoreCase) ||
+             text.Contains("When this card", StringComparison.OrdinalIgnoreCase));
+
+        internal static bool ReinforcementCanSearch(int type, long race, int level) =>
+            (type & (int)CardType.Monster) != 0 && (race & (int)CardRace.Warrior) != 0 && level is > 0 and <= 4;
+
+        internal static readonly int[] GrepherDiscards =
+            { NecroGardna, PlaguespreaderZombie, BlackwingVayuTheEmblemOfHonor, BlackwingSiroccoTheDawn, BlackwingElphinTheRaven };
+
+        internal static bool ReinforcementNeedsGardna(CardRuleRegistry.Context context) =>
+            context.DarkGrepherAvailable && context.OwnDeck.Any(id => Search.SearchHost.Is(id, NecroGardna)) &&
+            !context.OwnHand.Any(id => GrepherDiscards.Any(discard => Search.SearchHost.Is(id, discard)));
+
         internal static readonly int[] SwapFrogDeckTargets = { HeroFrogCardId.TreebornFrog, HeroFrogCardId.SwapFrog, HeroFrogCardId.DupeFrog, Unifrog, FlipFlopFrog, HeroFrogCardId.Substitoad };
 
         internal static bool IsGladiatorBeast(int id) =>
@@ -39,9 +55,9 @@ namespace BotTest.Game.AI.Brains
             // Super-Nimble Mega Hamster
             // Card-specific exception: while there are no Rykos in the deck, disable the SetOnly tag.
             new(new[] { MachinaCardId.SuperNimbleMegaHamster }, TagRules.Tag.SetOnly,
-                TagsToDisableWhen: context => !context.OwnDeck.Any(id => Search.SearchHost.Is(id, MachinaCardId.RykoLightswornHunter))
-                    ? TagRules.Tag.SetOnly
-                    : TagRules.Tag.None),
+                TagsToDisableWhen: context =>
+                    !context.OwnDeck.Any(id => Search.SearchHost.Is(id, MachinaCardId.RykoLightswornHunter))
+                        ? TagRules.Tag.SetOnly : TagRules.Tag.None),
 
             // Card Trooper: activate its summon effect only while at least five cards remain in our deck,
             // and choose three when its effect asks how many cards to send.
@@ -53,6 +69,11 @@ namespace BotTest.Game.AI.Brains
 
             // Armageddon Knight
             new(new[] { ArmageddonKnight }, TagRules.Tag.ActivateOnSummon),
+
+            // Reinforcement of the Army
+            new(new[] { ReinforcementOfTheArmy }, TagRules.Tag.DoNotActivate,
+                TagsToDisableWhen: context => !context.NormalSummonUsed || context.ReinforcementHasSingleTarget ||
+                    ReinforcementNeedsGardna(context) ? TagRules.Tag.DoNotActivate : TagRules.Tag.None),
 
             // Dark Grepher: activate only when a GoodDiscard card is available in our hand.
             new(new[] { DarkGrepher }, TagRules.Tag.ActivateOnSummon,
@@ -126,7 +147,7 @@ namespace BotTest.Game.AI.Brains
             new(new[] { MysticalSpaceTyphoon }, TagRules.Tag.Bait),
 
             // Waboku
-            new(new[] { GladCardId.Waboku }, TagRules.Tag.Bait | TagRules.Tag.ProtectsMonsters | TagRules.Tag.DoNotActivate,
+            new(new[] { GladCardId.Waboku }, TagRules.Tag.ProtectsMonsters | TagRules.Tag.DoNotActivate,
                 TagsToDisableWhen: context => context.IsDoomed || context.InDamageStep && context.GladiatorWouldBeDestroyed
                     ? TagRules.Tag.DoNotActivate
                     : TagRules.Tag.None),

@@ -19,7 +19,8 @@ namespace BotTest.Game.AI.Brains
             IReadOnlyCollection<int>? OwnMonsterIds = null, bool OpponentIsAttacking = false,
             bool IsDoomed = false, bool InDamageStep = false, bool GladiatorWouldBeDestroyed = false,
             bool DrawTrapException = false, bool PlaguespreaderMayRevive = false,
-            TagRules.BotStrategicState StrategicState = TagRules.BotStrategicState.Base);
+            TagRules.BotStrategicState StrategicState = TagRules.BotStrategicState.Base,
+            bool NormalSummonUsed = true, bool ReinforcementHasSingleTarget = false, bool DarkGrepherAvailable = false);
 
         internal sealed record Rule(int[] Ids, TagRules.Tag Tags,
             Func<Context, TagRules.Tag>? TagsToDisableWhen = null,
@@ -29,13 +30,28 @@ namespace BotTest.Game.AI.Brains
 
         internal sealed record CategoryRule(Func<int, bool> Matches, TagRules.Tag Tags);
 
+        private static readonly Dictionary<int, (Rule Rule, int Order)> ById = IndexRules();
+
+        private static Dictionary<int, (Rule Rule, int Order)> IndexRules()
+        {
+            var byId = new Dictionary<int, (Rule Rule, int Order)>();
+            for (int i = 0; i < CardRules.Definitions.Length; i++)
+            {
+                var rule = CardRules.Definitions[i];
+                foreach (int id in rule.Ids)
+                    byId.TryAdd(id, (rule, i));
+            }
+            return byId;
+        }
+
         private static Rule? ForCard(int id)
         {
             int canonical = Search.SearchHost.CanonicalId(id);
-            foreach (var rule in CardRules.Definitions)
-                if (rule.Ids.Contains(id) || canonical > 0 && rule.Ids.Contains(canonical))
-                    return rule;
-            return null;
+            bool hasDirect = ById.TryGetValue(id, out var direct);
+            // The first definition wins even when the raw id and its alias have separate entries.
+            if (canonical > 0 && ById.TryGetValue(canonical, out var alias) && (!hasDirect || alias.Order < direct.Order))
+                return alias.Rule;
+            return direct.Rule;
         }
 
         public static TagRules.Tag TagsFor(int id, Context context)
@@ -43,9 +59,10 @@ namespace BotTest.Game.AI.Brains
             var rule = ForCard(id);
             TagRules.Tag cardTags = rule?.Tags ?? TagRules.Tag.None;
             TagRules.Tag disabledTags = rule?.TagsToDisableWhen?.Invoke(context) ?? TagRules.Tag.None;
-            TagRules.Tag categoryTags = CardRules.Categories
-                .Where(category => category.Matches(id))
-                .Aggregate(TagRules.Tag.None, (tags, category) => tags | category.Tags);
+            TagRules.Tag categoryTags = TagRules.Tag.None;
+            foreach (var category in CardRules.Categories)
+                if (category.Matches(id))
+                    categoryTags |= category.Tags;
             return (cardTags & ~disabledTags) | categoryTags;
         }
 

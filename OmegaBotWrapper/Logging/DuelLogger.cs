@@ -166,15 +166,28 @@ namespace OmegaBotWrapper.Logging
                 // What we drew, once at the start of our turn (user, 2026-11-18: "please show informationally at the start of the turn what it
                 // drew. keep it looking nice (also small like the passes)"): the cards our hand gained since the last decision (their turn).
                 string? drew = null;
-                if (board != null && _previous != null && header.CurrentPlayer == 0 && header.CurrentTurn > 1 && header.CurrentTurn != _drawShownTurn)
+                if (header.CurrentPlayer == 0 && header.CurrentTurn > 1)
                 {
-                    var left = _previous.Bot.Hand.ToList();
-                    var gained = board.Bot.Hand.Where(id => !left.Remove(id)).ToList();
-                    if (gained.Count > 0)
-                        drew = string.Join(", ", gained.Select(CardNames.Get));
+                    if (_drawTrackedTurn != header.CurrentTurn)
+                    {
+                        _drawTrackedTurn = header.CurrentTurn;
+                        _handBeforeDraw = _previous?.Bot.Hand;
+                    }
+                    if (board != null && _handBeforeDraw != null)
+                    {
+                        // Omega can report the draw as a zero ID until the next phase.
+                        // Keep comparing with the pre-draw hand until the card is identified.
+                        var left = _handBeforeDraw.ToList();
+                        var gained = board.Bot.Hand.Where(id => id > 0 && !left.Remove(id)).ToList();
+                        if (gained.Count > 0)
+                        {
+                            drew = string.Join(", ", gained.Select(CardNames.Get));
+                            _handBeforeDraw = null;
+                        }
+                    }
+                    if ((DuelPhase)header.CurrentPhase is not (DuelPhase.Draw or DuelPhase.Standby))
+                        _handBeforeDraw = null;
                 }
-                if (header.CurrentPlayer == 0)
-                    _drawShownTurn = header.CurrentTurn;
 
                 // Readable log
                 var sb = new StringBuilder();
@@ -445,6 +458,8 @@ namespace OmegaBotWrapper.Logging
                 _lastTurn = -1;
                 _duelEnded = false;
                 _previous = null;
+                _drawTrackedTurn = -1;
+                _handBeforeDraw = null;
                 _lastKnown = null;
                 _duelStarted = DateTime.Now;
 
@@ -822,7 +837,8 @@ namespace OmegaBotWrapper.Logging
 
         private string? _previousPhase;
         // The turn whose draw was shown (once per turn of ours).
-        private int _drawShownTurn = -1;
+        private int _drawTrackedTurn = -1;
+        private IReadOnlyList<int>? _handBeforeDraw;
 
         /// <summary>What a chain window just opened on: the newest face-up spell/trap or monster (either side), else a phase change.</summary>
         private static string? ChainedTo(BoardSnapshot? before, BoardSnapshot? after, string? previousPhase, string phase)

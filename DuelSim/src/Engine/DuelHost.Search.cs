@@ -1,5 +1,7 @@
 using DuelSim.Data;
 using DuelSim.Native;
+using BotTest.Game.AI.Brains;
+using OmegaBotWrapper.Enum;
 
 namespace DuelSim.Engine;
 
@@ -53,9 +55,10 @@ internal sealed class PuzzleEngine : IDisposable
     // Re-arms the card scripts' once-per-duel setup (s.global_check, see aux.GlobalCheck in utility.lua): each line is a new epoch, and the
     // helper runs a script's setup once per epoch. The old re-arm walked every global table each line (2026-11-19 profile: loading a line's
     // position was 14% of the search).
-    private const string RearmSetup =
+    private static readonly string RearmSetup =
         "_st_epoch=1\n" +
-        "function Auxiliary.GlobalCheck(s,func) if s.global_check~=_st_epoch then s.global_check=_st_epoch func() end end\n";
+        "function Auxiliary.GlobalCheck(s,func) if s.global_check~=_st_epoch then s.global_check=_st_epoch func() end end\n" +
+        BotTest.Game.AI.Search.SearchPosition.BlindRevealSetup;
     private const string Rearm = "_st_epoch=(_st_epoch or 0)+1\n";
 
     private readonly CardStore _cards;
@@ -107,6 +110,17 @@ internal sealed class PuzzleEngine : IDisposable
             return null;
         }
         SearchTimings.Add(ref SearchTimings.Puzzle, System.Diagnostics.Stopwatch.GetTimestamp() - t1);
+        if (SearchTimings.MeasurePuzzleParse)
+        {
+            // Lua compiles the whole chunk but skips its body at runtime. Run after the real load so
+            // this probe does not warm Lua's string table for the position it measures.
+            string probe = "if false then\n" + puzzle + "\nend\n";
+            long parseStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (_duel.LoadScriptText("search-position-parse-probe.lua", probe))
+                SearchTimings.Add(ref SearchTimings.PuzzleParse, System.Diagnostics.Stopwatch.GetTimestamp() - parseStart);
+            else
+                Interlocked.Increment(ref SearchTimings.PuzzleParseFailures);
+        }
         return DuelHost.OnEngine(_cards, _duel, _rng.Next());
     }
 
@@ -135,8 +149,9 @@ internal sealed partial class DuelHost
     /// is over (Result), the engine is stuck, or turn <paramref name="stopAtTurn"/> has begun. A prompt the engine rejected
     /// comes back again with Attempts &gt; 0: answer it from its Fallbacks.
     /// </summary>
-    public Prompt? NextPrompt(int stopAtTurn)
+    public Prompt? NextPrompt(int stopAtTurn, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         if (!_searchStarted)
         {
             _searchStarted = true;
@@ -144,13 +159,17 @@ internal sealed partial class DuelHost
         }
         while (Result == null)
         {
+            ct.ThrowIfCancellationRequested();
+            // Queries made while reading a batch also serve the brain's next decision.
+            // Even a batch without a prompt can change the board.
+            InvalidateSearchViews();
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             int status = _duel.Process();
-            var messages = _duel.GetMessages();
+            var messages = _duel.GetSearchMessages();
             long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
-            var prompt = HandleMessages(messages);
-            SearchTimings.Add(ref SearchTimings.Engine, t1 - t0);
-            SearchTimings.Add(ref SearchTimings.Messages, System.Diagnostics.Stopwatch.GetTimestamp() - t1);
+            var prompt = HandleMessages(messages.Array!, messages.Count);
+            _searchEngineTicks += t1 - t0;
+            _searchMessageTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t1;
             if (Result != null || Turn >= stopAtTurn)
                 return null;
             if (prompt != null && ++_decisionsThisTurn > MaxDecisionsPerTurn)
@@ -176,9 +195,15 @@ internal sealed partial class DuelHost
         return null;
     }
 
+    private int _searchNormalSummonOrSetTurn = -1;
+    internal bool SearchNormalSummonOrSetUsed => _searchNormalSummonOrSetTurn == Turn;
+
     /// <summary>Answers a prompt with an engine response.</summary>
     public void Respond(Prompt prompt, byte[] engineResponse)
     {
+        if (prompt.Player == 0 && prompt.State == BotState.SelectIdleCmd && engineResponse.Length >= 4 &&
+            (BitConverter.ToInt32(engineResponse) & 0xffff) is (int)MainAction.Summon or (int)MainAction.SetMonster)
+            _searchNormalSummonOrSetTurn = Turn;
         prompt.Attempts++;
         _lastPrompt = prompt;
         _duel.SetResponse(engineResponse);
@@ -195,6 +220,12 @@ internal sealed partial class DuelHost
     public bool AttackPending => _attack != null;
 
     public int LifePoints(int player) => _lp[player];
+
+    internal void HideUnseenDeckReveals()
+    {
+        if (!_duel.LoadScriptText("search-reveal-policy.lua", "_st_hide_new=true"))
+            throw new InvalidOperationException("Could not enable the search's hidden-card policy.");
+    }
 
     /// <summary>
     /// The whole position as text, for the search's transpositions (merged only on an exact match): both fields card by card with
@@ -217,8 +248,8 @@ internal sealed partial class DuelHost
                 ? $"{at.Controller}:{c.Code}" : $"{at.Controller}:{at.Location}?";
         string Card(CardQuery c) =>
             $"{c.Code}/{c.Position}/{c.Type}/{c.Level}/{c.Rank}/{c.Attribute}/{c.Race}/{c.Attack}/{c.Defense}/{c.BaseAttack}/{c.BaseDefense}/{c.Owner}/{c.Status}" +
-            $"/e{(c.EquipTarget is { } e ? Pointed(e) : "")}/t{string.Join("+", c.Targets.Select(Pointed).OrderBy(x => x, StringComparer.Ordinal))}" +
-            $"/o{string.Join("+", c.Overlays.OrderBy(x => x))}/n{string.Join("+", c.Counters.Select(k => $"{k.Type}x{k.Count}").OrderBy(x => x, StringComparer.Ordinal))}";
+            $"/e{(c.EquipTarget is { } e ? Pointed(e) : "")}/t{(c.Targets.Length == 0 ? "" : string.Join("+", c.Targets.Select(Pointed).OrderBy(x => x, StringComparer.Ordinal)))}" +
+            $"/o{(c.Overlays.Length == 0 ? "" : string.Join("+", c.Overlays.OrderBy(x => x)))}/n{(c.Counters.Length == 0 ? "" : string.Join("+", c.Counters.Select(k => $"{k.Type}x{k.Count}").OrderBy(x => x, StringComparer.Ordinal)))}";
         var sb = new System.Text.StringBuilder(512);
         foreach (int p in new[] { 0, 1 })
         {
@@ -241,22 +272,69 @@ internal sealed partial class DuelHost
     }
 
     internal int[] ExtraDeckCodes(int player) =>
-        QueryList(player, Ocg.LocExtra, Ocg.QueryCode).Where(card => card != null).Select(card => card!.Code).ToArray();
+        _searchExtraCodes[player] ??= QueryCodes(player, Ocg.LocExtra)
+            .Where(code => code.HasValue).Select(code => code.GetValueOrDefault()).ToArray();
+
+    internal StrategicCard[] StrategicCards(int player, bool spellZone) =>
+        (spellZone
+            ? QueryList(player, Ocg.LocSZone, Ocg.QueryCode | Ocg.QueryPosition | Ocg.QueryAttack | Ocg.QueryDefense | Ocg.QueryStatus)
+            : SearchMonsters(player))
+            .Select((card, zone) => (card, zone)).Where(entry => entry.card != null)
+            .Select(entry =>
+            {
+                var card = entry.card!;
+                return new StrategicCard(card.Code, entry.zone, card.Attack, card.Defense, (card.Position & Ocg.PosFaceUp) != 0,
+                    (card.Position & Ocg.PosFaceUpAttack) != 0, (card.Status & Ocg.StatusDisabled) != 0);
+            }).ToArray();
 
     /// <summary>The position's life points (the puzzle sets them in the engine without a message the host would see).</summary>
     public void SetLifePoints(int first, int second)
     {
+        InvalidateSearchViews();
         _lp[0] = first;
         _lp[1] = second;
     }
 
-    /// <summary>What a position evaluation needs to know about one side, read straight from the engine (full info).</summary>
+    private readonly SideSummary?[] _searchSummaries = new SideSummary?[4];
+    private readonly List<CardQuery?>?[] _searchMonsters = new List<CardQuery?>?[2];
+    private readonly int[]?[] _searchExtraCodes = new int[]?[2];
+    private Dictionary<(int Controller, uint Location, uint Sequence, uint Overlay), CardQuery?>? _searchCardQueries;
+    private Dictionary<(int Controller, uint Location), List<int?>>? _searchCodeQueries;
+    private long _searchEngineTicks, _searchMessageTicks;
+
+    private void InvalidateSearchViews()
+    {
+        Array.Clear(_searchSummaries);
+        Array.Clear(_searchMonsters);
+        Array.Clear(_searchExtraCodes);
+        _searchCardQueries?.Clear();
+        _searchCodeQueries?.Clear();
+    }
+
+    private List<CardQuery?> SearchMonsters(int player) =>
+        _searchMonsters[player] ??= QueryList(player, Ocg.LocMZone,
+            Ocg.QueryCode | Ocg.QueryPosition | Ocg.QueryAttack | Ocg.QueryDefense | Ocg.QueryLevel |
+            Ocg.QueryRank | Ocg.QueryType | Ocg.QueryStatus | Ocg.QueryOwner);
+
+    /// <summary>What a position evaluation needs to know about one side, shared until the search duel advances.</summary>
     /// <param name="excludeForeign">Leave out monsters this player controls but the other player owns (taken: Brain Control, Goyo...).</param>
     public SideSummary Summary(int player, bool excludeForeign = false)
     {
+        var summary = _searchSummaries[player] ??= ReadSummary(player);
+        if (!excludeForeign || summary.Foreign == 0)
+            return summary;
+        return _searchSummaries[player + 2] ??= summary with
+        {
+            Monsters = ReadSearchMonsters(player, excludeForeign: true, out _)
+        };
+    }
+
+    private List<(int Code, int Attack, int Defense, bool FaceUp, bool AttackPosition, int Level, int Type, bool Negated)>
+        ReadSearchMonsters(int player, bool excludeForeign, out int foreign)
+    {
         var monsters = new List<(int Code, int Attack, int Defense, bool FaceUp, bool AttackPosition, int Level, int Type, bool Negated)>();
-        int foreign = 0;
-        foreach (var card in QueryList(player, Ocg.LocMZone, Ocg.QueryCode | Ocg.QueryPosition | Ocg.QueryAttack | Ocg.QueryDefense | Ocg.QueryLevel | Ocg.QueryRank | Ocg.QueryType | Ocg.QueryStatus | Ocg.QueryOwner))
+        foreign = 0;
+        foreach (var card in SearchMonsters(player))
         {
             if (card == null)
                 continue;
@@ -270,6 +348,12 @@ internal sealed partial class DuelHost
                 (card.Position & (Ocg.PosFaceUpAttack | Ocg.PosFaceDownAttack)) != 0, Math.Max(card.Level, card.Rank), card.Type,
                 (card.Status & Ocg.StatusDisabled) != 0));
         }
+        return monsters;
+    }
+
+    private SideSummary ReadSummary(int player)
+    {
+        var monsters = ReadSearchMonsters(player, excludeForeign: false, out int foreign);
         int setSpells = 0, faceUpSpells = 0;
         var spells = new List<(int Code, bool FaceUp)>();
         foreach (var card in QueryList(player, Ocg.LocSZone))
@@ -280,7 +364,8 @@ internal sealed partial class DuelHost
             if (faceUp) faceUpSpells++; else setSpells++;
             spells.Add((card.Code, faceUp));
         }
-        List<int> Codes(uint location) => QueryList(player, location, Ocg.QueryCode).Where(c => c != null).Select(c => c!.Code).ToList();
+        List<int> Codes(uint location) => QueryCodes(player, location)
+            .Where(code => code.HasValue).Select(code => code.GetValueOrDefault()).ToList();
         var hand = Codes(Ocg.LocHand);
         var grave = Codes(Ocg.LocGrave);
         var deck = Codes(Ocg.LocDeck);
@@ -290,7 +375,10 @@ internal sealed partial class DuelHost
                 return (int)_duel.QueryCount(player, location);
         }
         return new SideSummary(_lp[player], monsters, setSpells, faceUpSpells, hand.Count, deck.Count, deck,
-            grave.Count, Count(Ocg.LocExtra), spells, hand, grave, foreign);
+            grave.Count, Count(Ocg.LocExtra), spells, hand, grave, foreign)
+        {
+            ExtraCodes = player == 0 && grave.Contains(72714392) ? ExtraDeckCodes(player) : Array.Empty<int>(),
+        };
     }
 }
 
@@ -310,26 +398,34 @@ internal sealed record SideSummary(
     List<int> HandCodes,
     List<int> GraveCodes,
     /// <summary>Monsters on this side the other player owns (taken), counted in Monsters unless left out.</summary>
-    int Foreign = 0);
+    int Foreign = 0)
+{
+    public IReadOnlyList<int> ExtraCodes { get; init; } = Array.Empty<int>();
+}
 
 internal sealed record SearchChainLink(int Player, int CardId, int[] TargetCardIds);
 
 /// <summary>Where search time goes (Stopwatch ticks, summed over all threads). For the search-bench command.</summary>
 internal static class SearchTimings
 {
-    public static long Create, Puzzle, Deal, ToRoot, Playout, Evaluate, Dispose, Lines, Prompts, Engine, Messages, Cards;
+    public static long Create, Puzzle, Deal, GeneratePuzzle, ToRoot, Playout, Evaluate, Dispose, Lines, Prompts, Engine, Messages, Cards;
+    public static bool MeasurePuzzleParse { get; set; }
+    public static long PuzzleParse, PuzzleParseFailures;
 
     public static void Add(ref long counter, long value) => Interlocked.Add(ref counter, value);
 
-    public static void Reset() => Create = Puzzle = Deal = ToRoot = Playout = Evaluate = Dispose = Lines = Prompts = Engine = Messages = Cards = 0;
+    public static void Reset() => Create = Puzzle = Deal = GeneratePuzzle = ToRoot = Playout = Evaluate = Dispose =
+        Lines = Prompts = Engine = Messages = Cards = PuzzleParse = PuzzleParseFailures = 0;
 
     public static string Report()
     {
         double Ms(long ticks) => ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, Lines);
-        return $"per line: deal {Ms(Deal):0.00} ms, create duel {Ms(Create):0.00} ms, load position {Ms(Puzzle):0.00} ms, " +
+        return $"per line: deal {Ms(Deal):0.00} ms, generate position Lua {Ms(GeneratePuzzle):0.00} ms, create duel {Ms(Create):0.00} ms, load position {Ms(Puzzle):0.00} ms, " +
                $"play to our decision {Ms(ToRoot):0.00} ms, play out {Ms(Playout):0.00} ms, score {Ms(Evaluate):0.00} ms, " +
                $"dispose {Ms(Dispose):0.00} ms; {(double)Prompts / Math.Max(1, Lines):0.0} prompts per line ({Lines} lines)\n" +
                $"  of which: engine resolving {Ms(Engine):0.00} ms, reading its messages into prompts {Ms(Messages):0.00} ms, " +
-               $"our code (policy, tree) {Ms(ToRoot + Playout - Engine - Messages):0.00} ms; {(double)Cards / Math.Max(1, Lines):0} cards laid out per line";
+               $"our code (policy, tree) {Ms(ToRoot + Playout - Engine - Messages):0.00} ms; {(double)Cards / Math.Max(1, Lines):0} cards laid out per line" +
+               (MeasurePuzzleParse ? $"\n  parse-only probe (encoding and compilation, body skipped): {Ms(PuzzleParse):0.00} ms per line, " +
+                   $"{PuzzleParseFailures} probe failures; probe time is included in lines/s" : "");
     }
 }

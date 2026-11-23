@@ -3,7 +3,7 @@ namespace BotTest.Game.AI.Brains
     /// <summary>Generic keyword tags and the hard rules that those tags impose across all cards and decks.</summary>
     internal static class TagRules
     {
-        /// <summary>Strategic state used by generic tag exceptions; state transitions are supplied by the caller.</summary>
+        /// <summary>Strategic state used by generic tag exceptions.</summary>
         internal enum BotStrategicState : byte
         {
             Base,
@@ -25,6 +25,7 @@ namespace BotTest.Game.AI.Brains
             Bait = 16,
             GoodDiscard = 32,
             AnswersAnyThreat = 64,
+            Threat = 128,
             ProtectsMonsters = 256,
             AlwaysSet = 512,
             ActivateAtFirstOpportunity = 1024,
@@ -57,7 +58,7 @@ namespace BotTest.Game.AI.Brains
                 return false;
 
             // Generic Set Only exception: while Threatened, allow it when a Tuner is available and no other Synchro
-            // answer is available. Threatened-state transitions are intentionally supplied by the caller.
+            // answer is available.
             if (state == BotStrategicState.Threatened && hasTuner && !hasAlternativeSynchro)
                 return false;
 

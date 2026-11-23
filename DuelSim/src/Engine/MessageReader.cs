@@ -61,9 +61,9 @@ internal sealed class CardQuery
     public uint Reason;
     public LocInfo? ReasonCard;
     public LocInfo? EquipTarget;
-    public List<LocInfo> Targets = new();
-    public List<int> Overlays = new();
-    public List<(ushort Type, ushort Count)> Counters = new();
+    public LocInfo[] Targets = Array.Empty<LocInfo>();
+    public int[] Overlays = Array.Empty<int>();
+    public (ushort Type, ushort Count)[] Counters = Array.Empty<(ushort, ushort)>();
     public int Owner;
     public uint Status;
     public bool IsPublic;
@@ -106,24 +106,30 @@ internal sealed class CardQuery
                 case Ocg.QueryTargetCard:
                 {
                     uint count = reader.U32();
+                    if (count != 0)
+                        card.Targets = new LocInfo[count];
                     for (int i = 0; i < count; i++)
-                        card.Targets.Add(reader.Loc());
+                        card.Targets[i] = reader.Loc();
                     break;
                 }
                 case Ocg.QueryOverlayCard:
                 {
                     uint count = reader.U32();
+                    if (count != 0)
+                        card.Overlays = new int[count];
                     for (int i = 0; i < count; i++)
-                        card.Overlays.Add(reader.I32());
+                        card.Overlays[i] = reader.I32();
                     break;
                 }
                 case Ocg.QueryCounters:
                 {
                     uint count = reader.U32();
+                    if (count != 0)
+                        card.Counters = new (ushort, ushort)[count];
                     for (int i = 0; i < count; i++)
                     {
                         uint packed = reader.U32();
-                        card.Counters.Add(((ushort)(packed & 0xffff), (ushort)(packed >> 16)));
+                        card.Counters[i] = ((ushort)(packed & 0xffff), (ushort)(packed >> 16));
                     }
                     break;
                 }
@@ -153,16 +159,43 @@ internal sealed class CardQuery
     }
 
     /// <summary>Reads an OCG_DuelQueryLocation buffer: u32 size, then one entry per slot (null = empty).</summary>
-    public static List<CardQuery?> ReadLocation(byte[] buffer)
+    public static List<CardQuery?> ReadLocation(byte[] buffer, int count) => ReadLocation(buffer, count, Read);
+
+    public static List<int?> ReadLocationCodes(byte[] buffer, int count) => ReadLocation(buffer, count, ReadCode);
+
+    private static int? ReadCode(MessageReader reader)
     {
-        var result = new List<CardQuery?>();
-        if (buffer.Length < 4)
+        ushort length = reader.U16();
+        if (length == 0)
+            return null;
+        int code = 0;
+        while (true)
+        {
+            uint flag = reader.U32();
+            if (flag == Ocg.QueryEnd)
+                return code;
+            if (length < 4 || (flag == Ocg.QueryCode && length < 8))
+                throw new InvalidDataException("Invalid engine card query field length.");
+            if (flag == Ocg.QueryCode)
+            {
+                code = reader.I32();
+                reader.Skip(length - 8);
+            }
+            else
+                reader.Skip(length - 4);
+            length = reader.U16();
+        }
+    }
+
+    private static List<T> ReadLocation<T>(byte[] buffer, int count, Func<MessageReader, T> read)
+    {
+        var result = new List<T>();
+        if (count < 4)
             return result;
-        var reader = new MessageReader(buffer);
-        uint size = reader.U32();
-        var inner = new MessageReader(buffer, 4, (int)Math.Min(size, (uint)buffer.Length - 4));
+        uint size = BitConverter.ToUInt32(buffer, 0);
+        var inner = new MessageReader(buffer, 4, (int)Math.Min(size, (uint)count - 4));
         while (inner.Remaining >= 2)
-            result.Add(Read(inner));
+            result.Add(read(inner));
         return result;
     }
 }

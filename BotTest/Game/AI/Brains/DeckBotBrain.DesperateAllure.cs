@@ -11,7 +11,13 @@ namespace BotTest.Game.AI.Brains
     public abstract partial class DeckBotBrain
     {
         private const string DesperateAllureRoutine = "desperate Allure of Darkness";
-        internal TagRules.BotStrategicState StrategicState { get; init; } = TagRules.BotStrategicState.Base;
+        private TagRules.BotStrategicState? _strategicStateOverride;
+        private TagRules.BotStrategicState _assessedStrategicState;
+        internal TagRules.BotStrategicState StrategicState
+        {
+            get => _strategicStateOverride ?? _assessedStrategicState;
+            init => _strategicStateOverride = value;
+        }
 
         private async Task<bool> AllureIsOnlyCardInHandAsync()
         {

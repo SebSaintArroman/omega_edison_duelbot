@@ -16,10 +16,7 @@ namespace BotTest.Game.Field
         /// Gets detailed information about the Bot field.
         /// </summary>
         /// <returns>FieldInfo structure with the Bot field data.</returns>
-        public async Task<FieldInfo> GetBotField()
-        {
-            return await RefreshFieldAsync(FieldPerspective.Bot);
-        }
+        public Task<FieldInfo> GetBotField() => RefreshFieldAsync(FieldPerspective.Bot);
 
         /// <summary>
         /// Gets information about a specific card in the Bot field.
@@ -28,10 +25,8 @@ namespace BotTest.Game.Field
         /// <param name="location">Location of the card (e.g. MonsterZone, SpellZone).</param>
         /// <param name="sequence">Sequence of the card in the specified zone.</param>
         /// <returns>DynamicCard structure with the card data.</returns>
-        public async Task<DynamicCard> GetBotFieldCard(int controller, int location, int sequence)
-        {
-            return await GetFieldCardAsync(FieldPerspective.Bot, controller, (CardLocation)location, sequence);
-        }
+        public Task<DynamicCard> GetBotFieldCard(int controller, int location, int sequence) =>
+            GetFieldCardAsync(FieldPerspective.Bot, controller, (CardLocation)location, sequence);
 
         /// <summary>
         /// Checks for cards in a specific zone on the Bot's field.
@@ -185,10 +180,8 @@ namespace BotTest.Game.Field
         /// <param name="location">Location to check (e.g., CardLocation.Hand, CardLocation.MonsterZone)</param>
         /// <param name="controller">Controller of the cards (0 for player, 1 for opponent [BOT])</param>
         /// <returns>List of DynamicCard in the specified location</returns>
-        public async Task<List<DynamicCard>> GetCardsInLocation(CardLocation location, int controller = 0)
-        {
-            return await GetCardsInLocationAsync(FieldPerspective.Bot, location, controller);
-        }
+        public Task<List<DynamicCard>> GetCardsInLocation(CardLocation location, int controller = 0) =>
+            GetCardsInLocationAsync(FieldPerspective.Bot, location, controller);
 
         /// <summary>
         /// Gets all cards in a specific location with a specific type

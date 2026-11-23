@@ -44,3 +44,13 @@ gladiator beast deck rule:
 "gladiator battling rule": gladiator beast monsters should get a bonus of 1 card unit for attacking, provided they survive the attack.
 
 
+
+
+
+give answersRyko tag to:
+machina peacekeeper
+gearframe
+card trooper
+armageddon knight
+grepher
+bora

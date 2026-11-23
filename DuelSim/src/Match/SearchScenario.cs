@@ -41,11 +41,12 @@ internal static class SearchScenario
         public string Phase { get; set; } = "main1";
         public string Decision { get; set; } = "idle";
         public bool NormalSummonUsed { get; set; }
+        public List<string> UsedEffects { get; set; } = new();
         public Side Ours { get; set; } = new();
         public Side Theirs { get; set; } = new();
     }
 
-    public sealed record Loaded(SearchView View, OmegaBotWrapper.Enum.BotState Root, string Deck, string Opponent);
+    public sealed record Loaded(SearchView View, OmegaBotWrapper.Enum.BotState Root, string Deck, string Opponent, IReadOnlyList<string> UsedEffects);
 
     public static Loaded Load(string path, CardStore cards, ScriptStore scripts)
     {
@@ -101,6 +102,6 @@ internal static class SearchScenario
         // inert stand-ins and the evaluator's threat term.
         view.EnemyKnownHand.AddRange(file.Theirs.Hand);
         var root = view.InBattlePhase ? OmegaBotWrapper.Enum.BotState.SelectBattleCmd : OmegaBotWrapper.Enum.BotState.SelectIdleCmd;
-        return new Loaded(view, root, file.Deck, file.Opponent);
+        return new Loaded(view, root, file.Deck, file.Opponent, file.UsedEffects);
     }
 }
