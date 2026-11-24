@@ -25,6 +25,8 @@ namespace BotTest.Game.AI.Brains
         private readonly Func<int, long, bool> _effectUsed;
         private readonly int _rootTurn;
         private readonly Func<bool, DuelPhase, SideSummary, bool>? _backrowDoomRule;
+        // Machina Jinzo only: MST may target our own Future Fusion in the Draw Phase (DeckBotBrain.SearchMstOwnFutureFusion).
+        private readonly bool _mstOwnFutureFusion;
         private readonly System.Runtime.CompilerServices.ConditionalWeakTable<DuelHost, ThreatenedState> _threatHistories = new();
 
         /// <param name="plannedSetCardId">The card a routine of the brain's plan sets (it's exempt from the set rules), or 0.</param>
@@ -32,8 +34,10 @@ namespace BotTest.Game.AI.Brains
         /// the real turn from its start).</param>
         /// <param name="effectUsed">Whether our effect (card, description) was used this turn before the search's root.</param>
         public SearchMoveRules(SearchView view, TagRules.BotStrategicState state, int plannedSetCardId, bool viewTurnActivationsCount,
-            Func<int, long, bool> effectUsed, int rootTurn, Func<bool, DuelPhase, SideSummary, bool>? backrowDoomRule)
+            Func<int, long, bool> effectUsed, int rootTurn, Func<bool, DuelPhase, SideSummary, bool>? backrowDoomRule,
+            bool mstOwnFutureFusion = false)
         {
+            _mstOwnFutureFusion = mstOwnFutureFusion;
             _view = view;
             _state = state;
             _plannedSetCardId = plannedSetCardId;
@@ -51,7 +55,18 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         private CardRuleRegistry.Context BaseContext(SideSummary? own, SideSummary? theirs, int ownLp, int theirLp) =>
             new(own?.DeckCodes ?? _view.OwnDeck, own?.HandCodes ?? _view.OwnHand, theirs?.Hand ?? 0, ownLp, theirLp, false,
-                PlannedSetCardId: _plannedSetCardId);
+                PlannedSetCardId: _plannedSetCardId,
+                OpponentRemovableSpellTraps: theirs?.SpellCodes.Count(s => !s.FaceUp || StaysOnField(s.Code)) ?? -1);
+
+        // Machina Jinzo only (_mstOwnFutureFusion): our own face-up Future Fusion in the Draw Phase, the one own card MST may target.
+        // No other deck, whatever it plays (user, 2026-11-24).
+        private bool OwnFutureFusionInDrawPhase(DuelHost? host, SideSummary? ours) =>
+            _mstOwnFutureFusion && host?.Phase == (int)DuelPhase.Draw && ours != null &&
+            ours.SpellCodes.Any(s => s.FaceUp && SearchHost.Is(s.Code, FutureFusion));
+
+        // A face-up spell/trap that stays on the field (Continuous, Field, Equip): worth removing, unlike one that is only resolving.
+        private static bool StaysOnField(int code) =>
+            SearchHost.Cards.Get(code) is { } card && (card.Type & (0x20000 | 0x80000 | 0x40000)) != 0;
 
         private static bool CanWinThisTurn(DuelHost host)
         {
@@ -447,6 +462,35 @@ namespace BotTest.Game.AI.Brains
                  SearchHost.Is(card.ID, SearchActions.KeyCardId(c.Key)) &&
                  CardRules.IsAttackBoost(card.ID, card.CurrentCoordinates.Location)));
 
+        /// <summary>
+        /// Our Mystical Space Typhoon in the Battle Phase: its card rule (no spell/trap of theirs to hit: held) applies here too
+        /// (DuelSim 2026-11-24: MST on our own Torrential mid-battle). Also D.D. Crow: held unless one of its reasons holds (CrowMayActivate;
+        /// live 2026-11-24, Machina turn 5: the search activated Crow at the battle prompt on XX-Saber Darksoul with nothing targeting it,
+        /// the rule only applied at chain windows). Only these two: other cards' rules read context the battle prompt lacks.
+        /// </summary>
+        public bool BattleActivationAllowed(Prompt prompt, SearchActions.Choice<BattleCmdResponse> c, DuelHost? host)
+        {
+            int id = SearchActions.KeyCardId(c.Key);
+            if (prompt.Player != 0 || c.Response.Action != BattleAction.Activate || !SearchHost.Is(id, MysticalSpaceTyphoon) && !SearchHost.Is(id, DDCrow))
+                return true;
+            var own = host?.Summary(0);
+            var theirs = host?.Summary(1);
+            var context = BaseContext(own, theirs, host?.LifePoints(0) ?? _view.LifePoints[0], host?.LifePoints(1) ?? _view.LifePoints[1]);
+            if (SearchHost.Is(id, DDCrow))
+                // Crow's reasons, read as at a chain window (ChainOptions): no chain link here, our turn.
+                context = context with
+                {
+                    OwnGrave = own?.GraveCodes ?? _view.OwnGrave,
+                    OpponentGrave = theirs?.GraveCodes ?? _view.EnemyGrave,
+                    OpponentMonsterIds = theirs?.Monsters.Select(monster => monster.Code).ToArray() ?? Array.Empty<int>(),
+                    OpponentHand = theirs?.HandCodes ?? _view.EnemyKnownHand,
+                    UnknownOpponentHandCards = theirs?.HandCodes.Any(code => SearchHost.Is(code, SearchView.InertCard)) ?? false,
+                    IsOurTurn = true,
+                    OurFaceUpAttackers = own?.Monsters.Count(monster => monster.FaceUp && monster.AttackPosition) ?? 0,
+                };
+            return (CardRuleRegistry.TagsFor(id, context) & TagRules.Tag.DoNotActivate) == 0;
+        }
+
         // ------------------------------------------------------------------ card picks
 
         /// <summary>
@@ -509,6 +553,18 @@ namespace BotTest.Game.AI.Brains
                 UnknownOpponentHandCards: enemySide.HandCodes.Any(code => SearchHost.Is(code, SearchView.InertCard)),
                 IsOurTurn: ourTurn,
                 OurFaceUpAttackers: ownSide.Monsters.Count(monster => monster.FaceUp && monster.AttackPosition));
+            // Mystical Space Typhoon never targets our own cards (user, 2026-11-24), except our own Future Fusion in the Draw Phase.
+            if (SearchHost.Is(currentId, MysticalSpaceTyphoon))
+            {
+                bool futureFusion = OwnFutureFusionInDrawPhase(host, ownSide);
+                var theirsOrAllowed = picks.Where(pick => pick.Packet.Length > 1 && pick.Packet[1] < select.SelectableCards!.Length &&
+                    select.SelectableCards![pick.Packet[1]] is var target &&
+                    (target.CurrentCoordinates.Controller != 0 || futureFusion && SearchHost.Is(target.ID, FutureFusion))).ToList();
+                // The engine needs a legal pick once it resolves: only when nothing else is left does an own card stay (the activation rule
+                // keeps MST from being activated then).
+                if (theirsOrAllowed.Count > 0)
+                    picks = theirsOrAllowed;
+            }
             var allowedTargets = CardRuleRegistry.AllowedTargets(currentId, ruleContext, availableTargets);
             if (CardRuleRegistry.RequiresGoodDiscardDeckSend(currentId) &&
                 (DHint)select.SelectionHint == DHint.TOGRAVE &&
@@ -599,6 +655,7 @@ namespace BotTest.Game.AI.Brains
                 OpponentIsAttacking = opponentIsAttacking,
                 InDamageStep = inDamageStep, GladiatorWouldBeDestroyed = gladiatorWouldBeDestroyed,
                 DrawTrapException = drawTrapException,
+                OwnFutureFusionInDrawPhase = OwnFutureFusionInDrawPhase(host, ourSide),
             };
             bool IsDoomed(DynamicCard card)
             {

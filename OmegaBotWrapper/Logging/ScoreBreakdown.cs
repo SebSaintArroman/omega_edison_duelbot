@@ -91,7 +91,7 @@ namespace OmegaBotWrapper.Logging
         {
             var sb = new StringBuilder();
             sb.AppendLine($"{first}score breakdown, {(Played ? "played" : "alternative")}: {Move} (score {Signed(Score)} ±{Plain(Interval)} at 95%; " +
-                          $"parts averaged over {Lines} line(s), card units against the position now)");
+                          $"parts averaged over {Lines} line(s), card units against the tree's starting position)");
             int width = Math.Max(36, TopLevel.Select(p => p.Name.Length).DefaultIfEmpty(0).Max()) + 2;
             void Section(string title, IEnumerable<(string Name, double Value)> rows)
             {

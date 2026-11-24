@@ -1,0 +1,24 @@
+// Live 2026-11-24 19:28 Machina Control #008 (turn 3, main1, start of our turn): empty field both sides, they have 2 set S/T, 3 in hand.
+// Live: search replaced Pot of Avarice with Gearframe summon -> Force -> (#012) ended the turn without attacking or setting.
+// User: "once again gearframe just not attacking ... didn't set traps again either". Their deck is X-Saber; MachinaControl stands in.
+{
+  "deck": "MachinaControl",
+  "opponent": "MachinaControl",
+  "lp": [8000, 8000],
+  "turn": 3,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": false,
+  "ours": {
+    "monsters": [],
+    "spells": [],
+    "hand": [ 44330098, 78349103, 67169062, 42940404, 29401950, 29401950 ],
+    "grave": [ 5220687, 5556499, 42940404, 94886282, 70342110, 58054262, 24508238, 21502796 ]
+  },
+  "theirs": {
+    "monsters": [],
+    "spells": [ { "zone": 0, "set": true }, { "zone": 1, "set": true } ],
+    "handCount": 3,
+    "grave": [ 53582587, 64697231, 13504844, 94886282, 90508760 ]
+  }
+}

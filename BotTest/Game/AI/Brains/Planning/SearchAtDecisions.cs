@@ -64,6 +64,12 @@ namespace BotTest.Game.AI.Brains
 
         internal virtual Func<bool, DuelPhase, DuelSim.Engine.SideSummary, bool>? SearchBackrowDoomRule => null;
 
+        /// <summary>
+        /// Whether Mystical Space Typhoon may target our own Future Fusion in the Draw Phase: Machina Jinzo only (user, 2026-11-24: "the future
+        /// fusion exception should ONLY be the jinzo deck ... other future fusion users should NOT do this under any circumstance").
+        /// </summary>
+        internal virtual bool SearchMstOwnFutureFusion => false;
+
         /// <summary>The deck's value for next turn at the end of a line, given the cards we activated this turn (Black Whirlwind's kept
         /// Normal Summon). Card units; 0 by default.</summary>
         internal virtual double SearchNextTurnValue(DuelSim.Engine.SideSummary own, IReadOnlyCollection<int> activatedThisTurn) => 0;
@@ -1200,6 +1206,11 @@ namespace BotTest.Game.AI.Brains
         // The decision being searched (its key, turn, tree and node): its extra runs continue it.
         private (string Key, int Turn, MctsTree Tree, MctsNode Start)? _thisDecision;
 
+        // The plan check read the kept lines and the decision searches on: its first extra run clears them first (SearchAsync).
+        private bool _clearPending;
+        // This run cleared the kept lines: its line count isn't comparable with the run before (ThinkUntilSureAsync's no-progress check).
+        private bool _clearedThisRun;
+
         // Set while an extra run fills the lines of the two moves being compared (see ThinkUntilSureAsync).
         private (List<string> Keys, int Lines)? _focusRoot;
 
@@ -1246,6 +1257,7 @@ namespace BotTest.Game.AI.Brains
             var clock = System.Diagnostics.Stopwatch.StartNew();
             MinPlayLines = StartLines;
             _noProgressRuns = 0;
+            _clearedThisRun = false;
             string decidedBy = "first run";
             (long Ms, string Move, int TreeVisits, bool ClearlyAhead, int MissingMoves)? early = null;
             int runs = 0;
@@ -1267,6 +1279,13 @@ namespace BotTest.Game.AI.Brains
                     outcome.Root.All(s => s.Key == "pass"))
                 {
                     decidedBy = "only pass allowed by the rules";
+                    break;
+                }
+                // The same for a yes/no a rule answers (Mcts.YesNoLegalKeys: EffectAnswer's forced answer): one answer in the lines.
+                if (rootState is BotState.SelectEffectYn or BotState.SelectYesNo && legal.Count > 1 && outcome.TreeVisits >= ScreenLines &&
+                    outcome.Root.Select(s => s.Key).Distinct().Count() == 1)
+                {
+                    decidedBy = $"only {outcome.Root[0].Key} allowed by the rules";
                     break;
                 }
                 // Both sides of a replacement need the lines (user, 2026-11-16: "every next action should require the same amount of
@@ -1384,7 +1403,11 @@ namespace BotTest.Game.AI.Brains
                 // window", and the bot thought until the server gave up): thinking longer can't help, so it decides on what it has.
                 int linesBefore = outcome.Root.Where(s => legal.Contains(s.Key)).Sum(s => s.Visits);
                 int linesAfter = more.Root.Where(s => legal.Contains(s.Key)).Sum(s => s.Visits);
-                if (linesAfter <= linesBefore)
+                bool cleared = _clearedThisRun;
+                _clearedThisRun = false;
+                if (cleared)
+                    _noProgressRuns = 0; // the kept lines were cleared: fewer lines than before is not a stall
+                else if (linesAfter <= linesBefore)
                 {
                     if (budget == ExtraRunMs && ++_noProgressRuns >= NoProgressRunsToStop)
                     {
@@ -1433,8 +1456,11 @@ namespace BotTest.Game.AI.Brains
             if (outcome != null && !IsSearchTwin)
             {
                 static string Action(string k) => k.IndexOf(':') is int c and > 0 ? k[..c] : k;
+                // Not a card the real decision offers more than once (three Jinzo in the GY): its copies can't be told apart, and the
+                // lines' slot for one copy is only another copy (DuelSim 2026-11-24: a Jinzo revive pick flagged five times).
                 foreach (var stray in outcome.Root.Where(s => s.Visits > 0 && !legal.Contains(s.Key) && SearchActions.KeyCardId(s.Key) > 0))
-                    if (legal.FirstOrDefault(k => Action(k) == Action(stray.Key) && SearchActions.KeyCardId(k) == SearchActions.KeyCardId(stray.Key)) is string real)
+                    if (legal.Where(k => Action(k) == Action(stray.Key) && SearchActions.KeyCardId(k) == SearchActions.KeyCardId(stray.Key)).Take(2).ToList()
+                        is [string real])
                         bot.LogNote($"search: KEY MISMATCH: the lines filed {stray.Label} as {stray.Key} ({stray.Visits} lines), the real decision offers it as {real}");
             }
             if (clock.ElapsedMilliseconds > SearchBudgetMs + 1000)
@@ -1606,7 +1632,7 @@ namespace BotTest.Game.AI.Brains
             // card units the line ends ahead of or behind the decision's own position (0 = no better or worse than now; user, 2026-11-19:
             // raw card units, not the squashed 0-100 the search works in).
             // The score is the move's line value (its best well-explored follow-ups); the plain average of its lines is shown when it differs.
-            double Score(RootStat s) => Math.Round(BoardEvaluator.CardUnits(s.Mean), 2); // card units against the position now (user, 2026-11-19)
+            double Score(RootStat s) => Math.Round(BoardEvaluator.CardUnits(s.Mean), 2); // card units against the tree's starting position (MctsTree.Baseline; user, 2026-11-19)
             string Avg(RootStat s) => !double.IsNaN(s.Average) && Math.Abs(s.Average - s.Mean) >= 0.005 ? $", lines average {BoardEvaluator.CuPm(s.Average, s.StdErr)}" : "";
             string Line(RootStat s) => outcome.RootLines?.TryGetValue(s.Key, out var steps) == true && steps.Count > 1
                 ? string.Join(" -> ", steps.Select(step => step.Label))
@@ -1851,9 +1877,35 @@ namespace BotTest.Game.AI.Brains
                 kept = start.Visits;
 
             var used = _activatedThisTurn.ToArray();
-            int budget = _extraBudgetMs ?? SearchBudgetMs + TurnStartStep(bot);
+            // The plan's own next step, already well explored: read first, not searched again (user, 2026-11-24: "it's all part of the plan
+            // so I don't think it should trigger a research as long as the lines are still well explored"). This first run plays no lines;
+            // the think loop stops on it when the kept lines already settle the move (the clear-winner check: every move with its lines,
+            // the best clearly ahead), and otherwise searches on from the same tree as before.
+            int bestKept = 0;
+            lock (start.Lock)
+                foreach (var (childKey, child) in start.Children)
+                    if (!childKey.StartsWith('@') && child.Visits > bestKept)
+                        bestKept = child.Visits;
+            // A later decision of our turn reached through the tree kept from an earlier one (not the turn's first: its dead-time lines stay).
+            bool continuingPlan = _extraBudgetMs == null && !wiped && !IsSearchTwin && IsOwnTurn(_currentHeader) &&
+                                  rootState is BotState.SelectIdleCmd or BotState.SelectBattleCmd &&
+                                  origin.StartsWith("continuing", StringComparison.Ordinal) && _lastPlayed is { } played && played.Turn == turn;
+            bool planCheck = continuingPlan && rootState == BotState.SelectIdleCmd && bestKept >= StartLines;
+            if (planCheck)
+                bot.LogNote($"search: the plan reached this decision ({origin}; {bestKept} lines behind its best move): reading its lines before searching on");
+            // When it does search, its moves are compared on this decision's own lines only (ClearLines): the kept ones were measured from
+            // an earlier decision. Right away when the plan check doesn't apply; after it, at the first extra run.
+            bool clear = continuingPlan && !planCheck && kept > 0 || _clearPending && reused;
+            _clearPending = planCheck;
+            _clearedThisRun = clear;
+            if (clear)
+            {
+                start.ClearLines();
+                bot.LogNote($"search: searching this decision afresh ({kept} kept line(s) set aside: measured from an earlier decision, they don't compare with its own)");
+            }
+            int budget = planCheck ? 1 : _extraBudgetMs ?? SearchBudgetMs + TurnStartStep(bot);
             var settings = new SearchSettings(BudgetMs: budget, Threads: DefaultSearchThreads, Horizon: DefaultSearchHorizon,
-                FocusRoots: _focusRoot?.Keys, FocusLines: _focusRoot?.Lines ?? 0);
+                MaxIterations: planCheck ? 0 : int.MaxValue, FocusRoots: _focusRoot?.Keys, FocusLines: _focusRoot?.Lines ?? 0);
             BoardEvaluator evaluator;
             Dictionary<string, (double Cost, string Rule)> rootHolds;
             if (reused)

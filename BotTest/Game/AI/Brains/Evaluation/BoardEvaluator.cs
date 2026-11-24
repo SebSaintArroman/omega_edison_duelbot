@@ -19,6 +19,8 @@ namespace BotTest.Game.AI.Brains
     {
         internal bool RewardGladiatorBattles { get; init; }
         internal Func<bool, OmegaBotWrapper.Enum.DuelPhase, SideSummary, bool>? BackrowDoomRule { get; init; }
+        /// <summary>Our deck is Machina Jinzo: MST may target our own Future Fusion in the Draw Phase (DeckBotBrain.SearchMstOwnFutureFusion).</summary>
+        internal bool MstOwnFutureFusion { get; init; }
         /// <summary>Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.</summary>
         [Tunable("Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.")]
         private static readonly Tuned<double> FieldEffectWeight = new(0.25), HeldEffectWeight = new(0.1);
@@ -1117,7 +1119,7 @@ namespace BotTest.Game.AI.Brains
         }
 
         /// <summary>Heavy Storm on their turn: our set spells/traps (each by what it would do), by its chance.</summary>
-        public double HeavyExposure(SideSummary ours)
+        public double HeavyExposure(SideSummary ours, SideSummary theirs)
         {
             if (HeavyStormChance <= 0)
                 return 0;
@@ -1125,8 +1127,48 @@ namespace BotTest.Game.AI.Brains
             var set = ours.SpellCodes.Where(c => !c.FaceUp && c.Code != SearchView.InertCard && !BaitCodes.Contains(c.Code))
                 .Select(SpellLoss).ToList();
             // Each extra set card makes the wipe worse than one more card's worth (CSV S2: "gradually stops setting them").
-            return HeavyStormChance * set.Sum() * Math.Max(1, set.Count * OversetCurve);
+            return HeavyStormChance * set.Sum() * Math.Max(1, set.Count * OversetCurve) + OverHalfTrapsExposure(ours, theirs);
         }
+
+        /// <summary>
+        /// Setting more than half our trap power (set + in hand) with no good reason (user, 2026-11-24): exposure isn't a fixed number of
+        /// sets - losing two set traps hurts more when they're our only two than when five more wait in hand. By trap power, not count
+        /// (user, 2026-11-24: "setting a d-prison first turn when you're unthreatened is preferable over setting mirror force"): a trap's
+        /// power is its card value (HandCardValue). Our known traps (not bait, not storm-proof) count; set power beyond half the total
+        /// costs OverHalfTrapWeight x the excess. Ignored with only one trap (user, 2026-11-24). Good reasons: their big face-up monsters
+        /// at least matching our set traps, the risk tolerance past OversetPressFrom (one more trap: our strongest set one's power
+        /// allowed on top), their Heavy Storm gone, or a hand of 7+ (it'd be discarded anyway).
+        /// </summary>
+        private double OverHalfTrapsExposure(SideSummary ours, SideSummary theirs)
+        {
+            if (HeavyStormChance < StormGoneChance || ours.HandCodes.Count > 6)
+                return 0;
+            bool Counted(int code) => IsKnownTrap(code) && !BaitCodes.Contains(code) && !StormProofCodes.Contains(code);
+            double Power(int code) => Math.Max(0, HandCardValue(code, 0));
+            var setPowers = ours.SpellCodes.Where(c => !c.FaceUp && Counted(c.Code)).Select(c => Power(c.Code)).ToList();
+            var handPowers = ours.HandCodes.Where(Counted).Select(Power).ToList();
+            if (setPowers.Count == 0 || setPowers.Count + handPowers.Count <= 1)
+                return 0;
+            int bigThreats = theirs.Monsters.Count(m => m.FaceUp && m.Attack >= StrongMonsterAttack);
+            if (bigThreats >= setPowers.Count)
+                return 0;
+            double setPower = setPowers.Sum();
+            double allowed = (setPower + handPowers.Sum()) / 2 + (RiskPress >= OversetPressFrom ? setPowers.Max() : 0);
+            return OverHalfTrapWeight * Math.Max(0, setPower - allowed);
+        }
+
+        /// <summary>Set trap power beyond half our trap power costs this times the excess (OverHalfTrapsExposure). User, 2026-11-24.</summary>
+        [Tunable("Set trap power (card value) beyond half our trap power (set + in hand) costs this times the excess, unless there's a good reason (their big threats, high risk tolerance, their Heavy Storm gone, a 7+ hand); ignored with only one trap. User, 2026-11-24.")]
+        public static readonly Tuned<double> OverHalfTrapWeight = new(0.5);
+
+        /// <summary>Storm-proof set cards (Jar of Greed, Legacy of Yata-Garasu, Trap Dustshoot...: DeckBotBrain.StormProofSets): not counted as traps to keep back.</summary>
+        public IReadOnlyCollection<int> StormProofCodes { get; init; } = Array.Empty<int>();
+        /// <summary>Below this Heavy Storm chance their Storm counts as gone (DeckBotBrain.StormGoneChance).</summary>
+        public double StormGoneChance { get; init; }
+        /// <summary>Risk tolerance from which one more set trap is fine (DeckBotBrain.OversetPressFrom).</summary>
+        public double OversetPressFrom { get; init; } = 1;
+        /// <summary>A face-up monster of theirs at least this big is a threat worth a trap (DeckBotBrain.StrongMonsterAttack).</summary>
+        public int StrongMonsterAttack { get; init; } = 2000;
 
         /// <summary>The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).</summary>
         [Tunable("The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).")]
@@ -1213,11 +1255,13 @@ namespace BotTest.Game.AI.Brains
         public static readonly Tuned<double> ProtectBodyShare = new(0.5);
         /// <summary>With our LP at LowLpFullAt or below, a set card that stops or removes an attacker gains this much (card units).</summary>
         [Tunable("With our LP at LowLpFullAt or below, a set card that stops or removes an attacker gains this much (card units); less as LP rise (LowLpScale).")]
-        public static readonly Tuned<double> LowLpRemovalWeight = new(0.6);
+        // User, 2026-11-24: set traps protect our life points too, more the lower they are; raised from 0.6 / 1500 (it was ~0.05 a card at
+        // 4000 LP), the low end higher still: per card about 0.11 at 8000, 0.41 at 4000, 0.80 at 2000, 1.11 at 1000.
+        public static readonly Tuned<double> LowLpRemovalWeight = new(1.5);
         [Tunable("Our LP at or below which a stopping/removing set card gets the full LowLpRemovalWeight.")]
         public static readonly Tuned<int> LowLpFullAt = new(100);
-        [Tunable("How fast that value falls as our LP rise above LowLpFullAt: exp(-(LP - LowLpFullAt) / this). 1500: about 55% at 1000 LP, 28% at 2000, 7% at 4000, 0.5% at 8000.")]
-        public static readonly Tuned<double> LowLpScale = new(1500);
+        [Tunable("How fast that value falls as our LP rise above LowLpFullAt: exp(-(LP - LowLpFullAt) / this). 3000: about 74% at 1000 LP, 53% at 2000, 27% at 4000, 7% at 8000.")]
+        public static readonly Tuned<double> LowLpScale = new(3000);
         /// <summary>A set card that can remove a card of theirs already on the field gains this times that card's worth (card units).</summary>
         [Tunable("A set card that can remove a card of theirs already on the field gains this times that card's worth (card units).")]
         public static readonly Tuned<double> RemoveThreatWeight = new(0.3);

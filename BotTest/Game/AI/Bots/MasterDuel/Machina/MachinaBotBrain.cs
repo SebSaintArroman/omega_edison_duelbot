@@ -253,6 +253,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
 
         // ------------------------------------------------------------------ Future Fusion's wipe (MachinaJinzo)
 
+        /// <summary>Machina Jinzo only: MST may target our own Future Fusion in the Draw Phase (user, 2026-11-24). No other deck.</summary>
+        internal override bool SearchMstOwnFutureFusion => Variant == MachinaVariant.Jinzo;
+
         // The turn our face-up Future Fusion was activated (real duel); -1 with none on our field.
         private int _futureFusionTurn = -1;
         private int _futureFusionNoted = -1;

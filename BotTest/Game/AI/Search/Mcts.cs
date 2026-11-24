@@ -164,6 +164,32 @@ namespace BotTest.Game.AI.Search
         /// rollout): the log's best line goes on with them where the tree ends (user, 2026-11-20: "show the full line to end of turn").</summary>
         public List<string>? RolloutTail;
         public double Mean => Visits == 0 ? 0 : Total / Visits;
+
+        /// <summary>
+        /// Forgets the line counts and scores of this node and everything below it, keeping the moves, the brain's priors and holds. A kept
+        /// node's lines were played from an earlier decision: their values carry that line's costs from above this node (rule breaks, order
+        /// penalties) and that search's turn record, so they don't compare with this decision's own lines (user, 2026-11-24: "end the turn"
+        /// won on 1903 kept lines with no fresh one, and a lethal attack lost to MST on our own Torrential). Used when a decision searches.
+        /// </summary>
+        public void ClearLines()
+        {
+            var seen = new HashSet<MctsNode>(ReferenceEqualityComparer.Instance);
+            var stack = new Stack<MctsNode>();
+            stack.Push(this);
+            while (stack.Count > 0)
+            {
+                var node = stack.Pop();
+                if (!seen.Add(node))
+                    continue;
+                lock (node.Lock)
+                {
+                    (node.Visits, node.Total, node.SumSq, node.Available, node.ParentVisitsAtCreation) = (0, 0, 0, 0, 0);
+                    (node.CachedScore, node.ScoreCachedAt) = (0, -1);
+                    foreach (var child in node.Children.Values)
+                        stack.Push(child);
+                }
+            }
+        }
         /// <summary>A root move's score (LineValue), kept for choosing which root move the next line tries, and its Visits when worked out
         /// (-1: never). Refreshed as its lines grow (Mcts.RootScores).</summary>
         public double CachedScore;
@@ -268,6 +294,15 @@ namespace BotTest.Game.AI.Search
         public long Iterations;
 
         public string Label { get; init; } = "";
+
+        /// <summary>
+        /// The position every search of this tree measures its lines from: the first search's root, kept for the later decisions that
+        /// continue the tree. Each search used to measure from its own root, so a kept node mixed lines measured from two positions
+        /// (live 2026-11-24, Machina turn 3: "end the turn" kept +0.84 from the search before Gearframe's search added Machina Force,
+        /// which its lines counted as a gain; the next decision's lines, measured with Force already in hand, couldn't match it, and the
+        /// bot ended its turn without attacking). Set once (Mcts.CaptureLineStart).
+        /// </summary>
+        internal Mcts.TreeBaseline? Baseline;
 
         public void Register(string key, MctsNode node)
         {
@@ -873,6 +908,11 @@ namespace BotTest.Game.AI.Search
         private LineStart? _lineStart;
         private readonly object _lineStartLock = new();
 
+        /// <summary>The position a tree's lines are measured from (MctsTree.Baseline): the first search's root.</summary>
+        internal sealed record TreeBaseline(SideSummary Ours, SideSummary Theirs, CardPiles OurPiles, CardPiles TheirPiles, bool Pressuring);
+
+        // The line's starting point: the tree's baseline position (its first search's root; this search's root when it is the first),
+        // valued by this search's evaluator, so every line in the tree is measured from the same position.
         private void CaptureLineStart(DuelHost host)
         {
             if (Volatile.Read(ref _lineStart) != null)
@@ -881,17 +921,21 @@ namespace BotTest.Game.AI.Search
             {
                 if (_lineStart != null)
                     return;
-                var ours = host.Summary(0);
-                var theirs = host.Summary(1);
+                var here = host.Summary(0);
+                var hereTheirs = host.Summary(1);
+                var fresh = new TreeBaseline(here, hereTheirs, ReadCardPiles(host, 0), ReadCardPiles(host, 1),
+                    State != TagRules.BotStrategicState.Desperate && PressuringState.Applies(here, hereTheirs));
+                var baseline = Interlocked.CompareExchange(ref _tree.Baseline, fresh, null) ?? fresh;
+                var (ours, theirs, pressuring) = (baseline.Ours, baseline.Theirs, baseline.Pressuring);
                 var parts = _evaluator.PositionParts(ours, theirs);
                 double center = parts.Where(p => !p.Key.Contains(BoardEvaluator.SubPart)).Sum(p => p.Value);
-                bool pressuring = State != TagRules.BotStrategicState.Desperate && PressuringState.Applies(ours, theirs);
-                Volatile.Write(ref _lineStart, new(ours, theirs, ReadCardPiles(host, 0), ReadCardPiles(host, 1),
+                // Their normal draws are counted in this search's own simulated duel (no draw of theirs falls between two decisions of one tree).
+                Volatile.Write(ref _lineStart, new(ours, theirs, baseline.OurPiles, baseline.TheirPiles,
                     _evaluator.CountAdvantage(ours, theirs, pressuring), host.OpponentNormalDraws.Count, pressuring, parts, center));
             }
         }
 
-        private readonly record struct CardPiles(int[] Banished, int[] ExtraDeck);
+        internal readonly record struct CardPiles(int[] Banished, int[] ExtraDeck);
         private static CardPiles ReadCardPiles(DuelHost host, int side) => new(host.BanishedCodes(side), host.ExtraDeckCodes(side));
 
         private static void RecordCardChanges(Dictionary<string, double> parts, string board, string advantage,
@@ -1330,7 +1374,7 @@ namespace BotTest.Game.AI.Search
                         turnEnd = (host.Summary(0), host.Summary(1), attacked); // our turn just ended: the board their backrow would have hit
                         activatedInTurn = ActivatedInOurTurn();
                         lylaEffectUsed = LylaEffectUsedInOurTurn();
-                        heavyExposure = _evaluator.HeavyExposure(turnEnd.Value.Ours);
+                        heavyExposure = _evaluator.HeavyExposure(turnEnd.Value.Ours, turnEnd.Value.Theirs);
                         NoteLesser(turnEnd.Value.Ours, turnEnd.Value.Theirs);
                         penalty += tally.OnOurTurnEnd(turnEnd.Value.Ours, turnEnd.Value.Theirs, note);
                     }
@@ -1570,7 +1614,9 @@ namespace BotTest.Game.AI.Search
                         (node == _start && LiveRootKeys != null ? AsLiveKeys(rawOptions, LiveRootKeys) : rawOptions) is var options &&
                         (node != _start || NoteOffered(node, prompt, LiveRootKeys)) &&
                         (options.Count > 1 || ours && (prompt.Data is IdleCmdData ||
-                         prompt.Data is SelectChainData && (node == _start || FromTurnStart != null))))
+                         prompt.Data is SelectChainData && (node == _start || FromTurnStart != null) ||
+                         // A yes/no a rule answers (one answer in the lines) is still the root when it's the live decision: its lines count.
+                         node == _start && YesNoLegalKeys(prompt) != null)))
                     {
                         // One kind of prompt per node (seen 2026-11-18: a Main Phase search continued from a node that also held the "yes" / "no"
                         // of Armageddon Knight's trigger, and listed "no" among its moves): a line meeting another kind of prompt (or the other
@@ -1658,7 +1704,7 @@ namespace BotTest.Game.AI.Search
                             node.Origin ??= _start;
                             var legalKeys = prompt.Data is SelectChainData chain
                                 ? SearchActions.ChainOptionKeys(chain)
-                                : options.Select(o => o.Key);
+                                : YesNoLegalKeys(prompt) ?? options.Select(o => o.Key);
                             _tree.Register(DecisionKey.Of(prompt.State, host.Summary(0), host.Summary(1), legalKeys), node);
                         }
                         // The spell/trap sets on offer are one move here, the set window (SearchActions.SetWindowKey); its set plans below.
@@ -1917,7 +1963,7 @@ namespace BotTest.Game.AI.Search
                 turnEnd = (host.Summary(0), host.Summary(1), attacked);
                 activatedInTurn = ActivatedInOurTurn();
                 lylaEffectUsed = LylaEffectUsedInOurTurn();
-                heavyExposure = _evaluator.HeavyExposure(turnEnd.Value.Ours);
+                heavyExposure = _evaluator.HeavyExposure(turnEnd.Value.Ours, turnEnd.Value.Theirs);
                 NoteLesser(turnEnd.Value.Ours, turnEnd.Value.Theirs);
             }
             // Monsters of theirs we controlled during the turn, all gone back (or gone) as it ended: borrowed, not ours to lose (C1).
@@ -2352,7 +2398,18 @@ namespace BotTest.Game.AI.Search
 
         private IEnumerable<string> ReplayOptionKeys(Prompt prompt, DuelHost host, Random rng) =>
             prompt.Data is SelectChainData chain ? SearchActions.ChainOptionKeys(chain)
-                : OptionsFor(prompt, true, rng, host)?.Select(option => option.Key) ?? Enumerable.Empty<string>();
+                : YesNoLegalKeys(prompt) ?? OptionsFor(prompt, true, rng, host)?.Select(option => option.Key) ?? Enumerable.Empty<string>();
+
+        /// <summary>
+        /// A yes/no's legal answers for its decision key: both, even when a rule leaves the lines one (EffectAnswer). The live decision is
+        /// keyed on both (live 2026-11-24: Machina Gearframe's search trigger, forced "yes" in the lines by ActivateOnSummon, never matched
+        /// the live "yes;no", so no line reached it, the replay declined the trigger and missed: a PLAN GAP). Null for other prompts and
+        /// "attack directly?" (one answer, never searched live).
+        /// </summary>
+        internal static IEnumerable<string>? YesNoLegalKeys(Prompt prompt) =>
+            prompt.Data is SelectEffectYnData || prompt.Data is SelectYesNoData { Description: not 31 } ? YesNoKeys : null;
+
+        private static readonly string[] YesNoKeys = { "yes", "no" };
 
         // A decision key without its "cancel" answer (the last '#' part lists the answers, ';'-separated).
         private static string WithoutCancel(string key) =>
@@ -2688,7 +2745,7 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>The card rules for this search's moves (Brains/SearchRules/SearchMoveRules): the search itself knows no card.</summary>
         private SearchMoveRules MoveRules => _moveRules ??= new SearchMoveRules(_view, State, GladiatorSetForRoutine,
-            FromTurnStart == null, EffectUsed, RootTurn, _evaluator.BackrowDoomRule);
+            FromTurnStart == null, EffectUsed, RootTurn, _evaluator.BackrowDoomRule, _evaluator.MstOwnFutureFusion);
 
         private static Option ToOption(MoveOption o) => new(o.Key, o.Label, o.Packet, o.MandatoryReason);
         private static MoveOption ToMove(Option o) => new(o.Key, o.Label, o.Packet, o.MandatoryReason);
@@ -2723,7 +2780,7 @@ namespace BotTest.Game.AI.Search
                 }
                 case BattleCmdData battle:
                     return SearchActions.Battle(battle)
-                        .Where(c => SearchMoveRules.BattleAllowed(prompt, battle, c))
+                        .Where(c => SearchMoveRules.BattleAllowed(prompt, battle, c) && MoveRules.BattleActivationAllowed(prompt, c, host))
                         .Select(c => new Option(c.Key, c.Label, SearchActions.Packet(c.Response))).ToList();
                 // Card picks, single or several (Brionac's discards and targets). No "cancel" for an attack target: whether to
                 // attack is decided at the battle prompt (seen 2026-11-10: "attack, then cancel" cancelled the brain's attacks).

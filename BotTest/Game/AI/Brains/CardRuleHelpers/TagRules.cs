@@ -37,7 +37,10 @@ namespace BotTest.Game.AI.Brains
             DeclineEffectOnSummon = 8192,
             ActivateOnSummon = 16384,
             NeverSet = 32768,
-            NeverSummonInDefence = 65536
+            NeverSummonInDefence = 65536,
+            // A single answer to an attack that waits for a bigger attacker still to come (weighed in HoldForBiggerAttackerAsync)
+            // even when the current attack costs us something.
+            SaveForBiggerAttacker = 131072
         }
 
         /// <summary>`DoNotSummon` forbids Normal Summon, Special Summon, and setting unless its survival exception is active.</summary>

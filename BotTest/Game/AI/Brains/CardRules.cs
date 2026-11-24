@@ -163,7 +163,14 @@ namespace BotTest.Game.AI.Brains
                     : TagRules.Tag.None),
 
             // Mystical Space Typhoon
-            new(new[] { MysticalSpaceTyphoon }, TagRules.Tag.Bait),
+            // Not activated with no spell/trap of theirs worth removing: it could only destroy our own card (DuelSim 2026-11-24: lines
+            // fired it at our own set cards, so setting looked worse than ending the turn; once for real, on our Torrential mid-battle).
+            // It never targets our own cards, even when it's about to be removed anyway (user, 2026-11-24); the one exception is our own
+            // Future Fusion in the Draw Phase (Machina Jinzo). Also lifted when the caller can't count their spells/traps (-1).
+            new(new[] { MysticalSpaceTyphoon }, TagRules.Tag.Bait | TagRules.Tag.DoNotActivate,
+                TagsToDisableWhen: context => context.OpponentRemovableSpellTraps != 0 || context.OwnFutureFusionInDrawPhase
+                    ? TagRules.Tag.DoNotActivate
+                    : TagRules.Tag.None),
 
             // Waboku
             new(new[] { CardId.Waboku }, TagRules.Tag.ProtectsMonsters | TagRules.Tag.DoNotActivate,
@@ -233,10 +240,13 @@ namespace BotTest.Game.AI.Brains
 
             // Dimensional Prison
             // This tag does not apply to Thought Ruler Archfiend.
-            new(new[] { DimensionalPrison }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ProtectsMonsters,
-                TagsToDisableWhen: context => Search.SearchHost.Is(context.ThreatCardId, CardId.ThoughtRulerArchfiend)
-                    ? TagRules.Tag.AnswersAnyThreat
-                    : TagRules.Tag.None),
+            // SaveForBiggerAttacker: with fewer answers than attackers and their attacks together not lethal, a direct hit
+            // doesn't force it out: it's weighed against the attackers still to come (user, 2026-11-24: D-Prison went on
+            // Gardestrike's 2100 with Faultroll and Stardust behind it, 7000 total into our 7400 LP).
+            new(new[] { DimensionalPrison }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ProtectsMonsters | TagRules.Tag.SaveForBiggerAttacker,
+                TagsToDisableWhen: context =>
+                    (Search.SearchHost.Is(context.ThreatCardId, CardId.ThoughtRulerArchfiend) ? TagRules.Tag.AnswersAnyThreat : TagRules.Tag.None) |
+                    (context.AttackAnswersScarce && context.NonLethalDirectAttack ? TagRules.Tag.None : TagRules.Tag.SaveForBiggerAttacker)),
 
             // Bottomless Trap Hole
             // It cannot answer a threat that was already on the field when Bottomless was set, or while Stardust is present.
@@ -261,10 +271,11 @@ namespace BotTest.Game.AI.Brains
 
             // Compulsory Evacuation Device
             // It does not answer a monster whose effect triggers on Normal Summon.
-            new(new[] { CardId.CompulsoryEvacuationDevice }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ProtectsMonsters,
-                TagsToDisableWhen: context => context.ThreatTriggersWhenNormalSummoned
-                    ? TagRules.Tag.AnswersAnyThreat
-                    : TagRules.Tag.None),
+            // SaveForBiggerAttacker: as Dimensional Prison (user, 2026-11-24).
+            new(new[] { CardId.CompulsoryEvacuationDevice }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ProtectsMonsters | TagRules.Tag.SaveForBiggerAttacker,
+                TagsToDisableWhen: context =>
+                    (context.ThreatTriggersWhenNormalSummoned ? TagRules.Tag.AnswersAnyThreat : TagRules.Tag.None) |
+                    (context.AttackAnswersScarce && context.NonLethalDirectAttack ? TagRules.Tag.None : TagRules.Tag.SaveForBiggerAttacker)),
 
             // Trap Dustshoot
             // Its hand-count condition disables the opposite set rule at each threshold.

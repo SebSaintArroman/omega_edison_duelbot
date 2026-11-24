@@ -179,6 +179,7 @@ namespace BotTest.Game.AI.Brains
                 GraveSetup = SearchGraveSetup,
                 RewardGladiatorBattles = RewardGladiatorBattles,
                 BackrowDoomRule = SearchBackrowDoomRule,
+                MstOwnFutureFusion = SearchMstOwnFutureFusion,
                 TheirNormalAttack = biggest?.Normal ?? BoardEvaluator.NoListNormalAttack,
                 TheirTributeAttack = biggest?.Tribute ?? BoardEvaluator.NoListTributeAttack,
                 TheirKnownBoost = knownBoost,
@@ -202,6 +203,10 @@ namespace BotTest.Game.AI.Brains
                 NextTurnValue = SearchNextTurnValue,
                 FieldLostAfterTurn = SearchFieldLostAfterTurn,
                 BaitCodes = BaitCardIds.ToArray(),
+                StormProofCodes = StormProofSets.ToArray(),
+                StormGoneChance = StormGoneChance,
+                OversetPressFrom = OversetPressFrom,
+                StrongMonsterAttack = StrongMonsterAttack,
                 DominantAtStart = (DominantCode(view.OwnMonsters, view.EnemyMonsters), DominantCode(view.EnemyMonsters, view.OwnMonsters)),
             };
         }

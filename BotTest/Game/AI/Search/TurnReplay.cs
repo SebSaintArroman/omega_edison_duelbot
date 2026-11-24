@@ -6,8 +6,10 @@ using OmegaBotWrapper.Struct;
 namespace BotTest.Game.AI.Search
 {
     /// <summary>One prompt of ours in the real turn (DeckBotBrain.TurnLog): its kind, the phase, the board as we saw it, the answer we sent.</summary>
+    /// <param name="ChainCard">At a chain window: their card on the chain whose targets the real game reported (0: none reported).</param>
+    /// <param name="ChainTargets">That link's targets in their graveyard (card codes): what D.D. Crow's rule reads.</param>
     internal sealed record ReplayCheckpoint(BotState State, int Phase, SearchView View, ReplayStep? Answer,
-        IReadOnlyList<string>? ChainOptions = null);
+        IReadOnlyList<string>? ChainOptions = null, int ChainCard = 0, IReadOnlyList<int>? ChainTargets = null);
 
     /// <summary>How far one replayed line got: checkpoints reached in order, and where and why it left the real game (null: it reached all).</summary>
     internal sealed record ReplayRun(int Reached, string? Miss, int MissAt);
@@ -469,7 +471,7 @@ namespace BotTest.Game.AI.Search
                     // activating an unrelated ignition effect to manufacture that window.
                     string board = Key(BotState.SelectChain, host);
                     while (_next < checkpoints.Count - 1 &&
-                           checkpoints[_next] is { State: BotState.SelectChain, Answer.Key: "pass" } skipped &&
+                           checkpoints[_next] is { State: BotState.SelectChain, Answer.Key: "pass", ChainCard: <= 0 } skipped &&
                            skipped.View.AttackInProgress == null &&
                            skipped.Phase == host.Phase && board == Key(BotState.SelectChain, skipped.View))
                     {
@@ -598,7 +600,8 @@ namespace BotTest.Game.AI.Search
                     (cp.State != BotState.SelectChain || !IsBattle(cp.Phase) || SameAttack(cp.View, activeAttack)) &&
                     SameCheckpointBoard(line, Key(prompt.State, cp.View), cp.Phase) &&
                     (cp.ChainOptions is not { Count: > 0 } || prompt.Data is SelectChainData chain &&
-                        cp.ChainOptions.Any(key => SearchActions.MatchKey(key, offered ??= SearchActions.ChainOptionKeys(chain)) != null)))
+                        cp.ChainOptions.Any(key => SearchActions.MatchKey(key, offered ??= SearchActions.ChainOptionKeys(chain)) != null)) &&
+                    SameChainLink(cp, host))
                     return k;
                 if (!Declined(cp) || cp.View.AttackInProgress != null &&
                     !SameAttack(cp.View, activeAttack) && !SameAttack(cp.View, lastAttack))
@@ -606,6 +609,15 @@ namespace BotTest.Game.AI.Search
             }
             return -1;
         }
+
+        /// <summary>
+        /// A chain window whose real chain had their card on it (ChainCard): the line's window must have that card as its last link too (live
+        /// 2026-11-24, Machina turn 8: the replay stopped at our window after XX-Saber Faultroll's special summon, same board and options as the
+        /// real one, before its revive targeting X-Saber Airbellum; with no graveyard target in the lines, D.D. Crow's rule held it).
+        /// </summary>
+        private static bool SameChainLink(ReplayCheckpoint cp, DuelHost host) =>
+            cp.State != BotState.SelectChain || cp.ChainCard <= 0 ||
+            host.CurrentSearchChain(0) is { Player: 1 } link && Canon(link.CardId) == Canon(cp.ChainCard);
 
         internal bool SameCheckpointBoard(string line, string real, int phase)
         {
@@ -758,8 +770,12 @@ namespace BotTest.Game.AI.Search
                     // moved on (seen 2026-11-18: they set Shield Warrior, and our next prompt came in their End Phase).
                     // ...unless that prompt is a chain window in this phase: they used an effect whose result isn't on the board yet (an ignition
                     // effect of a card on their field): its activation.
+                    // The card the real chain had on it first (ChainCard: Faultroll's revive, not another monster's effect).
+                    bool FieldEffect(SearchActions.Choice<IdleCmdResponse> o) =>
+                        o.Key.StartsWith($"{(int)MainAction.Activate}:") && (o.Key.Contains("@0.4.") || o.Key.Contains("@0.8."));
                     if (same && cp.State == BotState.SelectChain && (IsBattle(cp.Phase) ? IsBattle(host.Phase) : cp.Phase == host.Phase) &&
-                        options.FirstOrDefault(o => o.Key.StartsWith($"{(int)MainAction.Activate}:") && (o.Key.Contains("@0.4.") || o.Key.Contains("@0.8."))) is { } effect)
+                        (options.FirstOrDefault(o => cp.ChainCard > 0 && FieldEffect(o) && Canon(SearchActions.KeyCardId(o.Key)) == Canon(cp.ChainCard))
+                         ?? options.FirstOrDefault(FieldEffect)) is { } effect)
                         return (SearchActions.Packet(effect.Response), null);
                     if (phaseKey == null && same)
                         phaseKey = "end";
@@ -840,6 +856,11 @@ namespace BotTest.Game.AI.Search
                     return index >= 0 ? (new[] { (byte)1, (byte)index }, null)
                         : (null, $"recorded attack target {observed.Target?.Code.ToString() ?? "direct"} is unavailable");
                 }
+                // The target of their effect the real chain reported (ChainTargets: Faultroll's revive targeting X-Saber Airbellum in their
+                // graveyard), not what the quick policy would pick: the window's target is what D.D. Crow answers.
+                case SelectCardData targetPick when ChainTargetIndex(targetPick, cp) is int target and >= 0 &&
+                                                    Key(BotState.SelectChain, host) == Key(BotState.SelectChain, cp.View):
+                    return (new[] { (byte)1, (byte)target }, null);
                 case SelectChainData chain:
                 {
                     var cards = chain.SelectableCards ?? Array.Empty<DynamicCard>();
@@ -868,6 +889,17 @@ namespace BotTest.Game.AI.Search
                 }
             }
             return (OutcomePick(prompt.Data, host, next, 1), null);
+        }
+
+        /// <summary>Their one-card pick of a card in their own graveyard the checkpoint's chain link targets (ChainTargets), or -1.
+        /// (The pick is theirs: controller 0 is their side.)</summary>
+        private static int ChainTargetIndex(SelectCardData pick, ReplayCheckpoint cp)
+        {
+            if (cp.ChainTargets is not { Count: > 0 } targets || pick.Minimum > 1)
+                return -1;
+            var cards = pick.SelectableCards ?? Array.Empty<DynamicCard>();
+            return Array.FindIndex(cards, card => card.CurrentCoordinates is { Controller: 0, Location: (byte)CardLocation.Grave } &&
+                targets.Any(t => Canon(t) == Canon(card.ID)));
         }
 
         /// <summary>A face-up monster of theirs whose only need is another face-up copy: it's already there, so its effect makes nothing

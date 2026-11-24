@@ -318,7 +318,14 @@ namespace BotTest.Game.AI.Brains
             // (Plaguespreader) doesn't force the answer out (user, 2026-11-13: "why use dprison on freed. you should've saved it
             // for krystia - if you have fewer answers than they have threats, you should focus your answers on their biggest
             // threats").
-            int answers = (await CurrentField.GetCardsInSpellZone()).Count(card => card.IsCode(DimensionalPrison, MirrorForce, CompulsoryEvacuationDevice));
+            // Counted through the card rules (AnswersAnyThreat), so their exceptions apply: Mirror Force isn't an answer while
+            // Stardust Dragon is face-up (user, 2026-11-24: D-Prison was the only answer to Stardust, yet Mirror Force counted).
+            var ruleContext = new CardRuleRegistry.Context(Array.Empty<int>(), Array.Empty<int>(), 0, await CurrentField.GetBotLifePoints(), 0, false,
+                ThreatCardId: attacker.ID,
+                OpponentHasStardustDragon: enemyMonsters.Any(card => card.IsFaceup() && card.IsCode(StardustDragon)));
+            int answers = (await CurrentField.GetCardsInSpellZone()).Count(card =>
+                card.IsCode(DimensionalPrison, MirrorForce, CompulsoryEvacuationDevice) &&
+                (CardRuleRegistry.TagsFor(card.ID, ruleContext) & TagRules.Tag.AnswersAnyThreat) != 0);
             bool scarce = answers < 1 + stillToAttack.Count;
             // Their attacks are all direct and together lethal: a single answer goes on an attacker whose removal keeps us
             // alive (user, 2026-11-24: D-Prison on Emmersblade's 1300 still let 6500 through our 6000 LP; on Faultroll we'd
@@ -352,9 +359,22 @@ namespace BotTest.Game.AI.Brains
                 }
             }
             bool onlyExpendable = currentTarget.ID > 0 && IsExpendable(currentTarget);
+            // Card rule SaveForBiggerAttacker (CardRules.cs: Dimensional Prison): scarce answers and a non-lethal direct hit.
+            int allAttacks = attacker.Attack + stillToAttack.Sum(card => card.Attack);
+            var saveContext = ruleContext with
+            {
+                AttackAnswersScarce = scarce,
+                NonLethalDirectAttack = currentTarget.ID <= 0 && allAttacks < ruleContext.OwnLifePoints
+            };
+            bool saveForBigger = context.StateData is SelectChainData chainData &&
+                (chainData.SelectableCards ?? Array.Empty<DynamicCard>()).Any(card => card.ID > 0 &&
+                    (CardRuleRegistry.TagsFor(card.ID, saveContext) & TagRules.Tag.SaveForBiggerAttacker) != 0);
             if (attackerCost >= HoldMaxCurrentCost && scarce && onlyExpendable)
                 StapleNote(context, $"answers are scarce ({answers} for {1 + stillToAttack.Count} attackers) and {CardNames.Get(attacker.ID)}'s attack only " +
                                     $"costs our expendable {CardNames.Get(currentTarget.ID)}: weigh saving the answer for a bigger threat");
+            else if (attackerCost >= HoldMaxCurrentCost && saveForBigger)
+                StapleNote(context, $"answers are scarce ({answers} for {1 + stillToAttack.Count} attackers) and their attacks total {allAttacks} " +
+                                    $"against our {ruleContext.OwnLifePoints} LP: weigh saving the answer for a bigger threat than {CardNames.Get(attacker.ID)}");
             else if (attackerCost >= HoldMaxCurrentCost)
             {
                 StapleNote(context, $"don't save the answer: {CardNames.Get(attacker.ID)}'s attack costs us now ({attackerCostWhy})");

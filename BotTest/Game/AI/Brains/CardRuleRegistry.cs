@@ -21,7 +21,14 @@ namespace BotTest.Game.AI.Brains
             bool DrawTrapException = false, bool PlaguespreaderMayRevive = false,
             TagRules.BotStrategicState StrategicState = TagRules.BotStrategicState.Base,
             bool NormalSummonUsed = true, bool ReinforcementHasSingleTarget = false, bool DarkGrepherAvailable = false,
-            int PlannedSetCardId = 0);
+            int PlannedSetCardId = 0,
+            // Their spells/traps worth removing (set, or face-up Continuous / Field / Equip); -1 when the caller doesn't know.
+            int OpponentRemovableSpellTraps = -1,
+            // Our own face-up Future Fusion in the Draw Phase (Machina Jinzo): the one card of ours MST may target.
+            bool OwnFutureFusionInDrawPhase = false,
+            // An attack on us: fewer set answers (AnswersAnyThreat) than attackers left, and a direct hit with all their
+            // attacks together short of our LP.
+            bool AttackAnswersScarce = false, bool NonLethalDirectAttack = false);
 
         internal sealed record Rule(int[] Ids, TagRules.Tag Tags,
             Func<Context, TagRules.Tag>? TagsToDisableWhen = null,

@@ -1,0 +1,24 @@
+// Live 2026-11-24 19:29 Machina Control #012 (turn 3, main1): Gearframe summoned (M3), searched Machina Force. Live it ended the turn
+// (+0.84 on kept lines, none fresh) over Battle Phase / set window / Fortress. Same position, fresh search under the new rules.
+{
+  "deck": "MachinaControl",
+  "opponent": "MachinaControl",
+  "lp": [8000, 8000],
+  "turn": 3,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": true,
+  "idleSummons": [ 42940404 ],
+  "ours": {
+    "monsters": [ { "id": 42940404, "zone": 2, "thisTurn": true } ],
+    "spells": [],
+    "hand": [ 44330098, 58054262, 78349103, 29401950, 29401950, 67169062 ],
+    "grave": [ 5220687, 5556499, 42940404, 94886282, 70342110, 58054262, 24508238, 21502796 ]
+  },
+  "theirs": {
+    "monsters": [],
+    "spells": [ { "zone": 0, "set": true }, { "zone": 1, "set": true } ],
+    "handCount": 3,
+    "grave": [ 53582587, 64697231, 13504844, 94886282, 90508760 ]
+  }
+}

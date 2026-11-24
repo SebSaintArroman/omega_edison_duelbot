@@ -35,8 +35,11 @@ namespace BotTest.Game.AI.Brains
             public required int Generation { get; init; }
             public ReplayStep? Answer { get; set; }
             public IReadOnlyList<string>? ChainOptions { get; set; }
+            /// <summary>At a chain window on their link: their card whose chain targets were reported, and its graveyard targets (codes).</summary>
+            public int ChainCard { get; init; }
+            public IReadOnlyList<int>? ChainTargets { get; init; }
 
-            public ReplayCheckpoint ToReplay() => new(State, Phase, View, Answer, ChainOptions);
+            public ReplayCheckpoint ToReplay() => new(State, Phase, View, Answer, ChainOptions, ChainCard, ChainTargets);
         }
 
         private TurnStartSnapshot? _turnStart;
@@ -164,8 +167,38 @@ namespace BotTest.Game.AI.Brains
             SearchView view;
             try { view = await BuildSearchViewAsync(bot); }
             catch { return; }
-            _checkpoints.Add(new TurnCheckpoint { State = state, Phase = header.CurrentPhase, View = view, Generation = generation });
+            var (chainCard, chainTargets) = (0, (IReadOnlyList<int>?)null);
+            try
+            {
+                if (state == BotState.SelectChain && header.LastChainPlayer == 1)
+                    (chainCard, chainTargets) = await TheirChainLinkAsync(view);
+            }
+            catch { /* best effort: the checkpoint matches on the board alone */ }
+            _checkpoints.Add(new TurnCheckpoint { State = state, Phase = header.CurrentPhase, View = view, Generation = generation,
+                ChainCard = chainCard, ChainTargets = chainTargets });
             (_lastSeenOwnHand, _lastSeenTheirHand) = (view.OwnHand.ToList(), view.EnemyHandCount);
+        }
+
+        /// <summary>
+        /// Their chain link at this window, when the server reported its targets: the card of theirs whose chain targets include a card in
+        /// their graveyard, and those cards (codes). The replay reaches the window only with that card on the chain (TurnReplay.SameChainLink;
+        /// live 2026-11-24: D.D. Crow against XX-Saber Faultroll's revive was searched at the window after Faultroll's summon). (0, null): none.
+        /// </summary>
+        private async Task<(int Card, IReadOnlyList<int>? Targets)> TheirChainLinkAsync(SearchView view)
+        {
+            var grave = view.EnemyGrave;
+            var theirs = (await GetEnemyMonsterCardsAsync()).Concat(await GetEnemySpellCardsAsync()).Where(card => card.ID > 0);
+            foreach (var card in theirs)
+            {
+                var targets = (card.CurrentChainTargets ?? Array.Empty<CardCoordinate>())
+                    // As TryChainCrowAsync reads it: ours only when our graveyard has that slot (Omega's controller isn't always theirs).
+                    .Where(t => t.Location == (byte)CardLocation.Grave && t.Sequence < grave.Count &&
+                                !(t.Controller == 0 && t.Sequence < view.OwnGrave.Count))
+                    .Select(t => grave[t.Sequence]).Where(code => code > 0).ToList();
+                if (targets.Count > 0)
+                    return (card.ID, targets);
+            }
+            return (0, null);
         }
 
         private async Task<(int Threats, int Answers)> AssessStrategicStateAsync(DuelBotWrapper bot)
