@@ -79,6 +79,9 @@ namespace BotTest.Game.AI.Brains
         /// <summary>The deck brain's next-turn value of our side at the end of a line, given the cards we activated in our turn
         /// (DeckBotBrain.SearchNextTurnValue).</summary>
         public Func<SideSummary, IReadOnlyCollection<int>, double>? NextTurnValue { get; init; }
+        /// <summary>The deck brain's cards on our field lost later regardless as our turn ends (Future Fusion's Overdragon), given the cards
+        /// we activated in our turn: which codes are lost, or null for none (DeckBotBrain.SearchFieldLostAfterTurn).</summary>
+        public Func<SideSummary, IReadOnlyCollection<int>, Func<int, bool>?>? FieldLostAfterTurn { get; init; }
         /// <summary>Our life points at the decision: the life points we lose by the end of a line count against it (OwnDamageShare).</summary>
         public int OurStartLp { get; init; }
 
@@ -457,6 +460,21 @@ namespace BotTest.Game.AI.Brains
                 catch { /* a deck goal that fails counts nothing */ }
             }
             Part("Deck's next-turn setup", diff - before);
+            before = diff;
+            // The deck's cards lost later anyway, read from our side as our turn ended (Future Fusion: Overdragon wipes our field), each at
+            // what the board scorer says losing it costs (MonsterLoss / SpellLoss, as the wipe exposures count it).
+            if (!won && FieldLostAfterTurn != null)
+            {
+                try
+                {
+                    var atEnd = ourTurnEnd?.Ours ?? ours;
+                    if (FieldLostAfterTurn(atEnd, activatedThisTurn ?? Array.Empty<int>()) is { } lost)
+                        diff -= atEnd.Monsters.Where(m => lost(m.Code)).Sum(m => MonsterLoss(m, 0)) +
+                                atEnd.SpellCodes.Where(s => s.Code != SearchView.InertCard && lost(s.Code)).Sum(SpellLoss);
+                }
+                catch { /* a deck cost that fails counts nothing */ }
+            }
+            Part("Deck's cards lost after our turn", diff - before);
             // Gorz in our hand with our field empty: it can come out when they hit us directly (user, 2026-11-17: "if you have a gorz in hand,
             // you should get a small bonus for ending on an empty field because it'll let you use gorz").
             if (!won && ours.Monsters.Count == 0 && ours.SpellCodes.Count == 0 && ours.HandCodes.Any(c => SearchHost.Is(c, GorzTheEmissaryOfDarkness)))

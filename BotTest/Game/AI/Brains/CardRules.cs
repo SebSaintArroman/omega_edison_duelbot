@@ -126,11 +126,12 @@ namespace BotTest.Game.AI.Brains
             // Battle Fader
             new(new[] { CardId.BattleFader }, TagRules.Tag.DoNotSummon),
 
-            // D.D. Crow
+            // D.D. Crow: DoNotActivate is lifted only while one of its reasons holds (CrowMayActivate). TagsToDisableWhen returns the
+            // tags to REMOVE: until 2026-11-24 this was inverted, so Crow was free with no reason and blocked when it had one.
             new(new[] { CardId.DDCrow }, TagRules.Tag.DoNotSummon | TagRules.Tag.DoNotActivate,
                 TagsToDisableWhen: context => CrowMayActivate(context)
-                    ? TagRules.Tag.None
-                    : TagRules.Tag.DoNotActivate,
+                    ? TagRules.Tag.DoNotActivate
+                    : TagRules.Tag.None,
                 AllowedTargets: CrowTargets),
 
             // Gorz the Emissary of Darkness

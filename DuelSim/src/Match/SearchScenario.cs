@@ -42,6 +42,9 @@ internal static class SearchScenario
         public string Decision { get; set; } = "idle";
         public bool NormalSummonUsed { get; set; }
         public List<string> UsedEffects { get; set; } = new();
+        /// <summary>Our monsters summoned this turn that haven't attacked or used an effect yet (card ids): the turn record's idle
+        /// summons, which the line tally charges if they stay idle (live: DeckBotBrain.BuildTurnRecordAsync).</summary>
+        public List<int> IdleSummons { get; set; } = new();
         public Side Ours { get; set; } = new();
         public Side Theirs { get; set; } = new();
     }
@@ -71,6 +74,8 @@ internal static class SearchScenario
         view.InBattlePhase = file.Decision.Equals("battle", StringComparison.OrdinalIgnoreCase);
         view.FirstTurnOfDuel = file.Turn == 1;
         view.RealTurn = file.Turn;
+        if (file.IdleSummons.Count > 0)
+            view.Record = new BotTest.Game.AI.Brains.TurnRecord { IdleSummons = file.IdleSummons };
         view.OwnMonsters.AddRange(file.Ours.Monsters.Select(c => ToView(c, true, 0)));
         view.OwnSpells.AddRange(file.Ours.Spells.Select(c => ToView(c, false, 0)));
         view.OwnHand.AddRange(file.Ours.Hand);

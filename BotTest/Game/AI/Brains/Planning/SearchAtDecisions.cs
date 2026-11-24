@@ -68,6 +68,10 @@ namespace BotTest.Game.AI.Brains
         /// Normal Summon). Card units; 0 by default.</summary>
         internal virtual double SearchNextTurnValue(DuelSim.Engine.SideSummary own, IReadOnlyCollection<int> activatedThisTurn) => 0;
 
+        /// <summary>Our field cards lost later regardless, read as our turn ends, given the cards we activated this turn (Future Fusion's
+        /// Overdragon): which codes are lost (the board scorer costs each at its value), or null for none (the default).</summary>
+        internal virtual Func<int, bool>? SearchFieldLostAfterTurn(DuelSim.Engine.SideSummary ownAtTurnEnd, IReadOnlyCollection<int> activatedThisTurn) => null;
+
         /// <summary>The search plays Master Duel rules (Master Rule 5 field): Speed and Rush brains turn it off.</summary>
         protected virtual bool PlaySearchSupported => true;
 
@@ -1422,6 +1426,17 @@ namespace BotTest.Game.AI.Brains
                 bot.LogNote($"search: settle stats: decided by {decidedBy} after {clock.ElapsedMilliseconds / 1000.0:0.0} s; " +
                             string.Join("; ", outcome.Root.Where(s => legal.Contains(s.Key)).OrderByDescending(s => s.Mean)
                                 .Select(s => $"{s.Label}{(s.Key == brainKey ? " [brain]" : "")} {BoardEvaluator.CuPm(s.Mean, s.StdErr)} n={s.Visits}")));
+            // The search's engine and the real game must label every move alike (user, 2026-11-24: "it has to match or its going to throw
+            // errors"): a root move the lines filed under a key the real decision doesn't offer, while the same action on the same card is
+            // offered under another, is a mismatch (an id variant, an effect description, a zone): its lines count for nothing and the
+            // real move can't be chosen (live 2026-11-24: Lyla's destroy, 22624393*16 live vs 22624373*16 in the engine).
+            if (outcome != null && !IsSearchTwin)
+            {
+                static string Action(string k) => k.IndexOf(':') is int c and > 0 ? k[..c] : k;
+                foreach (var stray in outcome.Root.Where(s => s.Visits > 0 && !legal.Contains(s.Key) && SearchActions.KeyCardId(s.Key) > 0))
+                    if (legal.FirstOrDefault(k => Action(k) == Action(stray.Key) && SearchActions.KeyCardId(k) == SearchActions.KeyCardId(stray.Key)) is string real)
+                        bot.LogNote($"search: KEY MISMATCH: the lines filed {stray.Label} as {stray.Key} ({stray.Visits} lines), the real decision offers it as {real}");
+            }
             if (clock.ElapsedMilliseconds > SearchBudgetMs + 1000)
                 bot.LogNote($"search: thought {clock.ElapsedMilliseconds / 1000.0:0.#} s in all (best move needed {MinPlayLines} lines)");
             return outcome;
@@ -1857,6 +1872,11 @@ namespace BotTest.Game.AI.Brains
             var search = new Mcts(view, tree, start, rootState, brainKey, used, settings, evaluator, SearchBrains(bot), rootHolds)
             {
                 MayChoose = PlanMayChoose, Suggestions = PlanSuggestions, UsedEffects = _usedEffects.ToArray(),
+                // The root's moves under the real decision's keys (as MidChain): Omega's pre-errata ids give some activations another
+                // effect description than the engine's (Lyla 22624393*16 live, 22624373*16 in the engine), and a card the lines put
+                // in another zone another zone. Without this the search's own child never matched the real option (2026-11-24 live:
+                // Lyla's Main Phase destroy missing from the root, never choosable; the set window won by default).
+                LiveRootKeys = offered,
                 // A settled root move gets no more lines while another isn't: it has its lines and its score is backed by them.
                 RootSettled = IsSearchTwin ? null : (visits, score, average, err) =>
                 {

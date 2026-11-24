@@ -200,6 +200,7 @@ namespace BotTest.Game.AI.Brains
                 TheirStartLp = view.LifePoints[1],
                 OurStartLp = view.LifePoints[0],
                 NextTurnValue = SearchNextTurnValue,
+                FieldLostAfterTurn = SearchFieldLostAfterTurn,
                 BaitCodes = BaitCardIds.ToArray(),
                 DominantAtStart = (DominantCode(view.OwnMonsters, view.EnemyMonsters), DominantCode(view.EnemyMonsters, view.OwnMonsters)),
             };

@@ -199,7 +199,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         // batch: exploration rules, Phoenix / Gearframe / Catastor / Crow / Gorz fixes, side-aware planned targets).
         // 2 = round 1 tuning. 3 = round 2 tuning (above). 4 = user's notes: Fortress from hand always
         // discards itself, Gearframe Normal Summoned before Fortress, Ryko's flip not on our own card; shared: floaters attacked.
-        public override int BrainVersion => 12; // v12: DAD effect with spare DARKs (main phase + priority window); Returner crash/set rules. v11: Jinzo - Returner a value set with a Jinzo in the GY; traps negated under Jinzo (shared)
+        public override int BrainVersion => 13; // v13: Returners target different Jinzos; Future Fusion's wipe costs our turn-end field (this turn and next). v12: DAD effect with spare DARKs (main phase + priority window); Returner crash/set rules. v11: Jinzo - Returner a value set with a Jinzo in the GY; traps negated under Jinzo (shared)
 
         /// <summary>
         /// Play search setup: Machina Fortress in hand with other Machines to discard for it (8+ Levels in all) comes out
@@ -251,6 +251,50 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
 
         private static readonly int[] ValueSetsWithReturner = ValueSets.Append(CardId.JinzoReturner).ToArray();
 
+        // ------------------------------------------------------------------ Future Fusion's wipe (MachinaJinzo)
+
+        // The turn our face-up Future Fusion was activated (real duel); -1 with none on our field.
+        private int _futureFusionTurn = -1;
+        private int _futureFusionNoted = -1;
+
+        /// <summary>Our face-up Future Fusion: remember the turn it turned up (its activation), and on our next turn note that everything
+        /// on our field is lost at the Standby Phase after it (user, 2026-11-24).</summary>
+        private async Task TrackFutureFusionAsync(DecisionContext<IdleCmdData> context, int turn)
+        {
+            if (Variant != MachinaVariant.Jinzo)
+                return;
+            bool onField = (await CurrentField.GetCardsInSpellZone()).Any(card => card.CurrentCoordinates.Controller == 0 && card.IsFaceup() && card.IsCode(CardId.FutureFusion));
+            if (!onField)
+            {
+                _futureFusionTurn = -1;
+                return;
+            }
+            if (_futureFusionTurn < 0)
+                _futureFusionTurn = turn;
+            if (turn == _futureFusionTurn + 2 && _futureFusionNoted != turn)
+            {
+                _futureFusionNoted = turn;
+                Note(context, $"Future Fusion (activated turn {_futureFusionTurn}): Chimeratech Overdragon sends all our other cards to the graveyard " +
+                              "at our next Standby Phase, so every card on our field at the end of this turn is lost to the search");
+            }
+        }
+
+        /// <summary>
+        /// MachinaJinzo: Future Fusion's second Standby Phase summons Chimeratech Overdragon, which sends all our other cards to the graveyard
+        /// (user, 2026-11-24). On the turn it's activated, and on our next turn (when the wipe is still to come), every card on our field
+        /// as the turn ends is lost, each costing its value by the board scorer (user: "cost them as their value by the card scorer");
+        /// Future Fusion itself doesn't count. Only while it's still on our field.
+        /// </summary>
+        internal override Func<int, bool>? SearchFieldLostAfterTurn(DuelSim.Engine.SideSummary ownAtTurnEnd, IReadOnlyCollection<int> activatedThisTurn)
+        {
+            if (Variant != MachinaVariant.Jinzo ||
+                !ownAtTurnEnd.SpellCodes.Any(s => s.FaceUp && Search.SearchHost.Is(s.Code, CardId.FutureFusion)))
+                return null;
+            bool activatedNow = activatedThisTurn.Any(code => Search.SearchHost.Is(code, CardId.FutureFusion));
+            bool wipePending = _futureFusionTurn >= 0 && CurrentTurnNumber == _futureFusionTurn + 2;
+            return activatedNow || wipePending ? code => !Search.SearchHost.Is(code, CardId.FutureFusion) : null;
+        }
+
         // ------------------------------------------------------------------ main phase
 
         public override async Task<IdleCmdResponse> OnIdleCmdAsync(DecisionContext<IdleCmdData> context, CancellationToken ct = default) =>
@@ -270,6 +314,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             // Our lasting Jinzo negates our own traps: none are set under it (one Returner brought back this turn doesn't count).
             state = WithoutTrapsUnderJinzo(context, state);
             int turn = context.Header.CurrentTurn;
+            await TrackFutureFusionAsync(context, turn);
 
             var enemyMonsters = await GetEnemyMonsterCardsAsync();
             OpponentMemory.Observe(enemyMonsters);
@@ -296,7 +341,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 _futureFusionFinishes = finish != null;
                 if (finish != null && Rule(MachinaRules.FutureFusionFinish))
                 {
-                    Note(context, $"activate Future Fusion as the finishing push: {finish} (Overdragon clears our own field in two turns)");
+                    Note(context, $"activate Future Fusion as the finishing push: {finish} (Overdragon clears our own field in two turns; " +
+                                  "the search counts every card on our field at the end of this turn and the next as lost)");
                     return futureFusion.MainActivateFromIndex();
                 }
                 state.ActivableCards = state.ActivableCards!.Where(card => !card.IsCode(CardId.FutureFusion)).ToArray();
@@ -1595,6 +1641,33 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             return await base.OnSelectEffectYnAsync(context, ct);
         }
 
+        // Graveyard Jinzos (sequence) Jinzo - Returner's links already targeted in this turn and phase's chain.
+        private (int Turn, int Phase, HashSet<int> Sequences) _returnerTargets = (-1, -1, new HashSet<int>());
+
+        /// <summary>
+        /// MachinaJinzo: Jinzo - Returner's revive target. Several Returners on one chain (Future Fusion sending them all at once)
+        /// each target a different Jinzo (user, 2026-11-24: "they should not target a jinzo that has already been targeted"): a
+        /// second link on the same Jinzo fizzles. One already targeted is picked only when no other is left.
+        /// </summary>
+        private IList<byte>? ReturnerTargetPick(DecisionContext<SelectCardData> context, List<(DynamicCard Card, int Index)> indexed, DHint hint)
+        {
+            if (Variant != MachinaVariant.Jinzo || hint != DHint.SPSUMMON || context.StateData.Maximum != 1 ||
+                !indexed.All(x => x.Card.CurrentCoordinates.Controller == 0 && x.Card.CurrentCoordinates.Location == (byte)CardLocation.Grave && x.Card.IsCode(CardId.Jinzo)))
+                return null;
+            int turn = context.Header.CurrentTurn, phase = context.Header.CurrentPhase;
+            if (_returnerTargets.Turn != turn || _returnerTargets.Phase != phase)
+                _returnerTargets = (turn, phase, new HashSet<int>());
+            var taken = _returnerTargets.Sequences;
+            var pick = indexed.FirstOrDefault(x => !taken.Contains(x.Card.CurrentCoordinates.Sequence));
+            bool fresh = pick.Card.ID > 0;
+            if (!fresh)
+                pick = indexed[0];
+            taken.Add(pick.Card.CurrentCoordinates.Sequence);
+            Note(context, $"Jinzo - Returner targets the Jinzo in GY slot {pick.Card.CurrentCoordinates.Sequence}" +
+                          (taken.Count > 1 ? fresh ? " (another link already targets the other)" : " (no untargeted Jinzo left)" : ""));
+            return new List<byte> { (byte)pick.Index };
+        }
+
         public override async Task<IList<byte>?> OnSelectCardAsync(DecisionContext<SelectCardData> context, CancellationToken ct = default)
         {
             await PrepareContextAsync(context, ct);
@@ -1619,6 +1692,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
 
             if (SelectPlannedMaterials(context, cards, state.Minimum, state.Maximum, state.SelectionHint) is IList<byte> materials)
                 return materials;
+
+            if (ReturnerTargetPick(context, indexed, hint) is IList<byte> returnerTarget)
+                return returnerTarget;
 
             // Union equip target: the monster chosen when deciding the equip.
             if (_equipPlan is { } equip && equip.Turn == context.Header.CurrentTurn && allOurs &&

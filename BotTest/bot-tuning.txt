@@ -610,3 +610,7 @@ Search.ReplacedMatchLines = 1000   # The most lines the brain's move needs to ma
 # added 2026-11-24 18:37 (new in the code since the file was written)
 # --- LineRules
 LineRules.LylaBeforeBattleTrapsNegatedCost = 1
+
+# added 2026-11-24 18:58 (new in the code since the file was written)
+# --- LineRules
+LineRules.DoomedJinzoUnfusedCost = 6   # Our turn ends with a Jinzo revived by Jinzo - Returner destroyed in our End Phase while Chimeratech Fortress Dragon could have been made from our face-up Cyber Dragon and it: this cost per Jinzo. User, 2026-11-24: "it *must* fuse cyber dragon with jinzo just before moving into end phase".

@@ -237,7 +237,10 @@ namespace BotTest.Game.AI.Brains
                     var cards = chain.SelectableCards ?? Array.Empty<OmegaBotWrapper.Struct.DynamicCard>();
                     if (index < 0 || index >= cards.Length)
                         return 0;
-                    _idleSummons.Remove(Canonical(cards[index].ID));
+                    // A mandatory trigger isn't a use we chose (2026-11-24 live: Lyla's End Phase mill cleared her from the idle summons,
+                    // so "summon Lyla, set, end the turn" never paid the idle charge and beat her attack and effect).
+                    if (!chain.Forced)
+                        _idleSummons.Remove(Canonical(cards[index].ID));
                     if (Is(cards[index].ID, ReturnerIds) && cards[index].CurrentCoordinates.Location == (byte)OmegaBotWrapper.Enum.CardLocation.Grave)
                         _returnerRevived = true;
                     // A monster's effect used in the window it gets (the priority window after its summon), not later: almost always

@@ -192,12 +192,13 @@ The simulator is meant to play exactly like Omega. What it does to match:
 
     | Card | Omega id | Pre-errata behaviour |
     |---|---|---|
-    | Lyla | 22624393 | No custom script: plays as the current card, which matches the old rulings (targets; the position change is part of the effect, so if she leaves the field nothing happens). |
+    | Lyla | 22624393 | The current script word for word (it matches the old rulings: targets; the position change is part of the effect, so if she leaves the field nothing happens), under the Omega id so her effect descriptions are 22624393×16+n, as Omega sends them (live 2026-11-24). |
     | Ryko | 21502816 | Targets on activation (optional), then mills 3 and destroys the target. |
     | Goyo Guardian | 7391468 | 1 Tuner of any Attribute + 1 or more non-Tuners (no EARTH Tuner requirement). |
     | Brionac | 50321816 | Soft once per turn. Can return cards on either field. |
 
   - Otherwise the card plays as the current card, and `run` says which cards that applies to. To add one, drop a `c<omega id>.lua` into `scripts/pre-errata/`. See `src/Data/OmegaIds.cs`.
+  - Effect descriptions must be the ones Omega sends, or the bot's search can't match its moves to the real ones: Lyla uses her Omega id (`GetID()`), Goyo the official id (`aux.Stringid(7391448, n)`). Ryko, Brionac and the Machinas are unconfirmed; a live log line `search: KEY MISMATCH` names any card that differs.
 - **Harness only (no effect on play).**
   - Prompts Omega never shows a bot (chain prompts with nothing to chain, trigger ordering, rock-paper-scissors) are answered automatically.
   - Turn order alternates between duels instead of a coin toss.

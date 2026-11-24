@@ -1,0 +1,27 @@
+// Live 2026-11-24 18:59 Machina Control #015 (turn 2, main1, our first turn): Lyla just Normal Summoned (M3, face-up ATK); hand Mirror Force,
+// Bottomless, D.D. Crow, Peacekeeper, Ryko. Their board: a set monster (M2) and a set spell/trap (S5). The brain wanted to attack with Lyla,
+// then use her effect in Main Phase 2; the search replaced it with the set window (-0.95 vs -1.60) -> set Bottomless -> end. Lyla's
+// Main Phase 1 effect never appeared in the search's root stats. User: "lyla just was summoned and then didnt attack or use her effect".
+// Their deck read: X-Saber (seen Gardestrike, Emmersblade); MachinaControl stands in.
+{
+  "deck": "MachinaControl",
+  "opponent": "MachinaControl",
+  "lp": [9000, 8000],
+  "turn": 2,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": true,
+  "idleSummons": [ 22624393 ],
+  "ours": {
+    "monsters": [ { "id": 22624393, "zone": 2, "thisTurn": true } ],
+    "spells": [],
+    "hand": [ 44095762, 29401950, 24508238, 78349103, 21502796 ],
+    "grave": []
+  },
+  "theirs": {
+    "monsters": [ { "zone": 1, "pos": "set" } ],
+    "spells": [ { "zone": 4, "set": true } ],
+    "handCount": 4,
+    "grave": [ 94886282, 70368879 ]
+  }
+}

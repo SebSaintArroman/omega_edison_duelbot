@@ -12,7 +12,7 @@ namespace BotTest.Game.AI.Brains
             int darks = opponentGrave.Count(id => (Search.SearchHost.Type(id) & 0x1) != 0 &&
                 (Search.SearchHost.Attribute(id) & 0x20) != 0);
             int fairies = opponentGrave.Count(id => (Search.SearchHost.Type(id) & 0x1) != 0 &&
-                (Search.SearchHost.Race(id) & 0x2) != 0);
+                (Search.SearchHost.Race(id) & 0x4) != 0);
             bool targetsTheirGrave = (context.TargetedOpponentGraveCards?.Count ?? 0) > 0;
             bool chainsVayu = context.ActiveChainPlayer == 1 && Search.SearchHost.Is(context.ActiveChainCardId, BlackwingVayuTheEmblemOfHonor);
             bool chainsPlaguespreader = context.ActiveChainPlayer == 1 && Search.SearchHost.Is(context.ActiveChainCardId, PlaguespreaderZombie);
@@ -60,10 +60,10 @@ namespace BotTest.Game.AI.Brains
                 foreach (int id in opponentGrave.Where(id => (Search.SearchHost.Type(id) & 0x1) != 0 &&
                              (Search.SearchHost.Attribute(id) & 0x20) != 0)) Add(id);
             int fairies = opponentGrave.Count(id => (Search.SearchHost.Type(id) & 0x1) != 0 &&
-                (Search.SearchHost.Race(id) & 0x2) != 0);
+                (Search.SearchHost.Race(id) & 0x4) != 0);
             if (fairies == 4 && possibleInOpponentHand(ArchlordKristya))
                 foreach (int id in opponentGrave.Where(id => (Search.SearchHost.Type(id) & 0x1) != 0 &&
-                             (Search.SearchHost.Race(id) & 0x2) != 0)) Add(id);
+                             (Search.SearchHost.Race(id) & 0x4) != 0)) Add(id);
             if ((context.OpponentMonsterIds ?? Array.Empty<int>()).Any(id => Search.SearchHost.Is(id, Moja)) &&
                 opponentGrave.Count(id => Search.SearchHost.Is(id, KingOfTheBeasts)) == 1) Add(KingOfTheBeasts);
             if ((context.OwnGrave ?? Array.Empty<int>()).Any(id => Search.SearchHost.Is(id, NecroGardna)) &&
