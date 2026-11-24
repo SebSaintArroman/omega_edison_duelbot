@@ -259,8 +259,14 @@ namespace BotTest.Game.AI.Brains
                 return;
             }
             double Any(Func<int, double> chance) => 1 - unknown.Aggregate(1.0, (none, zone) => none * (1 - Math.Clamp(chance(zone), 0, 1)));
-            _unknownMirror = Any(zone => OpponentDeck.SetZoneChance(zone, MirrorForce) ?? (TrapsNegated ? 0 : SetCardIsMirrorForceChance));
-            _unknownTorrential = Any(zone => OpponentDeck.SetZoneChance(zone, TorrentialTribute) ?? (TrapsNegated ? 0 : SetCardIsTorrentialChance));
+            // The same clue the brain uses (TheirSetCards): a set card that stayed down when Mirror Force / Torrential would have
+            // been used is probably not that card (user, 2026-11-24: "give the search that clue").
+            double Cleared(int zone, Func<StapleEvidence, bool> cleared) =>
+                _clearedSetZones.TryGetValue(zone, out var e) && cleared(e) ? EvidenceResidual : 1;
+            _unknownMirror = Any(zone => (OpponentDeck.SetZoneChance(zone, MirrorForce) ?? (TrapsNegated ? 0 : SetCardIsMirrorForceChance)) *
+                                         Cleared(zone, e => e.NotMirror));
+            _unknownTorrential = Any(zone => (OpponentDeck.SetZoneChance(zone, TorrentialTribute) ?? (TrapsNegated ? 0 : SetCardIsTorrentialChance)) *
+                                             Cleared(zone, e => e.NotTorrential));
             double any = Any(zone => OpponentDeck.StopChance(zone) ?? (TrapsNegated ? SetCardStopsPushChance * QuickPlayShareOfStoppers : SetCardStopsPushChance));
             _unknownIcarus = Any(zone => OpponentDeck.SetZoneChance(zone, IcarusAttack) ?? 0);
             _otherStopChance = Math.Max(0, any - _unknownMirror - _unknownTorrential - _unknownIcarus);

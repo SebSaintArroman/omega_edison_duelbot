@@ -48,6 +48,8 @@ namespace OmegaBotWrapper
         public Task<byte[]?> DispatchAsync(BotState state, CancellationToken ct = default)
         {
             LastData = null;
+            if (state != BotState.SelectUnselectCard)
+                _lastUnselect = null; // the stale-list repair only links back-to-back select/unselect prompts
             if (_handlers.TryGetValue(state, out var handler))
                 return handler(ct);
 
@@ -138,7 +140,7 @@ namespace OmegaBotWrapper
             }
 
             var selectUnselectCardState = await _bot.GetBotStateAs<SelectUnselectCardState>(ct);
-            var selectUnselectCardData = selectUnselectCardState.CurrentStateData;
+            var selectUnselectCardData = RepairStaleUnselectList(selectUnselectCardState.CurrentStateData);
             var selectUnselectCardChosen = await _bot.OnSelectUnselectCardAction(selectUnselectCardData) ?? Array.Empty<byte>();
             // Select/unselect answers ONE card per prompt (the prompt repeats until the selection is complete), or none
             // to finish: never pad up to the overall minimum, which sends several cards and stalls the duel.
@@ -147,7 +149,40 @@ namespace OmegaBotWrapper
                 Math.Min(1, selectUnselectCardData.Minimum), 1, selectUnselectCardData.SelectableCards?.Length ?? 0,
                 "SelectUnselectCard", _bot.BotID);
             await LogDecisionAsync(BotState.SelectUnselectCard, selectUnselectCardData, selectUnselectCardChosen, selectUnselectCardResponse);
+            _lastUnselect = selectUnselectCardResponse is { Count: 1 } one && selectUnselectCardData.SelectableCards is { } offered
+                ? (offered, selectUnselectCardData.SelectionHint, one[0])
+                : null;
             return BotResponseWriter.WriteCardSelection(selectUnselectCardResponse);
+        }
+
+        // The last select/unselect prompt we answered with one card: its list, hint and the index we picked.
+        private (DynamicCard[] Cards, int Hint, byte Picked)? _lastUnselect;
+
+        /// <summary>
+        /// Omega's select/unselect of DECK cards (seen 2026-11-24, Future Fusion's FMATERIAL: Card Trooper, Returner x2, Gearframe x3,
+        /// Cyber Dragon x2, Jinzo x2, Fortress, Force) re-sends the first list cut short by one after each pick instead of the list
+        /// without the picked card: the codes no longer match the indexes the server reads, and the bot "picked Jinzo - Returner"
+        /// seven times while the server sent the Gearframes, Cyber Dragons, Jinzos, Fortress and Force. Deck cards all sit at
+        /// sequence 255, so the list can't be checked by position: when a prompt is the previous one's list cut short by one (same
+        /// hint, all in the deck) and we picked one card from it, the real list is the previous one without that card.
+        /// </summary>
+        private SelectUnselectCardData RepairStaleUnselectList(SelectUnselectCardData data)
+        {
+            var last = _lastUnselect;
+            _lastUnselect = null;
+            var cards = data.SelectableCards;
+            if (last is not { } prev || cards == null || prev.Hint != data.SelectionHint ||
+                cards.Length != prev.Cards.Length - 1 || prev.Picked >= prev.Cards.Length ||
+                !cards.Concat(prev.Cards).All(card => card.CurrentCoordinates.Location == (byte)CardLocation.Deck))
+                return data;
+            for (int i = 0; i < cards.Length; i++)
+                if (cards[i].ID != prev.Cards[i].ID)
+                    return data; // not the stale prefix: Omega sent a real list
+            var real = prev.Cards.Where((_, i) => i != prev.Picked).ToArray();
+            if (!real.Select(card => card.ID).SequenceEqual(cards.Select(card => card.ID)))
+                BotLogger.Warn(_bot.BotID, $"[{BotState.SelectUnselectCard}] stale deck list repaired: dropped the picked card (index {prev.Picked}) instead of the last one");
+            data.SelectableCards = real;
+            return data;
         }
 
         private async Task<byte[]?> HandleSelectChainAsync(CancellationToken ct)

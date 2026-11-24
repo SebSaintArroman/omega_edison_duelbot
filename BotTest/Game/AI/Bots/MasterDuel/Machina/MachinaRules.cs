@@ -26,14 +26,24 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         public const string CyberDragonPressure = "machina.cyber-dragon-pressure";
         public const string FortressFromGrave = "machina.fortress-from-grave";
         public const string FortressFromHand = "machina.fortress-from-hand";
+        [ResourceHold]
         public const string FortressLastResort = "machina.fortress-last-resort";
         /// <summary>A Fortress with a costly discard (Force, Gearframe, several Machines) waits while Armageddon Knight can be Normal Summoned instead.</summary>
+        [ResourceHold]
         public const string KnightBeforeCostlyFortress = "machina.knight-before-costly-fortress";
+        /// <summary>Fortress waits while a less expensive answer handles their board (a ready monster, Gearframe, a free summon), in the
+        /// Conservative strategic state (high LP, cards even; user, 2026-11-24: play a little more conservatively).</summary>
+        [ResourceHold]
+        public const string CheaperAnswerFirst = "machina.cheaper-answer-first";
+        /// <summary>Fortress waits while Gearframe can be Normal Summoned first (it searches; Fortress then discards the search).</summary>
+        public const string GearframeBeforeFortress = "machina.gearframe-before-fortress";
         /// <summary>The Cyber Dragon safety equip (against Chimeratech) waits for Main Phase 2 when the union can attack first.</summary>
         public const string UnionEquipAfterBattle = "machina.union-equip-after-battle";
         /// <summary>Gearframe searches Fortress; Force only with a Fortress already on the field or in the graveyard, or two in hand; never Peacekeeper (user, 2026-11-17).</summary>
         [HoldCost(HoldCosts.Strong)] // above the 2.0 Peacekeeper (5.5) outscores Fortress (3.5) by in hand
         public const string GearframeSearch = "machina.gearframe-search";
+        /// <summary>Fortress held when a set card of theirs is likely Bottomless Trap Hole (a banished Fortress is gone for good).</summary>
+        [TrapFear]
         public const string FortressBanishRisk = "machina.fortress-banish-risk";
         public const string FortressForPressure = "machina.fortress-for-pressure";
         public const string FortressPopsItsKiller = "machina.fortress-pops-its-killer";

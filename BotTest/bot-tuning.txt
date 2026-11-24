@@ -615,3 +615,10 @@ LineRules.LylaBeforeBattleTrapsNegatedCost = 1
 # added 2026-11-24 18:58 (new in the code since the file was written)
 # --- LineRules
 LineRules.DoomedJinzoUnfusedCost = 6   # Our turn ends with a Jinzo revived by Jinzo - Returner destroyed in our End Phase while Chimeratech Fortress Dragon could have been made from our face-up Cyber Dragon and it: this cost per Jinzo. User, 2026-11-24: "it *must* fuse cyber dragon with jinzo just before moving into end phase".
+
+# added 2026-11-24 (generic strategic state from LP and card scores: Desperate / Conservative)
+# --- StandingState
+StandingState.ConservativeCardGap = 1   # Card advantage scores (each side's whole CardAdvantageDelta count) at most this far apart count as neither side having much card advantage: the Conservative strategic state (see ConservativeLpFrom).
+StandingState.ConservativeHoldFactor = 1.5   # In the Conservative strategic state, a resource hold ([ResourceHold] rules: Fortress's summon, a Vayu or synchro spend) costs this many times its usual hold cost.
+StandingState.ConservativeLpFrom = 5500   # Conservative strategic state from this many LP of ours (with the card scores close, see ConservativeCardGap). User, 2026-11-24: "lower that lifepoint requirement to 5500".
+StandingState.DesperateCardGap = 3   # The Desperate strategic state when their card advantage score (each side's whole CardAdvantageDelta count) is this much above ours. User, 2026-11-24: "enter desperate if opponent has 3+ more card advantage score than the bot".

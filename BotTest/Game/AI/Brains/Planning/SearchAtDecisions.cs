@@ -136,7 +136,14 @@ namespace BotTest.Game.AI.Brains
 
         private double HoldCost(string rule, MainAction? action) =>
             CheckedOnTheLine.Contains(rule) || action is MainAction.Summon or MainAction.SpSummon && SummonsCheckedOnTheLine.Contains(rule)
-                ? 0 : HoldCost(rule);
+                ? 0 : HoldCost(rule) * ConservativeFactor(rule);
+
+        /// <summary>
+        /// In the Conservative strategic state a resource hold ([ResourceHold] on the rule, in any deck's rule set) costs more (user,
+        /// 2026-11-24: "if its on, then resource holds like fortresses's summon should count for more (same as using vayu ...)").
+        /// </summary>
+        private double ConservativeFactor(string rule) =>
+            StrategicState == TagRules.BotStrategicState.Conservative && RuleGates.IsResourceHold(rule) ? StandingState.ConservativeHoldFactor : 1.0;
 
         /// <summary>
         /// Records that the brain considered this move and held it back by this rule. Called where a rule rejects a move, so
@@ -226,7 +233,7 @@ namespace BotTest.Game.AI.Brains
         {
             // Pressing (the risk tolerance above its base) relaxes it: the threshold rises up to 3x (user, 2026-11-16).
             await RiskToleranceAsync();
-            if (TorrentialChance < TorrentialTestChance * (1 + 2 * RiskPressNow))
+            if (TorrentialChance < TorrentialTestChance * (1 + 2 * RiskPressNow) || !Rule(DeckRules.TestForTorrential))
                 return;
             var data = context.StateData;
             var candidates = new List<(DynamicCard Card, MainAction Action)>();

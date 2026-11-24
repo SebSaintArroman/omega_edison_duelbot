@@ -55,3 +55,8 @@ MachinaBotBrain.HoldCost.machina.union-unequip-for-phoenix = 1.5
 # added 2026-11-17 15:32 (new in the code since the file was written)
 # --- MachinaBotBrain
 MachinaBotBrain.HoldCost.machina.gearframe-search = 3
+
+# added 2026-11-24 (Fortress waits for a cheaper answer in the Conservative strategic state; the state's numbers are StandingState.* in bot-tuning.txt)
+# --- MachinaBotBrain
+MachinaBotBrain.HoldCost.machina.cheaper-answer-first = 1.5
+MachinaBotBrain.HoldCost.machina.gearframe-before-fortress = 1.5

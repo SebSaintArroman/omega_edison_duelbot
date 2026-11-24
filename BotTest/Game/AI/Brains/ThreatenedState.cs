@@ -8,11 +8,17 @@ namespace BotTest.Game.AI.Brains
 
     internal sealed class ThreatenedState
     {
-        internal readonly record struct Assessment(IReadOnlyList<StrategicCard> Threats, int Answers, bool IsPressuring = false)
+        /// <param name="Standing">The LP / card-count standing (StandingState): Desperate, Conservative or Base.</param>
+        internal readonly record struct Assessment(IReadOnlyList<StrategicCard> Threats, int Answers, bool IsPressuring = false,
+            TagRules.BotStrategicState Standing = TagRules.BotStrategicState.Base)
         {
+            // Desperate first (far behind on cards), then Threatened, Pressuring over Conservative (user, 2026-11-24: "prefer pressuring
+            // over conservative if both are hit at the same time"), Base last.
             public TagRules.BotStrategicState State =>
+                Standing == TagRules.BotStrategicState.Desperate ? TagRules.BotStrategicState.Desperate :
                 Threats.Count > Answers ? TagRules.BotStrategicState.Threatened :
-                IsPressuring ? TagRules.BotStrategicState.Pressuring : TagRules.BotStrategicState.Base;
+                IsPressuring ? TagRules.BotStrategicState.Pressuring :
+                Standing == TagRules.BotStrategicState.Conservative ? TagRules.BotStrategicState.Conservative : TagRules.BotStrategicState.Base;
         }
 
         private readonly Dictionary<(int Zone, int Code), HashSet<(int Zone, int Code)>> _presentWhenSet = new();
@@ -29,8 +35,11 @@ namespace BotTest.Game.AI.Brains
 
         public Assessment Evaluate(
             IReadOnlyCollection<int> deck, IReadOnlyCollection<int> hand, IReadOnlyList<StrategicCard> ownMonsters,
-            IReadOnlyList<StrategicCard> ownSpells, IReadOnlyList<StrategicCard> enemyMonsters, int enemyHand, int ownLp, int enemyLp)
+            IReadOnlyList<StrategicCard> ownSpells, IReadOnlyList<StrategicCard> enemyMonsters, int enemyHand, int ownLp, int enemyLp,
+            TagRules.BotStrategicState standing)
         {
+            // standing: the LP / card advantage standing (StandingState), worked out by the caller with its evaluator.
+
             var fieldMonsters = enemyMonsters.Where(card => card.FaceUp && card.Code > 0).ToList();
             var occupied = fieldMonsters.Select(card => (card.Zone, card.Code)).ToHashSet();
             var bottomless = ownSpells.Where(card => !card.FaceUp && SearchHost.Is(card.Code, BottomlessTrapHole))
@@ -46,7 +55,7 @@ namespace BotTest.Game.AI.Brains
             if (fieldMonsters.Count == 0)
                 return new(Array.Empty<StrategicCard>(), 0,
                     PressuringState.Applies(ownLp, enemyLp, enemyMonsters.Count,
-                        ownMonsters.Where(card => card.FaceUp && card.AttackPosition).Select(card => card.Attack)));
+                        ownMonsters.Where(card => card.FaceUp && card.AttackPosition).Select(card => card.Attack)), standing);
 
             int deckAttack = SearchHost.Available ? deck.Select(SearchHost.Cards.Get)
                 .Where(card => card is { Level: > 0 and <= 4 } && (card.Type & (int)CardType.Monster) != 0)
@@ -60,7 +69,7 @@ namespace BotTest.Game.AI.Brains
                 (CardRuleRegistry.TagsFor(card.Code, context) & TagRules.Tag.Threat) != 0 ||
                 card.Attack > deckAttack && card.Attack > boardAttack).ToList();
             if (threats.Count == 0)
-                return new(threats, 0);
+                return new(threats, 0, Standing: standing);
 
             var eligibleThreats = ownMonsters.Where(card => card.FaceUp).Concat(ownSpells)
                 .Where(answer => answer.Code > 0 && !answer.Disabled)
@@ -100,7 +109,7 @@ namespace BotTest.Game.AI.Brains
             for (int answer = 0; answer < eligibleThreats.Length && covered < threats.Count; answer++)
                 if (eligibleThreats[answer].Length > 0 && Assign(answer, new bool[threats.Count]))
                     covered++;
-            return new(threats, covered);
+            return new(threats, covered, Standing: standing);
         }
     }
 }

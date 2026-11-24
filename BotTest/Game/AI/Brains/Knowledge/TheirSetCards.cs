@@ -98,6 +98,10 @@ namespace BotTest.Game.AI.Brains
         protected async Task<List<double>> SetCardStopChancesAsync()
         {
             var stops = new List<double>();
+            // Desperate: their set cards aren't feared (pushes, lethal rolls, direct attacks; user, 2026-11-24: "remove the fear of heavy
+            // storm and traps").
+            if (StrategicState == TagRules.BotStrategicState.Desperate)
+                return stops;
             foreach (var card in (await GetEnemySpellCardsAsync()).Where(card => !card.IsFaceup()))
             {
                 _clearedSetZones.TryGetValue(card.CurrentCoordinates.Sequence, out var e);

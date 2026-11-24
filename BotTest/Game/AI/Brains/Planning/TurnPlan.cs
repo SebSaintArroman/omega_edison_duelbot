@@ -165,7 +165,8 @@ namespace BotTest.Game.AI.Brains
                     MakeEvaluator(view), SearchBrains(context.Bot), new Dictionary<string, (double, string)>())
                 {
                     GladiatorSetForRoutine = gladiatorSet,
-                    State = desperateAllure ? TagRules.BotStrategicState.Desperate : StrategicState
+                    State = desperateAllure ? TagRules.BotStrategicState.Desperate : StrategicState,
+                    ClearingHandForAllure = desperateAllure,
                 };
                 int seed = Interlocked.Increment(ref _searchSeed);
                 var result = await Task.Run(() => check.CheckLine(steps, RoutineMatch, RoutineCheckLines, seed));

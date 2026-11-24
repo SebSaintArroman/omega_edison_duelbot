@@ -36,6 +36,13 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         protected bool Rule(string name)
         {
+            // Desperate: no fear of Heavy Storm or their traps ([TrapFear] rules; user, 2026-11-24).
+            if (StrategicState == TagRules.BotStrategicState.Desperate && RuleGates.IsTrapFear(name))
+            {
+                if (!IsSearchTwin)
+                    _trackedBot?.LogNote($"rule {name} off: we're Desperate (no fear of Heavy Storm or traps)");
+                return false;
+            }
             bool fired = Rules.Roll(name, out double p);
             if (fired && p > 0)
                 _decisionRules.Add(name); // for the play search verdict (which rules shaped this decision)
@@ -135,6 +142,13 @@ namespace BotTest.Game.AI.Brains
             // Remember face-up opponent monsters at every decision (no extra API call: reuses the refreshed field).
             if (refresh is Task<FieldInfo> fieldTask)
                 await ObserveFieldAsync(context, header, fieldTask.Result);
+            // The search twin's strategic state at this position of its line (live, PromptArrivedAsync assesses it): the holds it
+            // records scale with it (Conservative: resource holds cost more; user, 2026-11-24).
+            if (IsSearchTwin)
+            {
+                try { await AssessStrategicStateAsync(context.Bot); }
+                catch { _assessedStrategicState = TagRules.BotStrategicState.Base; }
+            }
 
             // Grand Mole on their field / back in their hand: tracked at every decision, so a Mole that comes out,
             // bounces and returns to their hand within one Battle Phase isn't missed.

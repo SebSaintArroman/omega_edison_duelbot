@@ -116,6 +116,21 @@ namespace BotTest.Game.AI.Brains
 
         public double CardAdvantage(SideSummary ours, SideSummary theirs) => CountAdvantage(ours, theirs).Net;
 
+        /// <summary>
+        /// Each side's whole card advantage score, as CardAdvantageDelta counts it (Mcts.Score): hand count and hand values, non-token
+        /// monsters at MonsterCardValue, spells/traps on the field and set trap values, graveyard values and live Vayu pairs, scaled by
+        /// PlusOneBonus. For the strategic state (StandingState; user, 2026-11-24: "it should be the total card advantage score").
+        /// </summary>
+        public (double Ours, double Theirs) CardAdvantageScores(SideSummary ours, SideSummary theirs)
+        {
+            var c = CountAdvantage(ours, theirs);
+            double our = c.OurHand + c.OurHandAdjustment + MonsterCardValue * c.OurMonsters + c.OurSpells + c.OurSetTrapAdjustment +
+                         c.GravePairs + c.OurGraveValue;
+            double their = c.TheirHand + c.TheirHandAdjustment + MonsterCardValue * c.TheirMonsters + c.TheirSpells + c.TheirSetTrapAdjustment +
+                           c.TheirGraveValue;
+            return (our * PlusOneBonus, their * PlusOneBonus);
+        }
+
         internal AdvantageCounts CountAdvantage(SideSummary ours, SideSummary theirs, bool pressuring = false)
         {
             ours = ScoringSide(ours);
@@ -506,6 +521,9 @@ namespace BotTest.Game.AI.Brains
                 // expected value below already weighs it by the chance, so the bonus itself is the full WinBonus. Cards still costed.
                 double bonus = WinBonus;
                 diff = chance * (center + bonus - WinCardCost * Math.Max(0, cardsSpent) - penalty) + (1 - chance) * diff; // the rules it broke cost in both
+                // Never below the line without its win (user, 2026-11-24: "dont let the winning bonus go negative, just cap it down at 0"):
+                // a won line far ahead scored under the boards of lines that don't win, so Dark Armed Dragon went to defence to win less.
+                diff = Math.Max(diff, before);
                 Part("Win (by its chance, in place of the board)", diff - before);
             }
             // A position still alive sits clearly between a loss and a win: far behind, the squashed score is ~0 and a line that

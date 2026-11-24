@@ -49,9 +49,11 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>Points this brain at the line being played (call before each line, on the search thread).</summary>
         public void Attach(DuelHost host, int turnOffset, int startingTurn, bool normalSummonUsedAtStart,
-            IReadOnlyCollection<int> activatedAtStart)
+            IReadOnlyCollection<int> activatedAtStart, BoardEvaluator? evaluator = null)
         {
             _idlePrompt = null;
+            // The twin's LP / card advantage standing at each position of this line, by the search's own evaluator (StandingState).
+            _twin.SearchStanding = evaluator == null ? null : () => StandingState.Assess(evaluator, host.Summary(0), host.Summary(1));
             _startingTurn = startingTurn;
             _normalSummonUsedAtStart = normalSummonUsedAtStart;
             _activatedAtStart = activatedAtStart;

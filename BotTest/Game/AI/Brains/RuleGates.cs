@@ -28,6 +28,26 @@ namespace BotTest.Game.AI.Brains
         public double Cost { get; }
     }
 
+    /// <summary>
+    /// A rule that holds a resource back (a spend: Machina Fortress's summon, Vayu, a synchro): in the Conservative strategic state its
+    /// hold costs StandingState.ConservativeHoldFactor times as much (user, 2026-11-24). Declared on the rule's constant in any deck's
+    /// rule set, so the generic state turns them all up together: <c>[ResourceHold] public const string X = "...";</c>.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class ResourceHoldAttribute : Attribute
+    {
+    }
+
+    /// <summary>
+    /// A rule that plays around Heavy Storm or their traps (holding sets for Storm, no chip into backrow, defence under Mirror Force, the
+    /// Torrential test, a likely Bottomless): it doesn't fire in the Desperate strategic state (user, 2026-11-24: "It should however remove
+    /// the fear of heavy storm and traps"). Declared on the rule's constant in any deck's rule set: <c>[TrapFear] public const string X = "...";</c>.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class TrapFearAttribute : Attribute
+    {
+    }
+
     /// <summary>The tiers of HoldCost (card units; a card in hand is about 0.5-1, a 2000 body about 2.2).</summary>
     public static class HoldCosts
     {
@@ -102,6 +122,21 @@ namespace BotTest.Game.AI.Brains
         /// <summary>A rule's hold cost from the tuning file (a tier or a number), else its declared tier, else HoldCosts.Standard.</summary>
         public static double DefaultCost(string rule) =>
             RuleCosts.Value.TryGetValue(rule, out string? text) && HoldCosts.Resolve(text) is double c ? c : HoldCosts.Standard;
+
+        // Rules tagged [ResourceHold] / [TrapFear], from every RuleSet class.
+        private static HashSet<string> Tagged<TAttribute>() where TAttribute : Attribute =>
+            typeof(RuleGates).Assembly.GetTypes().Where(t => t.GetCustomAttribute<RuleSetAttribute>() != null)
+                .SelectMany(t => t.GetFields(BindingFlags.Public | BindingFlags.Static))
+                .Where(f => f.IsLiteral && f.FieldType == typeof(string) && f.GetCustomAttribute<TAttribute>() != null)
+                .Select(f => (string)f.GetRawConstantValue()!).ToHashSet(StringComparer.Ordinal);
+        private static readonly Lazy<HashSet<string>> ResourceHolds = new(Tagged<ResourceHoldAttribute>);
+        private static readonly Lazy<HashSet<string>> TrapFears = new(Tagged<TrapFearAttribute>);
+
+        /// <summary>Whether this rule holds a resource back ([ResourceHold]): it costs more in the Conservative strategic state.</summary>
+        public static bool IsResourceHold(string rule) => ResourceHolds.Value.Contains(rule);
+
+        /// <summary>Whether this rule plays around Heavy Storm or their traps ([TrapFear]): it doesn't fire in the Desperate strategic state.</summary>
+        public static bool IsTrapFear(string rule) => TrapFears.Value.Contains(rule);
 
         /// <summary>Rules whose probability isn't 1 by default (candidate rules written switched off).</summary>
         public static readonly Dictionary<string, double> DefaultOverrides = new(StringComparer.Ordinal);

@@ -465,7 +465,7 @@ namespace BotTest.Game.AI.Brains
                 LastMainMove.Turn == _currentHeader.CurrentTurn && LastMainMove.Action == MainAction.Activate &&
                 SearchHost.Is(LastMainMove.CardId, ReinforcementOfTheArmy) &&
                 Array.FindIndex(offered, card => card.IsCode(NecroGardna)) is int gardna && gardna >= 0 &&
-                CardRules.ReinforcementNeedsGardna(await ReinforcementContextAsync(_currentHeader,
+                CardRules.ReinforcementNeedsGardna(await OwnDeckContextAsync(_currentHeader,
                     offered: offered.Select(card => card.ID).ToArray())))
             {
                 _trackedBot?.LogNote("Reinforcement of the Army: search Necro Gardna to give Dark Grepher a discard");

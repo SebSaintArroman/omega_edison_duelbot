@@ -29,6 +29,20 @@ namespace BotTest.Game.AI.Brains
         private readonly bool _mstOwnFutureFusion;
         private readonly System.Runtime.CompilerServices.ConditionalWeakTable<DuelHost, ThreatenedState> _threatHistories = new();
 
+        /// <summary>The search's evaluator: each position's LP / card advantage standing (StandingState) by its card advantage scores.
+        /// Null: Base.</summary>
+        public BoardEvaluator? Evaluator { get; init; }
+
+        /// <summary>
+        /// Checking the brain's desperate Allure of Darkness routine (clear the hand, then Allure): its sets may come before its other
+        /// plays. Only that routine: the Desperate state itself keeps the set timing (user, 2026-11-24: "Desperate removes the
+        /// set-timing limits - no. it shouldn't do that").
+        /// </summary>
+        public bool ClearingHandForAllure { get; init; }
+
+        private TagRules.BotStrategicState Standing(SideSummary own, SideSummary enemy) =>
+            Evaluator is { } evaluator ? StandingState.Assess(evaluator, own, enemy) : TagRules.BotStrategicState.Base;
+
         /// <param name="plannedSetCardId">The card a routine of the brain's plan sets (it's exempt from the set rules), or 0.</param>
         /// <param name="viewTurnActivationsCount">The view's record of this turn's activations still applies (the search didn't replay
         /// the real turn from its start).</param>
@@ -121,11 +135,12 @@ namespace BotTest.Game.AI.Brains
             {
                 if (_threatHistories.TryGetValue(host, out var current))
                     current.Clear();
-                return new(Array.Empty<StrategicCard>(), 0, PressuringState.Applies(own, enemy));
+                return new(Array.Empty<StrategicCard>(), 0, PressuringState.Applies(own, enemy), Standing(own, enemy));
             }
             var history = _threatHistories.GetValue(host, _ => _view.ThreatHistory.Copy());
             return history.Evaluate(own.DeckCodes, own.HandCodes, host.StrategicCards(0, false),
-                host.StrategicCards(0, true), host.StrategicCards(1, false), enemy.Hand, own.LifePoints, enemy.LifePoints);
+                host.StrategicCards(0, true), host.StrategicCards(1, false), enemy.Hand, own.LifePoints, enemy.LifePoints,
+                Standing(own, enemy));
         }
 
         // ------------------------------------------------------------------ main phase
@@ -216,7 +231,7 @@ namespace BotTest.Game.AI.Brains
                 // These are mandatory search windows: reposition face-up monsters in MP1; set cards
                 // after battle in MP2, or in MP1 when no Battle Phase is available this turn.
                 // The set window: sets, face-up position changes (the end of the turn's positions) and the end of the turn.
-                if (strategicState != TagRules.BotStrategicState.Desperate && _setWindowChosen &&
+                if (!_rules.ClearingHandForAllure && _setWindowChosen &&
                     action is not (MainAction.SetMonster or MainAction.SetSpell or MainAction.Repos or MainAction.ToEndPhase))
                     return false;
                 // The position window: once the line changed a face-up monster's position it has committed to what comes next: in Main
@@ -243,7 +258,7 @@ namespace BotTest.Game.AI.Brains
                     bool setWindowPhase = _phase == (int)DuelPhase.Main2 || _phase == (int)DuelPhase.Main1;
                     // In Main Phase 1 (no Battle Phase) face-up position changes come first; in Main Phase 2 sets and position
                     // changes go in either order (both are the end of the turn).
-                    if (strategicState != TagRules.BotStrategicState.Desperate && !SetsAnytime(id, action) &&
+                    if (!_rules.ClearingHandForAllure && !SetsAnytime(id, action) &&
                         (!setWindowPhase || !_allowSetsBeforePlays && _faceUpPositionChangeAvailable && _phase == (int)DuelPhase.Main1)) return false;
                 }
                 if (action == MainAction.Activate && SearchHost.Is(id, PlaguespreaderZombie) && own != null && theirs != null)
@@ -516,6 +531,21 @@ namespace BotTest.Game.AI.Brains
         /// Our discard while a card of ours on the field limits it (DiscardPickTag: Dark Grepher takes a GoodDiscard card when one
         /// is offered): only those picks.
         /// </summary>
+        /// <summary>Cards Future Fusion never sends from our deck (user, 2026-11-24: "those should stay in deck"; ban, not a hold).</summary>
+        public static bool FutureFusionBanned(int id) =>
+            SearchHost.Is(id, MachinaGearframe) || SearchHost.Is(id, MachinaGearframePreErrata) || SearchHost.Is(id, MachinaForce);
+
+        /// <summary>Our Future Fusion materials from the deck: never a banned card (FutureFusionBanned); finishing stays on offer.</summary>
+        public static List<MoveOption> FutureFusionPicks(Prompt prompt, int hint, DynamicCard[] offered, List<MoveOption> picks)
+        {
+            if (prompt.Player != 0 || hint != (int)DHint.FMATERIAL || offered.Length == 0 ||
+                !offered.All(card => card.CurrentCoordinates.Location == (byte)CardLocation.Deck))
+                return picks;
+            var allowed = picks.Where(option => !SearchActions.PickCardKeys(new[] { option.Key })
+                .Any(key => FutureFusionBanned(SearchActions.KeyCardId(key)))).ToList();
+            return allowed.Count > 0 ? allowed : picks; // the engine needs a legal answer
+        }
+
         public static List<MoveOption> DiscardPicks(Prompt prompt, int hint, DynamicCard[] offered, List<MoveOption> picks, DuelHost? host)
         {
             if (prompt.Player != 0 || hint != (int)DHint.DISCARD || host == null)

@@ -611,15 +611,21 @@ namespace BotTest.Game.AI.Search
                 copies.TryAdd(option.Key, 1);
             var keys = copies.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
             var mandatory = spellSets.Where(o => o.MandatoryReason != null).Select(o => o.Key).ToHashSet();
+            // Every copy of an always-set card is in the plan (2026-11-24: one of two Jars of Greed was set, the other kept in hand);
+            // with more copies than free zones, the plan fills the zones with always-set cards only.
+            int mandatoryCopies = mandatory.Sum(m => copies.GetValueOrDefault(m));
             var plans = new List<Option>();
             var chosen = new List<string>();
+            bool MandatoryMet() => mandatoryCopies <= room
+                ? mandatory.All(m => chosen.Count(k => k == m) == copies.GetValueOrDefault(m))
+                : chosen.Count == room && chosen.All(mandatory.Contains);
             void Build(int i)
             {
                 if (plans.Count >= MaxSetPlans)
                     return;
                 if (i == keys.Count)
                 {
-                    if (chosen.Count == 0 || chosen.Count > room || mandatory.Any(m => !chosen.Contains(m)))
+                    if (chosen.Count == 0 || chosen.Count > room || !MandatoryMet())
                         return;
                     string label = "set " + string.Join(", ", chosen.Select(k => byKey[k].Label.StartsWith("set ") ? byKey[k].Label[4..] : byKey[k].Label));
                     plans.Add(new Option(SearchActions.SetPlanKey(chosen), label, byKey[chosen[0]].Packet));
@@ -1091,7 +1097,7 @@ namespace BotTest.Game.AI.Search
         {
             bool startsAtDecision = FromTurnStart == null;
             brain?.Attach(host, Math.Max(0, _view.RealTurn - (1 + _view.SkipTurns)), RootTurn,
-                startsAtDecision && _view.NormalSummonUsed, startsAtDecision ? _view.ActivatedThisTurn : Array.Empty<int>());
+                startsAtDecision && _view.NormalSummonUsed, startsAtDecision ? _view.ActivatedThisTurn : Array.Empty<int>(), _evaluator);
         }
 
         /// <summary>One iteration. Returns a failure note, or null when it scored a line.</summary>
@@ -1970,7 +1976,12 @@ namespace BotTest.Game.AI.Search
             if (sawForeign && turnEnd is { } ended && ended.Ours.Foreign == 0)
                 (peakTorrential, peakMirror, peakSpot, peakIcarus) = (ownTorrential, ownMirror, ownSpot, ownIcarus);
             static double Peak(double p) => double.IsNegativeInfinity(p) ? 0 : p;
-            (peakTorrential, peakMirror, peakSpot, peakIcarus) = (Peak(peakTorrential), Peak(peakMirror), Peak(peakSpot), Peak(peakIcarus));            double sittingDuck = turnEnd is { } atEnd ? _evaluator.SittingDuckExposure(atEnd.Ours, atEnd.Theirs, lylaEffectUsed) : 0;
+            (peakTorrential, peakMirror, peakSpot, peakIcarus) = (Peak(peakTorrential), Peak(peakMirror), Peak(peakSpot), Peak(peakIcarus));
+            // Desperate (far behind on cards): no fear of Heavy Storm or their traps (user, 2026-11-24: "It should however remove the fear
+            // of heavy storm and traps"). The sitting duck (their next attacker) stays.
+            if (State == TagRules.BotStrategicState.Desperate)
+                (peakTorrential, peakMirror, heavyExposure, peakSpot, peakIcarus) = (0, 0, 0, 0, 0);
+            double sittingDuck = turnEnd is { } atEnd ? _evaluator.SittingDuckExposure(atEnd.Ours, atEnd.Theirs, lylaEffectUsed) : 0;
             double exposure = peakTorrential + peakMirror + heavyExposure + peakSpot + peakIcarus + sittingDuck;
             if (Math.Abs(exposure) > 0.05)
                 trace?.Add($"  (overexposure: Torrential {peakTorrential:0.00}, Mirror Force {peakMirror:0.00}, Heavy Storm {heavyExposure:0.00}, " +
@@ -2745,7 +2756,13 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>The card rules for this search's moves (Brains/SearchRules/SearchMoveRules): the search itself knows no card.</summary>
         private SearchMoveRules MoveRules => _moveRules ??= new SearchMoveRules(_view, State, GladiatorSetForRoutine,
-            FromTurnStart == null, EffectUsed, RootTurn, _evaluator.BackrowDoomRule, _evaluator.MstOwnFutureFusion);
+            FromTurnStart == null, EffectUsed, RootTurn, _evaluator.BackrowDoomRule, _evaluator.MstOwnFutureFusion)
+        {
+            Evaluator = _evaluator, ClearingHandForAllure = ClearingHandForAllure,
+        };
+
+        /// <summary>Checking the brain's desperate Allure of Darkness routine: its sets may come before its other plays (SearchMoveRules).</summary>
+        public bool ClearingHandForAllure { get; init; }
 
         private static Option ToOption(MoveOption o) => new(o.Key, o.Label, o.Packet, o.MandatoryReason);
         private static MoveOption ToMove(Option o) => new(o.Key, o.Label, o.Packet, o.MandatoryReason);
@@ -2793,6 +2810,7 @@ namespace BotTest.Game.AI.Search
                     var picks = Picks(SearchActions.CardPicks(select.SelectableCards!, attackTarget ? Math.Max(1, select.Minimum) : select.Minimum, select.Maximum,
                         select.Cancelable && !attackTarget && prompt.Player != 0, rng, MaxPickOptions)).Select(ToMove).ToList();
                     picks = SearchMoveRules.DiscardPicks(prompt, select.SelectionHint, select.SelectableCards!, picks, host);
+                    picks = SearchMoveRules.FutureFusionPicks(prompt, select.SelectionHint, select.SelectableCards!, picks);
                     picks = MoveRules.EffectPicks(prompt, select, picks, host, ourTurn);
                     return picks.Select(ToOption).ToList();
                 }
@@ -2804,6 +2822,7 @@ namespace BotTest.Game.AI.Search
                 {
                     var picks = Picks(SearchActions.CardPicks(unselect.SelectableCards!, Math.Min(unselect.Minimum, 1), 1,
                         unselect.Minimum == 0 || unselect.Cancelable && prompt.Player != 0)).Select(ToMove).ToList();
+                    picks = SearchMoveRules.FutureFusionPicks(prompt, unselect.SelectionHint, unselect.SelectableCards!, picks);
                     return SearchMoveRules.DiscardPicks(prompt, unselect.SelectionHint, unselect.SelectableCards!, picks, host)
                         .Select(ToOption).ToList();
                 }

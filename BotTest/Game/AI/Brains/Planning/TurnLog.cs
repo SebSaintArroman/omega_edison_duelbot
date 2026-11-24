@@ -145,7 +145,8 @@ namespace BotTest.Game.AI.Brains
                 try { coverage = await AssessStrategicStateAsync(bot); }
                 catch (Exception ex) { bot.LogNote($"strategic state assessment failed: {ex.Message}"); }
                 var strategicState = StrategicState;
-                string detail = coverage is { } counts ? $" ({counts.Answers}/{counts.Threats} threats covered)" : "";
+                string detail = (coverage is { } counts ? $" ({counts.Answers}/{counts.Threats} threats covered)" : "") +
+                                (_lastStanding != null ? $" ({_lastStanding})" : "");
                 bot.LogNote($"strategic state: {TagRules.DescribeStrategicState(strategicState, _lastLoggedStrategicState)} at {state}{detail}");
                 _lastLoggedStrategicState = strategicState;
 
@@ -211,14 +212,81 @@ namespace BotTest.Game.AI.Brains
             var enemy = await CurrentField.GetBotCardsInZone(CardLocation.MonsterZone, false);
             var seen = hand.Concat(own.Grave ?? Array.Empty<int>()).Concat(own.Banish ?? Array.Empty<int>())
                 .Concat(monsters.Concat(spells).Where(card => card.Owner == 0).Select(card => card.ID));
-            var deck = SearchHost.Available && enemy.Count > 0 ? RemainingOwnDeck(bot, seen) : new List<int>();
+            // The search twin (a line's position) skips the deck read; it has no Bottomless history of its own either (a fresh tracker).
+            var deck = !IsSearchTwin && SearchHost.Available && enemy.Count > 0 ? RemainingOwnDeck(bot, seen) : new List<int>();
             StrategicCard Convert(DynamicCard card) => new(card.ID, card.CurrentCoordinates.Sequence,
                 card.Attack, card.Defense, card.IsFaceup(), card.IsAttack(), card.IsDisabled());
-            var result = _threatenedState.Evaluate(deck, hand, monsters.Select(Convert).ToArray(),
+            var tracker = IsSearchTwin ? new ThreatenedState() : _threatenedState;
+            var result = tracker.Evaluate(deck, hand, monsters.Select(Convert).ToArray(),
                 spells.Select(Convert).ToArray(), enemy.Select(Convert).ToArray(),
-                field.EnemySide.Hand?.Length ?? 0, own.LifePoints, field.EnemySide.LifePoints);
+                field.EnemySide.Hand?.Length ?? 0, own.LifePoints, field.EnemySide.LifePoints, await StandingAsync(bot));
             _assessedStrategicState = result.State;
             return (result.Threats.Count, result.Answers);
+        }
+
+        /// <summary>The search twin's standing at its line's position (SearchBrain.Attach sets it), by the search's evaluator. Null: Base.</summary>
+        internal Func<TagRules.BotStrategicState>? SearchStanding { get; set; }
+
+        // The last live standing's numbers, for the strategic state log line.
+        private string? _lastStanding;
+
+        /// <summary>
+        /// Our LP / card advantage standing now (StandingState): both sides' whole card advantage scores as the search counts them
+        /// (user, 2026-11-24: "it should be the total card advantage score"). Live: from the decision's view with the search's own
+        /// evaluator; the search twin: its line's position (SearchStanding). Base when it can't be worked out.
+        /// </summary>
+        private async Task<TagRules.BotStrategicState> StandingAsync(DuelBotWrapper bot)
+        {
+            if (IsSearchTwin)
+                return SearchStanding?.Invoke() ?? TagRules.BotStrategicState.Base;
+            _lastStanding = null;
+            if (!SearchHost.Available)
+                return TagRules.BotStrategicState.Base;
+            try
+            {
+                var view = await BuildSearchViewAsync(bot);
+                var (ours, theirs) = ViewSummaries(view);
+                var (our, their) = MakeEvaluator(view).CardAdvantageScores(ours, theirs);
+                _lastStanding = StandingState.Describe(ours.LifePoints, our, their);
+                return StandingState.Assess(ours.LifePoints, our, their);
+            }
+            catch (Exception ex)
+            {
+                _lastStanding = $"standing not worked out: {ex.Message}";
+                return TagRules.BotStrategicState.Base;
+            }
+        }
+
+        /// <summary>Both sides of the decision's view as the evaluator reads a search position (DuelHost.Summary): their unknown hand
+        /// cards as 0 (worth one card each), their unknown set cards as 0.</summary>
+        private static (SideSummary Ours, SideSummary Theirs) ViewSummaries(SearchView view)
+        {
+            static List<(int Code, int Attack, int Defense, bool FaceUp, bool AttackPosition, int Level, int Type, bool Negated)> Monsters(
+                IEnumerable<ViewCard> cards) =>
+                cards.Select(c =>
+                {
+                    var info = c.Code > 0 ? SearchHost.Cards.Get(c.Code) : null;
+                    return (c.Code, c.Attack >= 0 ? c.Attack : info?.Attack ?? 0, c.Defense >= 0 ? c.Defense : 0,
+                        (c.Position & 0x5) != 0, (c.Position & 0x3) != 0, info?.Level ?? 0, info?.Type ?? 0x1, false);
+                }).ToList();
+            static List<(int Code, bool FaceUp)> Spells(IEnumerable<ViewCard> cards) =>
+                cards.Select(c => (c.Code, (c.Position & 0x5) != 0)).ToList();
+            var ourSpells = Spells(view.OwnSpells);
+            var theirSpells = Spells(view.EnemySpells);
+            var theirHand = view.EnemyKnownHand.Take(view.EnemyHandCount).ToList();
+            while (theirHand.Count < view.EnemyHandCount)
+                theirHand.Add(0);
+            var ours = new SideSummary(view.LifePoints[0], Monsters(view.OwnMonsters), ourSpells.Count(s => !s.FaceUp), ourSpells.Count(s => s.FaceUp),
+                view.OwnHand.Count, view.OwnDeck.Count, view.OwnDeck.ToList(), view.OwnGrave.Count, view.OwnExtra.Count, ourSpells,
+                view.OwnHand.ToList(), view.OwnGrave.ToList())
+            {
+                // As DuelHost.Summary: the Extra Deck only matters for a live Vayu pair.
+                ExtraCodes = view.OwnGrave.Any(code => SearchHost.Is(code, BlackwingVayuTheEmblemOfHonor)) ? view.OwnExtra.ToArray() : Array.Empty<int>(),
+            };
+            var theirs = new SideSummary(view.LifePoints[1], Monsters(view.EnemyMonsters), theirSpells.Count(s => !s.FaceUp), theirSpells.Count(s => s.FaceUp),
+                view.EnemyHandCount, 0, new List<int>(), view.EnemyGrave.Count, view.EnemyExtraCount, theirSpells,
+                theirHand, view.EnemyGrave.ToList());
+            return (ours, theirs);
         }
 
         // ------------------------------------------------------------------ temporary monsters (user, 2026-11-18)

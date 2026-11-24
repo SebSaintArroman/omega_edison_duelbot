@@ -10,9 +10,20 @@ namespace BotTest.Game.AI.Brains
         {
             Base,
             Threatened,
+            /// <summary>Far behind on card advantage (StandingState). Always does everything Threatened does too: check with ActsThreatened.</summary>
             Desperate,
-            Pressuring
+            Pressuring,
+            /// <summary>High LP, cards even: play a little more conservatively (StandingState; resource holds cost more).</summary>
+            Conservative
         }
+
+        /// <summary>
+        /// Whether the Threatened behaviour applies: Threatened, or Desperate, which always gets everything Threatened does (user,
+        /// 2026-11-24: "give desperate all things that threatened can do too. this should remain true always"). Every Threatened check
+        /// goes through here, never "state == Threatened".
+        /// </summary>
+        internal static bool ActsThreatened(BotStrategicState state) =>
+            state is BotStrategicState.Threatened or BotStrategicState.Desperate;
 
         internal static string DescribeStrategicState(BotStrategicState current, BotStrategicState? previous) =>
             previous is { } before && before != current ? $"{current} (changed from {before})" : current.ToString();
@@ -73,9 +84,9 @@ namespace BotTest.Game.AI.Brains
             if (projectedDamage > 0 && opponentLifePoints - projectedDamage <= 200)
                 return false;
 
-            // Generic Set Only exception: while Threatened, allow it when a Tuner is available and no other Synchro
+            // Generic Set Only exception: while Threatened (or Desperate), allow it when a Tuner is available and no other Synchro
             // answer is available.
-            if (state == BotStrategicState.Threatened && hasTuner && !hasAlternativeSynchro)
+            if (ActsThreatened(state) && hasTuner && !hasAlternativeSynchro)
                 return false;
 
             return true;

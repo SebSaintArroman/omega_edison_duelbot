@@ -21,6 +21,7 @@ namespace BotTest.Game.AI.Brains
         /// pressure (it can attack this turn), the more important one waits; if they Torrential it, the better one comes anyway, if not,
         /// it isn't needed yet (user, 2026-11-15: "test for torrential").</summary>
         [HoldCost(HoldCosts.Light)] // not very important for now (user, 2026-11-15: "i dont want it doing anything unexpected")
+        [TrapFear]
         public const string TestForTorrential = "deck.test-for-torrential";
         /// <summary>A card that only changes ATK/DEF (Skill Successor, Rush Recklessly...) waits for the damage step, unless doomed
         /// (user, 2026-11-15: "skill successor should only be used when in the damage step or when doomed").</summary>
@@ -76,12 +77,16 @@ namespace BotTest.Game.AI.Brains
         public const string ReturnDimensionBlockLethal = "deck.return-dimension-block-lethal";
         public const string HoldForBiggerAttacker = "deck.hold-for-bigger-attacker";
         public const string HoldForGorz = "deck.hold-for-gorz";
+        [ResourceHold]
         public const string HoldForThreatOrWin = "deck.hold-for-threat-or-win";
         public const string HoldMonsterSetsForBattle = "deck.hold-monster-sets-for-battle";
+        [TrapFear]
         public const string HoldSetForStorm = "deck.hold-set-for-storm";
         public const string HoldSetsForBattle = "deck.hold-sets-for-battle";
+        [TrapFear]
         public const string HoldSetsForStorm = "deck.hold-sets-for-storm";
         public const string HoldSynchroIntoBouncer = "deck.hold-synchro-into-bouncer";
+        [TrapFear]
         public const string HoldWhenAlreadyLethal = "deck.hold-when-already-lethal";
         public const string KeepGorzLive = "deck.keep-gorz-live";
         /// <summary>An attack the brain committed to (a lethal push, a monster summoned to battle): leaving the Battle Phase
@@ -109,6 +114,7 @@ namespace BotTest.Game.AI.Brains
         public const string MstForBigPlay = "deck.mst-for-big-play";
         public const string MstIntoContinuous = "deck.mst-into-continuous";
         public const string NoChimeratechExposure = "deck.no-chimeratech-exposure";
+        [TrapFear]
         public const string NoChipIntoBackrow = "deck.no-chip-into-backrow";
         public const string NoDestroyIntoNegator = "deck.no-destroy-into-negator";
         public const string NoRedundantSets = "deck.no-redundant-sets";
@@ -155,6 +161,7 @@ namespace BotTest.Game.AI.Brains
         public const string SpendWhenRacing = "deck.spend-when-racing";
         public const string SpendWhenRefunded = "deck.spend-when-refunded";
         public const string StrongestIntoFaceDown = "deck.strongest-into-face-down";
+        [TrapFear]
         public const string SummonInDefenceUnderMirror = "deck.summon-in-defence-under-mirror";
         public const string SummonLyla = "deck.summon-lyla";
         public const string SummonTrooper = "deck.summon-trooper";
@@ -171,6 +178,7 @@ namespace BotTest.Game.AI.Brains
         public const string ValueSet = "deck.value-set";
         public const string WeakDontAttackDirectly = "deck.weak-dont-attack-directly";
         /// <summary>A spend (synchro, Vayu, Plaguespreader, a special summon from hand) the spend rules found no reason for: held.</summary>
+        [ResourceHold]
         public const string HoldSpend = "deck.hold-spend";
         /// <summary>No blockers: a monster summoned or set only because it can't beat anything (never for survival).</summary>
         public const string NoBlockers = "deck.no-blockers";
@@ -179,6 +187,7 @@ namespace BotTest.Game.AI.Brains
         /// <summary>A free extra body the attack doesn't need waits while they have unknown set cards (round-robin 33; risk tolerance).</summary>
         public const string SpareBodyWaits = "deck.spare-body-waits";
         /// <summary>Spare attackers go to defence before battle against a likely Mirror Force (round-robin 43).</summary>
+        [TrapFear]
         public const string ShelterSparesFromMirror = "deck.shelter-spares-from-mirror";
         /// <summary>Only the answers we expect to need next turn are set (round-robin 4).</summary>
         public const string OnlyNeededAnswers = "deck.only-needed-answers";

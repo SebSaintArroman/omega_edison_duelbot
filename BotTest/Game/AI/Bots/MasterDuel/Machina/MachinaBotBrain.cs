@@ -329,6 +329,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             // a Fortress or two to the graveyard for a huge push; its second summons Chimeratech Overdragon, which sends all our
             // other cards (and so itself) to the graveyard. So only when the push over the next two turns should end the game:
             // their life points within reach, or their board and hand nearly empty. Otherwise it's held (the search may still).
+            // No Jinzo - Returner left in the deck: Future Fusion is never activated (user, 2026-11-24), the search included
+            // (DeckIdleMoveAllowedAsync below).
+            if (TryGetActivable(state, CardId.FutureFusion, out _) && !await ReturnerLeftInDeckAsync(context.Bot))
+            {
+                Note(context, "Future Fusion held: no Jinzo - Returner left in the deck");
+                state.ActivableCards = state.ActivableCards!.Where(card => !card.IsCode(CardId.FutureFusion)).ToArray();
+            }
             if (TryGetActivable(state, CardId.FutureFusion, out var futureFusion))
             {
                 int oppLp = await CurrentField.GetBotLifePoints(isOwnSide: false);
@@ -518,9 +525,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             // Gearframe first when the Normal Summon is free: it searches another Fortress (or Force), which the Fortress
             // can then discard, instead of Gearframe itself being discarded (user rule, 2026-11-09). Fortress still comes
             // this turn, after it.
-            if (!NormalSummonUsed(context.Header) && TryGetSummonable(state, CardId.MachinaGearframe, out _))
+            // Registers a hold, so a search line summoning Fortress first pays for it (2026-11-24: without one the search replaced
+            // the brain's Gearframe with a Fortress first, 0.34 card units better, discarding Jinzo - Returner).
+            if (!NormalSummonUsed(context.Header) && TryGetSummonable(state, CardId.MachinaGearframe, out _) && Rule(MachinaRules.GearframeBeforeFortress))
             {
                 Note(context, "Machina Fortress waits: Normal Summon Gearframe first (it searches; then Fortress discards the search)");
+                Hold(CardId.MachinaFortress, MainAction.SpSummon, MachinaRules.GearframeBeforeFortress);
                 return null;
             }
 
@@ -631,8 +641,25 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 Hold(CardId.MachinaFortress, MainAction.SpSummon, MachinaRules.KnightBeforeCostlyFortress);
                 return null;
             }
+            // A less expensive answer first (user, 2026-11-24: "there should be a 'can I answer this with a less expensive option'
+            // check here ... it should have decided that the gearframe in hand answered the board better than fortress and used that
+            // instead. when its lifepoints are high and neither person has much card advantage on the other, it should play a little
+            // more conservatively"). Seen: turn 2, 8000 LP each, 6 cards each, their board one set monster and one set card;
+            // Fortress came out discarding Jinzo - Returner when Gearframe alone handled the set monster.
+            // Not when Fortress answers a big monster by crashing, wins this turn, or holding loses. Tied to the generic Conservative
+            // strategic state (StandingState: high LP, cards even; user, 2026-11-24: "tie that conservative play to a state").
+            if (answer == null && StrategicState == TagRules.BotStrategicState.Conservative &&
+                CheaperAnswer(context, state, botMonsters, enemyMonsters) is string cheapAnswer &&
+                !await FortressWinsNowAsync(botMonsters, enemyMonsters) && !await WeLoseNextTurnAsync() &&
+                Rule(MachinaRules.CheaperAnswerFirst))
+            {
+                Note(context, $"Machina Fortress waits: {cheapAnswer}, and we're playing conservatively (high LP, cards even): the cheaper answer first, Fortress kept for a threat");
+                Hold(CardId.MachinaFortress, MainAction.SpSummon, MachinaRules.CheaperAnswerFirst);
+                return null;
+            }
             var why = await JustifySpendAsync(context, $"Machina Fortress ({plan})", newAtk: 2500, fieldMaterials: null, removal: false,
-                cardId: CardId.MachinaFortress, allowPush: true, effectAnswer: answer, refundedBy: developing, spares: Math.Max(0, spares));
+                // allowPush false: kept for a threat or a win, not just for a clock (only an open opponent's push roll still goes).
+                cardId: CardId.MachinaFortress, allowPush: false, effectAnswer: answer, refundedBy: developing, spares: Math.Max(0, spares));
             if (why == null)
                 return null;
             if (lastResort && !why.Contains("lethal") && !await WeLoseNextTurnAsync())
@@ -668,6 +695,45 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         }
 
         private const int FortressAttribute = (int)CardAttribute.Earth;
+
+        /// <summary>
+        /// A less expensive answer to their whole board than Machina Fortress: a monster of ours ready to attack, or a free one to bring
+        /// out (Gearframe first, then the strongest Normal Summon, then Cyber Dragon), beating each monster of theirs (a face-down
+        /// one by its likely DEF). Null if there's none.
+        /// </summary>
+        private string? CheaperAnswer(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters)
+        {
+            int toBeat = enemyMonsters.Where(card => card.ID > 0 || !card.IsFaceup())
+                .Select(card => !card.IsFaceup() ? OpponentMemory.FaceDownDefense(card) : card.IsAttack() ? card.Attack : card.Defense)
+                .DefaultIfEmpty(-1).Max();
+            string theirBoard = enemyMonsters.Count == 0 ? "their empty field" : toBeat < 0 ? "their board" : $"their board (biggest {toBeat})";
+            var ready = botMonsters.Where(card => card.ID > 0 && card.IsFaceup() && card.IsAttack() && !card.Attacked && EffectiveAttack(card) > toBeat)
+                .OrderByDescending(EffectiveAttack).FirstOrDefault();
+            if (ready.ID > 0)
+                return $"our {CardNames.Get(ready.ID)} ({EffectiveAttack(ready)}) already handles {theirBoard}";
+            if (!NormalSummonUsed(context.Header))
+            {
+                var summons = (state.SummonableCards ?? Array.Empty<DynamicCard>())
+                    .Where(card => card.ID > 0 && card.Level <= 4 && !card.HasType(CardType.Flip) && card.Attack > toBeat).ToList();
+                var pick = summons.FirstOrDefault(card => card.IsCode(CardId.MachinaGearframe));
+                if (pick.ID <= 0)
+                    pick = summons.OrderByDescending(card => card.Attack).FirstOrDefault();
+                if (pick.ID > 0)
+                    return $"Normal Summon {CardNames.Get(pick.ID)} ({pick.Attack}) handles {theirBoard}";
+            }
+            if (TryGetSpecialSummon(state, CardId.CyberDragon, out var cyber) && cyber.Attack > toBeat)
+                return $"special summon Cyber Dragon (free, {cyber.Attack}) handles {theirBoard}";
+            return null;
+        }
+
+        /// <summary>Whether Machina Fortress (2500) on top of our attackers makes lethal this turn.</summary>
+        private async Task<bool> FortressWinsNowAsync(List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters)
+        {
+            var after = botMonsters.Where(card => card.ID > 0 && card.IsFaceup() && card.IsAttack() && !card.Attacked).Select(EffectiveAttack).ToList();
+            after.Add(2500);
+            int oppLp = await CurrentField.GetBotLifePoints(isOwnSide: false);
+            return BoardAssessment.TurnsToWin(after, BoardAssessment.Defenders(enemyMonsters, OpponentMemory), oppLp) == 1;
+        }
 
         /// <summary>
         /// The chance a Fortress summoned now gets banished on the spot: at least one of their set cards is Bottomless Trap
@@ -768,7 +834,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 cards.All(card => card.CurrentCoordinates.Location == (byte)CardLocation.Deck) && Rule(MachinaRules.FutureFusionMaterials))
             {
                 var wanted = FutureFusionMaterials(cards);
-                int next = wanted.Count > 0 ? wanted.Min() : data.Minimum > 0 ? 0 : -1;
+                // Still short with nothing wanted left: the first card that isn't banned (Gearframe and Force stay in the deck).
+                int unbanned = Array.FindIndex(cards, card => !SearchMoveRules.FutureFusionBanned(card.ID));
+                int next = wanted.Count > 0 ? wanted.Min() : data.Minimum > 0 ? Math.Max(0, unbanned) : -1;
                 if (next >= 0)
                 {
                     Note(context, $"Future Fusion sends {CardNames.Get(cards[next].ID)}");
@@ -1508,6 +1576,19 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             return state;
         }
 
+        private async Task<bool> ReturnerLeftInDeckAsync(DuelBotWrapper bot) =>
+            (await OwnDeckLeftAsync(bot)).Any(id => Search.SearchHost.Is(id, CardId.JinzoReturner));
+
+        /// <summary>The search's lines: Future Fusion is never activated with no Jinzo - Returner left in the deck (user, 2026-11-24).</summary>
+        protected override async Task<bool> DeckIdleMoveAllowedAsync(DecisionContext<IdleCmdData> context, IdleCmdResponse move)
+        {
+            if (move.Action != MainAction.Activate ||
+                !(context.StateData.ActivableCards ?? Array.Empty<DynamicCard>()).Any(card => card.IsCode(CardId.FutureFusion) &&
+                    (card.ActionActivateIndex ?? Array.Empty<ActivationCardIndex>()).Any(activation => activation.ActionIndex == move.Index)))
+                return true;
+            return await ReturnerLeftInDeckAsync(context.Bot);
+        }
+
         /// <summary>
         /// Machina's Future Fusion materials for Chimeratech Overdragon.
         /// </summary>
@@ -1715,7 +1796,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 var wanted = FutureFusionMaterials(indexed.Select(x => x.Card).ToList());
                 var picks = indexed.Where(x => wanted.Contains(x.Index)).ToList();
                 while (picks.Count < count)
-                    picks.Add(indexed.First(x => !picks.Contains(x)));
+                    picks.Add(indexed.Where(x => !picks.Contains(x))
+                        .OrderBy(x => SearchMoveRules.FutureFusionBanned(x.Card.ID)).First());
                 if (picks.Count > state.Maximum)
                     picks = picks.Take(state.Maximum).ToList();
                 Note(context, $"Future Fusion sends {string.Join(", ", picks.Select(x => CardNames.Get(x.Card.ID)))}");

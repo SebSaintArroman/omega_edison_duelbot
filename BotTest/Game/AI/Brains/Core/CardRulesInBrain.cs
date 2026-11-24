@@ -11,27 +11,35 @@ namespace BotTest.Game.AI.Brains
     public abstract partial class DeckBotBrain
     {
 
-        private async Task<CardRuleRegistry.Context> ReinforcementContextAsync(BotStateHeader header,
+        /// <summary>The card-rule context for a search of our deck (Reinforcement of the Army and the like): what's left in the deck
+        /// (OwnDeckLeftAsync, or the cards on offer), our hand, the Normal Summon and Dark Grepher.</summary>
+        private async Task<CardRuleRegistry.Context> OwnDeckContextAsync(BotStateHeader header,
             DuelBotWrapper? bot = null, IReadOnlyCollection<int>? offered = null)
         {
-            var field = await CurrentField.GetBotField();
-            var own = field.OwnSide;
-            var hand = own.Hand ?? Array.Empty<int>();
+            var hand = (await CurrentField.GetBotField()).OwnSide.Hand ?? Array.Empty<int>();
             bool grepherAvailable = !WasCardActivatedThisTurn(DarkGrepher) &&
                 (hand.Any(id => SearchHost.Is(id, DarkGrepher)) ||
                  (await GetBotMonsterCardsAsync()).Any(card => card.IsCode(DarkGrepher)));
-            if (offered == null && own.Main is { Length: > 0 } knownDeck && knownDeck.All(id => id > 0))
-                offered = knownDeck;
-            if (offered == null && bot != null && SearchHost.Available)
-            {
-                var fieldCards = (await GetBotMonsterCardsAsync())
-                    .Concat(await GetPlayerCardsInZoneAsync(CardLocation.SpellZone))
-                    .Where(card => card.Owner == 0).Select(card => card.ID);
-                var seen = hand.Concat(own.Grave ?? Array.Empty<int>()).Concat(own.Banish ?? Array.Empty<int>()).Concat(fieldCards);
-                offered = RemainingOwnDeck(bot, seen);
-            }
-            return new CardRuleRegistry.Context(offered ?? Array.Empty<int>(), hand, 0, 0, 0, false,
+            offered ??= await OwnDeckLeftAsync(bot);
+            return new CardRuleRegistry.Context(offered, hand, 0, 0, 0, false,
                 NormalSummonUsed: NormalSummonUsed(header), DarkGrepherAvailable: grepherAvailable);
+        }
+
+        /// <summary>The cards left in our deck: the server's list only when every card in it is known (its unknown cards come as 0),
+        /// else our deck list less every card we've seen (hand, graveyard, banished, our own cards on our field). Empty without either.</summary>
+        protected async Task<IReadOnlyCollection<int>> OwnDeckLeftAsync(DuelBotWrapper? bot)
+        {
+            var own = (await CurrentField.GetBotField()).OwnSide;
+            if (own.Main is { Length: > 0 } knownDeck && knownDeck.All(id => id > 0))
+                return knownDeck;
+            if (bot == null || !SearchHost.Available)
+                return Array.Empty<int>();
+            var fieldCards = (await GetBotMonsterCardsAsync())
+                .Concat(await GetPlayerCardsInZoneAsync(CardLocation.SpellZone))
+                .Where(card => card.Owner == 0).Select(card => card.ID);
+            var seen = (own.Hand ?? Array.Empty<int>()).Concat(own.Grave ?? Array.Empty<int>())
+                .Concat(own.Banish ?? Array.Empty<int>()).Concat(fieldCards);
+            return RemainingOwnDeck(bot, seen);
         }
 
         private async Task<bool> ReinforcementAllowedAsync(DecisionContext<IdleCmdData> decision)
@@ -39,7 +47,7 @@ namespace BotTest.Game.AI.Brains
             var header = decision.Header;
             if (!NormalSummonUsed(header))
                 return true;
-            var context = await ReinforcementContextAsync(header, decision.Bot);
+            var context = await OwnDeckContextAsync(header, decision.Bot);
             if (CardRules.ReinforcementNeedsGardna(context))
                 return true;
             var targets = new HashSet<int>();
@@ -64,7 +72,7 @@ namespace BotTest.Game.AI.Brains
         {
             if (!CardRuleRegistry.RequiresGoodDiscardDeckSend(id))
                 return true;
-            var context = await ReinforcementContextAsync(header, bot);
+            var context = await OwnDeckContextAsync(header, bot);
             return (CardRuleRegistry.TagsFor(id, context) & TagRules.Tag.DoNotActivate) == 0;
         }
 
@@ -122,10 +130,14 @@ namespace BotTest.Game.AI.Brains
             var allowed = await WithoutChimeratechSummonsAsync(context.StateData);
             var blocked = new HashSet<(MainAction, int)>();
             foreach (var move in moves)
-                if (!await SharedIdleMoveAllowedAsync(context, move, allowed))
+                if (!await SharedIdleMoveAllowedAsync(context, move, allowed) || !await DeckIdleMoveAllowedAsync(context, move))
                     blocked.Add((move.Action, move.Index));
             return blocked;
         }
+
+        /// <summary>A deck brain's own bans on idle moves, applied in the search's lines too (BlockedIdleMovesAsync). Default: none.</summary>
+        protected virtual Task<bool> DeckIdleMoveAllowedAsync(DecisionContext<IdleCmdData> context, IdleCmdResponse move) =>
+            Task.FromResult(true);
 
         private async Task<bool> SharedIdleMoveAllowedAsync(DecisionContext<IdleCmdData> context, IdleCmdResponse move, IdleCmdData? allowed = null)
         {

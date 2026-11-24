@@ -157,7 +157,9 @@ namespace BotTest.Game.AI.Brains
 
             // Jar of Greed and Legacy of Yata-Garasu
             // About to be removed anyway: DoNotActivate lifts, and the doomed-card logic uses it.
-            new(new[] { JarOfGreed, LegacyOfYataGarasu }, TagRules.Tag.Bait | TagRules.Tag.DoNotActivate,
+            // AlwaysSet: every copy in hand is set in the set window (user, 2026-11-24: "jar and yata should have always set tag";
+            // seen live: the set plan set one Jar of Greed and ended the turn with the other in hand).
+            new(new[] { JarOfGreed, LegacyOfYataGarasu }, TagRules.Tag.Bait | TagRules.Tag.DoNotActivate | TagRules.Tag.AlwaysSet,
                 TagsToDisableWhen: context => context.IsDoomed || context.DrawTrapException
                     ? TagRules.Tag.DoNotActivate
                     : TagRules.Tag.None),
@@ -222,7 +224,7 @@ namespace BotTest.Game.AI.Brains
                     : TagRules.Tag.None),
 
             // Dark Armed Dragon
-            new(new[] { DarkArmedDragon }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ActivateOnSummon,
+            new(new[] { DarkArmedDragon }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ActivateOnSummon | TagRules.Tag.NeverSummonInDefence,
                 TargetPriority: (summonWindow, hint, card) => summonWindow && hint == DHint.DESTROY &&
                     (card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone ||
                      card.CurrentCoordinates.Location == (byte)CardLocation.SpellZone &&
