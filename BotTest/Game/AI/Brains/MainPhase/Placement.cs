@@ -27,8 +27,12 @@ namespace BotTest.Game.AI.Brains
             @"destroys (an|a|your) (opponent's )?monster by battle",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
 
-        /// <summary>ATK a monster will attack with this turn (deck brains adjust, e.g. Card Trooper after milling).</summary>
-        protected virtual int PlacementAttack(int cardId, int attack) => attack;
+        /// <summary>
+        /// ATK a monster will attack with this turn. Card Trooper (any deck) is planned at 1900: it mills in the priority
+        /// window right after the summon. Deck brains can adjust further.
+        /// </summary>
+        protected virtual int PlacementAttack(int cardId, int attack) =>
+            cardId == CardId.CardTrooper ? Math.Max(attack, 1900) : attack;
 
         private (int CardId, int Zone, int Turn)? _pendingPlacement;
 

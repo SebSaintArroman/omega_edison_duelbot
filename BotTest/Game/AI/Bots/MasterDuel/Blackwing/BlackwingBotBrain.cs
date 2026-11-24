@@ -1333,11 +1333,6 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
 
         // Into an empty field the generic brain attacks smallest first; Chaos Sorcerer always goes last.
         protected override IReadOnlyCollection<int> AttackLast { get; } = new[] { CardId.ChaosSorcerer };
-
-        // Zone placement plans for Card Trooper's 1900 (it mills in the priority window right after the summon).
-        protected override int PlacementAttack(int cardId, int attack) =>
-            cardId == CardId.CardTrooper ? Math.Max(attack, 1900) : attack;
-
         // Chaos Sorcerer's banish works from defence: with a reasonable Mirror Force chance it sits in defence.
         protected override IReadOnlyCollection<int> DefenceUnderMirrorForce { get; } = new[] { CardId.ChaosSorcerer };
 
