@@ -1,0 +1,26 @@
+// Live 2026-11-24 14:17 Blackwing Hybrid #001 (turn 2, main1, our first turn): hand Icarus Attack, Bottomless Trap Hole x2, Trap Dustshoot,
+// Reinforcement of the Army. The search replaced the brain's Reinforcement (-0.15 over 174 lines, lines average -1.14) with set Icarus Attack
+// (+0.12 over 1485 lines), "decided by settled score". One decision later, Icarus set, Reinforcement scored +0.59 over 1094 lines.
+// User: Reinforcement was the correct play. Their deck read: Fairy 10%, Blackwing 7%, Vayu Turbo 6%; Vayu stands in.
+{
+  "deck": "BlackwingHybrid",
+  "opponent": "Vayu",
+  "lp": [8000, 8000],
+  "turn": 2,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": false,
+  "ours": {
+    "monsters": [],
+    "spells": [],
+    "hand": [ 53567095, 29401950, 64697231, 29401950, 32807846 ],
+    "grave": []
+  },
+  "theirs": {
+    // The live deck read (log line 26): Ryko / Lightsworn Hunter 10%, Vayu 6%, Plaguespreader 5%.
+    "monsters": [ { "zone": 2, "pos": "set", "likely": [ [21502796, 0.10], [72714392, 0.06], [33420078, 0.05] ] } ],
+    "spells": [],
+    "handCount": 4,
+    "grave": [ 64697231 ]
+  }
+}

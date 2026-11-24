@@ -1,0 +1,26 @@
+// Live 2026-11-24 17:13 Machina Jinzo #001 (turn 2, main1, our first turn): hand Lyla, Heavy Storm, D-Prison, Trap Dustshoot,
+// Mirror Force, Bottomless. Their board: a set monster (M2) and a set spell/trap (S5). The brain summoned Lyla to destroy the
+// set card; the search replaced it with the set window (+0.79 over 732 lines) -> set Dustshoot -> end. Lyla scored -0.71 over
+// 126 lines and its line attacked with her, never using her effect. User: "the bot just went straight to end phase".
+// Their deck read: Ryko 10%, Dupe Frog 6%, Dandylion 5%; Vayu stands in.
+{
+  "deck": "MachinaJinzo",
+  "opponent": "Vayu",
+  "lp": [8000, 8000],
+  "turn": 2,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": false,
+  "ours": {
+    "monsters": [],
+    "spells": [],
+    "hand": [ 22624393, 19613556, 70342110, 64697231, 44095762, 29401950 ],
+    "grave": []
+  },
+  "theirs": {
+    "monsters": [ { "zone": 2, "pos": "set", "likely": [ [21502796, 0.10], [46239604, 0.06], [15341821, 0.05] ] } ],
+    "spells": [ { "zone": 4, "set": true } ],
+    "handCount": 4,
+    "grave": []
+  }
+}

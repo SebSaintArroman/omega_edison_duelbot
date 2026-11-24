@@ -135,6 +135,7 @@ namespace BotTest.Game.AI.Brains
             }
 
             _ownMonsters = await GetBotMonsterCardsAsync();
+            CheckPendingPlacement(_currentHeader, _ownMonsters);
             _ownSpellTrapCount = (await CurrentField.GetCardsInSpellZone()).Count();
             _opponentHasThreat = false;
             foreach (var enemy in opponents)

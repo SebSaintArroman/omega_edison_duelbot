@@ -268,7 +268,23 @@ namespace BotTest.Game.AI.Brains
 
         private double SetTrapAdjustment(SideSummary side, int player) =>
             side.SpellCodes.Where(card => !card.FaceUp && IsKnownTrap(card.Code))
-                .Sum(card => HandCardValue(card.Code, player) - 1);
+                .Sum(card => HandCardValue(card.Code, player) - 1) +
+            (player == 1 ? UnknownSetsIn(side) * UnknownSetFutureValue : 0);
+
+        /// <summary>
+        /// Each unknown set card of theirs, on top of counting as a card: what it still threatens if it stays set, weighted as a trap
+        /// sprung on a bait attacker is (WipeTrapCost / SingleTrapCost: Mirror Force 2, D-Prison 1.5 with the card). At least single
+        /// removal's weight, more by the chance this one set card is a wipe (the backrow read). So destroying one (Lyla, MST) gains
+        /// 1.5 to 2. User, 2026-11-24: "destroying a card should have just factored into the score ... it should be the same weighting
+        /// as the bait attacker"; "it should average over all things, there's no way it could be less than 1.5".
+        /// </summary>
+        private double UnknownSetFutureValue =>
+            SingleTrapFutureValue + Math.Min(1, PerSetChance(MirrorForceChance) + PerSetChance(TorrentialChance)) *
+            Math.Max(0, WipeTrapFutureValue - SingleTrapFutureValue);
+
+        /// <summary>The chance one unknown set card of theirs is X, from "any of their unknown set cards is X" (as ChanceWith).</summary>
+        private double PerSetChance(double anyChance) =>
+            anyChance <= 0 || UnknownSets <= 0 ? 0 : 1 - Math.Pow(1 - Math.Min(anyChance, 0.999), 1.0 / UnknownSets);
 
         private static bool IsMonster(int code) =>
             code > 0 && code != SearchView.InertCard && SearchHost.Cards.Get(code) is { } card && (card.Type & 0x1) != 0;
@@ -709,7 +725,7 @@ namespace BotTest.Game.AI.Brains
         /// attacker are used (TheirKnownBoost: Kalut), and a known Honest wins any battle. As our turn ends: the most valuable face-up
         /// monster of ours that attacker would destroy (ATK in attack position, DEF in defence), at SittingDuckWeight.
         /// </summary>
-        public double SittingDuckExposure(SideSummary ours, SideSummary theirs)
+        public double SittingDuckExposure(SideSummary ours, SideSummary theirs, bool lylaEffectUsed = false)
         {
             int attack = TheirNormalAttack;
             if (theirs.Monsters.Count > 0)
@@ -722,6 +738,8 @@ namespace BotTest.Game.AI.Brains
             double worst = 0;
             foreach (var m in ours.Monsters.Where(m => m.FaceUp))
             {
+                if (ExpendableUntilOurNextTurn(m, lylaEffectUsed))
+                    continue;
                 int power = m.AttackPosition ? m.Attack : m.Defense;
                 bool destroyed = TheirHonestKnown || (m.AttackPosition ? power <= attack : power < attack);
                 if (destroyed)
@@ -730,6 +748,19 @@ namespace BotTest.Game.AI.Brains
             }
             return SittingDuckWeight * worst;
         }
+
+        /// <summary>
+        /// A monster of ours that's expendable as our turn ends, so the sitting duck leaves it out: a Lyla that used her destroy this turn
+        /// (face-up in defence; her Main Phase effect, not her End Phase mill, which she does every turn she's face-up). User, 2026-11-24:
+        /// "once she's used her effect she should be marked as expendable for one turn only. expendable cards shouldn't have sitting duck
+        /// applied to them"; "lyla in defence at the start of our turn should lose her expendable tag": one spent on an earlier turn isn't.
+        /// </summary>
+        private static bool ExpendableUntilOurNextTurn((int Code, int Attack, int Defense, bool FaceUp, bool AttackPosition, int Level, int Type, bool Negated) m,
+            bool lylaEffectUsed) =>
+            lylaEffectUsed && m.FaceUp && !m.AttackPosition && IsLyla(m.Code);
+
+        private static bool IsLyla(int code) =>
+            SearchHost.Is(code, LylaLightswornSorceress) || SearchHost.Is(code, LylaLightswornSorceressPreErrata);
 
         [Tunable("Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn) count this share of their board value; monster sets count in full. User, 2026-11-18.")]
         public static readonly Tuned<double> Main2BoardShare = new(0.25); // user, 2026-11-19: "strengthen the penalty for summoning something in mp2" (was 0.5)

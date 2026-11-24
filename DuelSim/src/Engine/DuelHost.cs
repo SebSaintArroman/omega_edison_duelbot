@@ -54,6 +54,8 @@ internal sealed partial class DuelHost : IDisposable
     private LocInfo? _lastChainCard;
     private LocInfo? _previousChainCard;
     private (LocInfo Attacker, LocInfo? Target)? _attack;
+    internal int AttackDeclarations { get; private set; }
+    internal int ChainLinksStarted { get; private set; }
     internal bool IsDirectAttack => _attack is { Target: null };
     private readonly List<(int Player, int Code, int Location)> _pendingChainEffects = new();
     internal IReadOnlyList<(int Player, int Code, int Location)> PendingChainEffects => _pendingChainEffects;
@@ -125,6 +127,13 @@ internal sealed partial class DuelHost : IDisposable
     /// <summary>The cards this player activated (effects, spells, traps) in that turn.</summary>
     public IReadOnlyCollection<int> ActivatedInTurn(int player, int turn) =>
         _activatedByTurn[player & 1].TryGetValue(turn, out var codes) ? codes : (IReadOnlyCollection<int>)Array.Empty<int>();
+
+    // The same, Main Phase activations only: a card's Main Phase effect apart from its End Phase one (Lyla's destroy, not her mill).
+    private readonly Dictionary<int, HashSet<int>>[] _mainActivatedByTurn = { new(), new() };
+
+    /// <summary>The cards this player activated in a Main Phase of that turn.</summary>
+    public IReadOnlyCollection<int> ActivatedInMainPhase(int player, int turn) =>
+        _mainActivatedByTurn[player & 1].TryGetValue(turn, out var codes) ? codes : (IReadOnlyCollection<int>)Array.Empty<int>();
     public int TurnPlayer { get; private set; }
     public int Phase { get; private set; } = (int)DuelPhase.Draw;
     public DuelResult? Result { get; private set; }
@@ -503,6 +512,7 @@ internal sealed partial class DuelHost : IDisposable
                 return null;
             case Msg.Chaining:
             {
+                ChainLinksStarted++;
                 int code = r.I32();
                 var card = r.Loc();
                 byte triggerController = r.U8();
@@ -522,6 +532,12 @@ internal sealed partial class DuelHost : IDisposable
                     if (!_activatedByTurn[triggerController].TryGetValue(Turn, out var activated))
                         _activatedByTurn[triggerController][Turn] = activated = new HashSet<int>();
                     activated.Add(code);
+                    if (Phase is (int)DuelPhase.Main1 or (int)DuelPhase.Main2)
+                    {
+                        if (!_mainActivatedByTurn[triggerController].TryGetValue(Turn, out var inMain))
+                            _mainActivatedByTurn[triggerController][Turn] = inMain = new HashSet<int>();
+                        inMain.Add(code);
+                    }
                 }
                 Event?.Invoke($"  chain {chainCount}: player {triggerController} activates {CardName(code)}");
                 // Loop guard: same player, same card, same effect, N activations with no other activation in between. (By effect:
@@ -581,6 +597,7 @@ internal sealed partial class DuelHost : IDisposable
             }
             case Msg.Attack:
             {
+                AttackDeclarations++;
                 var attacker = r.Loc();
                 var target = r.Loc();
                 _attack = (attacker, target.Location == 0 ? null : target);

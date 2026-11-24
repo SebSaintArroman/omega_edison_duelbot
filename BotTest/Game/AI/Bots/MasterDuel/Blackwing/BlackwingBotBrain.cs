@@ -820,6 +820,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
 
         public override async Task<int> OnSelectChainAsync(DecisionContext<SelectChainData> context, CancellationToken ct = default)
         {
+            _kalutOffered = null;
             // Our Goyo Guardian taking the monster it destroyed: always (seen 2026-11-10: Vayu passed on taking Card Trooper).
             if (OwnTakeControlTrigger(context) is int takeControl)
                 return takeControl;
@@ -1332,6 +1333,10 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
 
         // Into an empty field the generic brain attacks smallest first; Chaos Sorcerer always goes last.
         protected override IReadOnlyCollection<int> AttackLast { get; } = new[] { CardId.ChaosSorcerer };
+
+        // Zone placement plans for Card Trooper's 1900 (it mills in the priority window right after the summon).
+        protected override int PlacementAttack(int cardId, int attack) =>
+            cardId == CardId.CardTrooper ? Math.Max(attack, 1900) : attack;
 
         // Chaos Sorcerer's banish works from defence: with a reasonable Mirror Force chance it sits in defence.
         protected override IReadOnlyCollection<int> DefenceUnderMirrorForce { get; } = new[] { CardId.ChaosSorcerer };
@@ -3020,8 +3025,21 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
         /// Attack on their turn when it's free: tributing a Blackwing that's dying anyway (attacked by a bigger monster,
         /// or hit by their removal), or as bait (they respond to it). Null when none applies.
         /// </summary>
-        /// <summary>The battle our Kaluts went on (turn, our zone, ours, theirs), our ATK before them, and how many.</summary>
-        private ((int Turn, byte Zone, int Ours, int Theirs) Key, int BaseAtk, int Count)? _kalutPending;
+        private sealed record KalutBattle((int Turn, byte OurZone, int Ours, byte TheirZone, int Theirs) Key, int BaseAtk, int Count);
+        private KalutBattle? _kalutPending;
+        private KalutBattle? _kalutOffered;
+
+        public override void ResponseSent(BotState state, object? data, byte[] response)
+        {
+            base.ResponseSent(state, data, response);
+            if (state != BotState.SelectChain)
+                return;
+            if (_kalutOffered is { } battle && data is SelectChainData { SelectableCards: { } cards } &&
+                response.Length >= sizeof(int) && BitConverter.ToInt32(response, 0) is var index &&
+                index >= 0 && index < cards.Length && cards[index].IsCode(BlackwingKalutTheMoonShadow))
+                _kalutPending = battle with { Count = battle.Count + 1 };
+            _kalutOffered = null;
+        }
 
         private async Task<int?> TryBlackwingChainAsync(DecisionContext<SelectChainData> context, DynamicCard[] options, bool botTurn)
         {
@@ -3058,9 +3076,10 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
                 // Kaluts we already chained on this battle that haven't resolved yet (round-robin 18: a second Kalut went on
                 // because Bora still read 1700). Their +1400 counts first; another one only goes when it still changes the
                 // outcome (a win, or the damage for lethal: two Kaluts on a direct attack are +2800).
-                var battleKey = (context.Header.CurrentTurn, ours.CurrentCoordinates.Sequence, ours.ID, theirs.ID);
-                if (_kalutPending is not { } pending || pending.Key != battleKey)
-                    _kalutPending = pending = (battleKey, ours.Attack, 0);
+                var battleKey = (context.Header.CurrentTurn, ours.CurrentCoordinates.Sequence, ours.ID,
+                    theirs.CurrentCoordinates.Sequence, theirs.ID);
+                var pending = _kalutPending is { } sent && sent.Key == battleKey ? sent : new KalutBattle(battleKey, ours.Attack, 0);
+                _kalutOffered = pending;
                 int pendingBoost = Math.Max(0, pending.BaseAtk + 1400 * pending.Count - ours.Attack);
                 int ourPower = ours.Attack + pendingBoost;
                 bool weAttack = botTurn;
@@ -3070,7 +3089,6 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
                 bool lethal = weAttack && (theirs.ID <= 0 ? ourPower + 1400 >= oppLp : theirs.IsAttack() && ourPower + 1400 - theirPower >= oppLp);
                 if ((flips || lethal) && Rule(BlackwingRules.KalutBoost))
                 {
-                    _kalutPending = (battleKey, _kalutPending!.Value.BaseAtk, _kalutPending.Value.Count + 1);
                     Note(context, $"Kalut: {CardNames.Get(ours.ID)} +1400 ({(lethal ? "lethal" : $"beats {CardNames.Get(theirs.ID)} {theirPower}")})" +
                                   (pendingBoost > 0 ? $", on top of +{pendingBoost} already on the chain" : ""));
                     return kalut;

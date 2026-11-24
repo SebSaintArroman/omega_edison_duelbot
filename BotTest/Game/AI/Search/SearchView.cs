@@ -38,6 +38,9 @@ namespace BotTest.Game.AI.Search
     /// </summary>
     internal sealed class SearchView
     {
+        internal readonly record struct BattleCard(int Code, int Zone);
+        internal readonly record struct BattleAttack(int Player, BattleCard Attacker, BattleCard? Target);
+        public BattleAttack? AttackInProgress { get; init; }
         /// <summary>A face-down monster when the deck read can't name one: a plain 1200/1500 body (Beaver Warrior).</summary>
         public const int UnknownSetMonster = BeaverWarrior;
 
@@ -106,6 +109,10 @@ namespace BotTest.Game.AI.Search
         /// them (Black Whirlwind triggered).</summary>
         public List<int> ActivatedThisTurn { get; } = new();
 
+        /// <summary>Lyla's Main Phase destroy used this turn so far (DeckBotBrain.LylaEffectTurn; her End Phase mill doesn't count): she's
+        /// expendable until our next turn.</summary>
+        public bool LylaEffectUsed { get; set; }
+
         /// <summary>Cards drawn from our deck into the hand when a line starts (a projected next turn whose draw we don't know).</summary>
         public int DrawsAtStart { get; set; }
 
@@ -167,12 +174,14 @@ namespace BotTest.Game.AI.Search
         {
             var v = new SearchView
             {
+                AttackInProgress = AttackInProgress,
                 EnemyHandCount = EnemyHandCount, EnemyExtraCount = EnemyExtraCount, NormalSummonUsed = NormalSummonUsed,
                 BattlePhaseDone = BattlePhaseDone, FirstTurnOfDuel = FirstTurnOfDuel, RealTurn = RealTurn, InBattlePhase = InBattlePhase,
                 StrategicState = StrategicState,
                 ThreatHistory = ThreatHistory.Copy(),
                 OpponentSummonedAndAttackedWithThreatTurn = OpponentSummonedAndAttackedWithThreatTurn,
                 DrawsAtStart = DrawsAtStart, Record = Record, SkipTurns = SkipTurns, BlankNextDraw = BlankNextDraw, OnlyAttackerZone = OnlyAttackerZone,
+                LylaEffectUsed = LylaEffectUsed,
             };
             v.EnemyKnownExtra.AddRange(EnemyKnownExtra);
             v.EnemyDeckTop.AddRange(EnemyDeckTop);

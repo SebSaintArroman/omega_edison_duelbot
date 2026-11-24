@@ -15,6 +15,28 @@ namespace BotTest.Game.AI.Search
         public sealed record Choice<T>(string Key, string Label, T Response);
 
         /// <summary>
+        /// The set window as one main-phase move (user, 2026-11-24: "go to set window should be a single thing, rather than evaluating
+        /// every card to be set separately, which biases towards setting by having more chances to draw a good line there"). Below it
+        /// the search picks a set plan (SetPlanPrefix): every spell/trap it sets, played in a random order so the order never matters.
+        /// Monster sets stay their own moves (they compete with the Normal Summon).
+        /// </summary>
+        public const string SetWindowKey = "setwin";
+
+        /// <summary>A set plan's key: this prefix, then the set moves' keys joined by '|' (a key once per copy set).</summary>
+        public const string SetPlanPrefix = "setplan:";
+
+        /// <summary>The spell/trap set moves' key prefix ("4:").</summary>
+        public static readonly string SetSpellPrefix = $"{(int)MainAction.SetSpell}:";
+
+        /// <summary>A set plan's set moves (one key per card set).</summary>
+        public static List<string> SetPlanCards(string planKey) =>
+            planKey.StartsWith(SetPlanPrefix, StringComparison.Ordinal)
+                ? planKey[SetPlanPrefix.Length..].Split('|', StringSplitOptions.RemoveEmptyEntries).ToList()
+                : new List<string>();
+
+        public static string SetPlanKey(IEnumerable<string> setKeys) => SetPlanPrefix + string.Join("|", setKeys.OrderBy(k => k, StringComparer.Ordinal));
+
+        /// <summary>
         /// A card's identity across rebuilt positions: hand cards by name (copies are interchangeable), the rest by
         /// zone. Face-down cards of theirs are id 0 in both views.
         /// </summary>

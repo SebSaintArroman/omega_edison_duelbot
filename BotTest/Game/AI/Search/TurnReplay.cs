@@ -6,7 +6,8 @@ using OmegaBotWrapper.Struct;
 namespace BotTest.Game.AI.Search
 {
     /// <summary>One prompt of ours in the real turn (DeckBotBrain.TurnLog): its kind, the phase, the board as we saw it, the answer we sent.</summary>
-    internal sealed record ReplayCheckpoint(BotState State, int Phase, SearchView View, ReplayStep? Answer);
+    internal sealed record ReplayCheckpoint(BotState State, int Phase, SearchView View, ReplayStep? Answer,
+        IReadOnlyList<string>? ChainOptions = null);
 
     /// <summary>How far one replayed line got: checkpoints reached in order, and where and why it left the real game (null: it reached all).</summary>
     internal sealed record ReplayRun(int Reached, string? Miss, int MissAt);
@@ -364,6 +365,8 @@ namespace BotTest.Game.AI.Search
             private int _next, _extra;
             private readonly MctsPolicy.LineState _line = new();
             private readonly Dictionary<int, int> _attacked = new();
+            private SearchView.BattleAttack? _lastAttack;
+            private SearchView.BattleCard? _declaredAttacker;
             private readonly List<string> _moves = new();
 
             public Cursor(TurnReplay replay) => _r = replay;
@@ -386,12 +389,16 @@ namespace BotTest.Game.AI.Search
                 var checkpoints = _r.Checkpoints;
                 if (host.Turn != _r.RebuiltTurn)
                     return (Mcts.Passive(prompt) ?? MctsPolicy.Answer(prompt, rng, _line, host), false, null);
+                var activeAttack = CurrentAttack(host);
+                if (activeAttack != null)
+                    _lastAttack = activeAttack;
                 if (prompt.Player == 0)
                 {
                     if (prompt.Data is IdleCmdData)
                     {
                         while (_next < checkpoints.Count - 1 &&
                                checkpoints[_next] is { State: BotState.SelectChain, Answer.Key: "pass" } passed &&
+                               passed.View.AttackInProgress == null &&
                                passed.Phase <= host.Phase && _r.SameCheckpointBoard(Key(BotState.SelectChain, host),
                                    Key(BotState.SelectChain, passed.View), passed.Phase))
                         {
@@ -399,7 +406,7 @@ namespace BotTest.Game.AI.Search
                             _extra = 0;
                         }
                     }
-                    int k = _r.Match(prompt, host, _next);
+                    int k = _r.Match(prompt, host, _next, activeAttack, _lastAttack);
                     if (k >= 0)
                     {
                         var cp = checkpoints[k];
@@ -463,29 +470,51 @@ namespace BotTest.Game.AI.Search
                     string board = Key(BotState.SelectChain, host);
                     while (_next < checkpoints.Count - 1 &&
                            checkpoints[_next] is { State: BotState.SelectChain, Answer.Key: "pass" } skipped &&
+                           skipped.View.AttackInProgress == null &&
                            skipped.Phase == host.Phase && board == Key(BotState.SelectChain, skipped.View))
                     {
                         _next++;
                         _extra = 0;
                     }
                 }
-                var (guided, stuck) = _r.Guide(prompt, host, _next, _attacked);
+                // At the next open battle command, the previous attack's optional prompts can no longer occur.
+                if (prompt.Data is BattleCmdData)
+                {
+                    while (_next < checkpoints.Count - 1 &&
+                           checkpoints[_next] is { State: BotState.SelectChain, Answer.Key: "pass" } passed &&
+                           passed.View.AttackInProgress != null && SameAttack(passed.View, _lastAttack))
+                    {
+                        _next++;
+                        _extra = 0;
+                    }
+                }
+                var (guided, stuck) = _r.Guide(prompt, host, _next, _attacked, _declaredAttacker);
                 if (prompt.Data is BattleCmdData && stuck != null)
                 {
                     string board = Key(BotState.SelectChain, host);
                     while (_next < checkpoints.Count - 1 &&
                            checkpoints[_next] is { State: BotState.SelectChain, Answer.Key: "pass" } passed &&
+                           passed.View.AttackInProgress == null &&
                            IsBattle(passed.Phase) && board == Key(BotState.SelectChain, passed.View))
                     {
                         _next++;
                         _extra = 0;
-                        (guided, stuck) = _r.Guide(prompt, host, _next, _attacked);
+                        (guided, stuck) = _r.Guide(prompt, host, _next, _attacked, _declaredAttacker);
                         if (stuck == null)
                             break;
                     }
                 }
                 if (stuck != null)
                     return (null, false, $"their {prompt.State} (phase 0x{host.Phase:x}): {stuck}{_r.TheirTrail(host, _moves, _next)}");
+                if (prompt.Data is BattleCmdData battle)
+                {
+                    _declaredAttacker = null;
+                    if (guided != null && BitConverter.ToUInt16(guided, 0) == (ushort)BattleAction.Attack)
+                    {
+                        var card = SearchActions.AttackerFor(battle, BitConverter.ToUInt16(guided, 2));
+                        _declaredAttacker = new(card.ID, card.CurrentCoordinates.Sequence);
+                    }
+                }
                 if (guided != null && prompt.Data is IdleCmdData or BattleCmdData)
                     _moves.Add(MoveLabel(prompt.Data, guided));
                 else if (guided != null && prompt.Data is SelectChainData theirChain)
@@ -524,18 +553,55 @@ namespace BotTest.Game.AI.Search
             cp.State == BotState.SelectPlace ||
             cp.Answer is { } a && (a.Key == "pass" || cp.State is BotState.SelectEffectYn or BotState.SelectYesNo && a.Key == "raw:00");
 
+        private static SearchView.BattleAttack? CurrentAttack(DuelHost host)
+        {
+            if (!host.Attacking)
+                return null;
+            var (ours, theirs) = host.BattlingCards(0);
+            static SearchView.BattleCard? Card(DynamicCard? card) =>
+                card is { } c ? new(c.ID, c.CurrentCoordinates.Sequence) : null;
+            bool theirAttack = host.IsOpponentAttacking(0);
+            var target = Card(theirAttack ? ours : theirs);
+            return Card(theirAttack ? theirs : ours) is { } attacker && (target != null || host.IsDirectAttack)
+                ? new(theirAttack ? 1 : 0, attacker, target) : null;
+        }
+
+        private static bool SameBattler(SearchView.BattleCard expected, SearchView.BattleCard actual, List<ViewCard> field) =>
+            expected.Code <= 0 ? expected.Zone == actual.Zone :
+            Canon(expected.Code) == Canon(actual.Code) &&
+            (expected.Zone == actual.Zone || field.Count(c => Canon(c.Code) == Canon(expected.Code)) == 1);
+
+        private static bool SameAttack(SearchView view, SearchView.BattleAttack? actual)
+        {
+            if (view.AttackInProgress is not { } expected)
+                return actual == null;
+            if (actual is not { } attack || attack.Player != expected.Player)
+                return false;
+            var attackers = attack.Player == 0 ? view.OwnMonsters : view.EnemyMonsters;
+            var defenders = attack.Player == 0 ? view.EnemyMonsters : view.OwnMonsters;
+            return SameBattler(expected.Attacker, attack.Attacker, attackers) &&
+                (expected.Target is { } target
+                    ? attack.Target is { } actualTarget && SameBattler(target, actualTarget, defenders)
+                    : attack.Target == null);
+        }
+
         /// <summary>The checkpoint this prompt of ours is (the next one, or a later one past checkpoints that only declined), or -1.</summary>
-        private int Match(Prompt prompt, DuelHost host, int next)
+        private int Match(Prompt prompt, DuelHost host, int next, SearchView.BattleAttack? activeAttack, SearchView.BattleAttack? lastAttack)
         {
             string line = Key(prompt.State, host);
+            List<string>? offered = null;
             for (int k = next; k < Checkpoints.Count; k++)
             {
                 var cp = Checkpoints[k];
                 if (Mcts.SameKind(prompt.State, cp.State) &&
                     (host.Phase == cp.Phase || IsBattle(host.Phase) && IsBattle(cp.Phase)) &&
-                    SameCheckpointBoard(line, Key(prompt.State, cp.View), cp.Phase))
+                    (cp.State != BotState.SelectChain || !IsBattle(cp.Phase) || SameAttack(cp.View, activeAttack)) &&
+                    SameCheckpointBoard(line, Key(prompt.State, cp.View), cp.Phase) &&
+                    (cp.ChainOptions is not { Count: > 0 } || prompt.Data is SelectChainData chain &&
+                        cp.ChainOptions.Any(key => SearchActions.MatchKey(key, offered ??= SearchActions.ChainOptionKeys(chain)) != null)))
                     return k;
-                if (!Declined(cp))
+                if (!Declined(cp) || cp.View.AttackInProgress != null &&
+                    !SameAttack(cp.View, activeAttack) && !SameAttack(cp.View, lastAttack))
                     break;
             }
             return -1;
@@ -617,7 +683,8 @@ namespace BotTest.Game.AI.Search
         /// Their answer toward the next checkpoint: (packet, null), or (null, null) to let the quick policy answer, or (null, why) when a
         /// main / battle prompt of theirs has no move that gets there (the line can't follow the real game).
         /// </summary>
-        private (byte[]? Packet, string? Stuck) Guide(Prompt prompt, DuelHost host, int next, Dictionary<int, int> attacked)
+        private (byte[]? Packet, string? Stuck) Guide(Prompt prompt, DuelHost host, int next, Dictionary<int, int> attacked,
+            SearchView.BattleCard? declaredAttacker)
         {
             var cp = Checkpoints[next];
             var enemy = host.Summary(1);
@@ -703,6 +770,18 @@ namespace BotTest.Game.AI.Search
                 case BattleCmdData battle:
                 {
                     var options = SearchActions.Battle(battle);
+                    bool matched = Key(BotState.SelectChain, host) == Key(BotState.SelectChain, cp.View);
+                    if (matched && cp.View.AttackInProgress is { Player: 1 } observed)
+                    {
+                        var attackMove = options.FirstOrDefault(o => o.Key.StartsWith("attack:") &&
+                            SearchActions.AttackerFor(battle, o.Response.Index) is var card &&
+                            SameBattler(observed.Attacker, new(card.ID, card.CurrentCoordinates.Sequence), cp.View.EnemyMonsters));
+                        if (attackMove == null)
+                            return (null, $"recorded attacker {observed.Attacker.Code} is unavailable");
+                        int code = Canon(observed.Attacker.Code);
+                        attacked[code] = attacked.GetValueOrDefault(code) + 1;
+                        return (SearchActions.Packet(attackMove.Response), null);
+                    }
                     var done = Count(cp.View.EnemyMonsters.Where(m => m.Attacked && m.Code > 0).Select(m => m.Code));
                     // A damage-triggered window such as Gorz can be the first prompt
                     // after a direct attack, with the attacker unmarked by Omega.
@@ -730,7 +809,6 @@ namespace BotTest.Game.AI.Search
                     var activate = options.FirstOrDefault(o => o.Key.StartsWith("bact:") && needs.Any(Canon(SearchActions.KeyCardId(o.Key))));
                     if (activate != null)
                         return (SearchActions.Packet(activate.Response), null);
-                    bool matched = Key(BotState.SelectChain, host) == Key(BotState.SelectChain, cp.View);
                     // Our window in their Battle Phase with nothing on the board to show for it: their attack declaration (live Omega never
                     // marks their attackers; seen 2026-11-18: Mirror Force offered as Blue Thunder T-45 attacked, the replay never attacked).
                     // With no attacker recorded, try an eligible attacker. OutcomePick reconstructs its target.
@@ -751,6 +829,16 @@ namespace BotTest.Game.AI.Search
                     if (phaseKey != null && options.FirstOrDefault(o => o.Key == phaseKey) is { } move)
                         return (SearchActions.Packet(move.Response), null);
                     return (null, $"no attack or move toward checkpoint {next + 1} ({cp.State} in phase 0x{cp.Phase:x}): {Describe(needs)}");
+                }
+                case SelectCardData pick when pick.SelectionHint == (int)DHint.ATTACKTARGET &&
+                    cp.View.AttackInProgress is { Player: 1 } observed && declaredAttacker is { } declared &&
+                    SameBattler(observed.Attacker, declared, cp.View.EnemyMonsters):
+                {
+                    var cards = pick.SelectableCards ?? Array.Empty<DynamicCard>();
+                    int index = observed.Target is { } target ? Array.FindIndex(cards, card =>
+                        SameBattler(target, new(card.ID, card.CurrentCoordinates.Sequence), cp.View.OwnMonsters)) : -1;
+                    return index >= 0 ? (new[] { (byte)1, (byte)index }, null)
+                        : (null, $"recorded attack target {observed.Target?.Code.ToString() ?? "direct"} is unavailable");
                 }
                 case SelectChainData chain:
                 {

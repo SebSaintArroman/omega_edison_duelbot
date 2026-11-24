@@ -44,7 +44,7 @@ namespace BotTest.Game.AI.Brains
         }
 
         /// <summary>Every answer the real bot sent: in our turn, after the anchor, it's a step of the replay.</summary>
-        public void ResponseSent(BotState state, object? data, byte[] response)
+        public virtual void ResponseSent(BotState state, object? data, byte[] response)
         {
             RecordCheckpointAnswer(state, data, response); // every turn, ours or theirs (DeckBotBrain.TurnLog)
             if (IsSearchTwin || !IsOwnTurn(_currentHeader))
@@ -176,8 +176,44 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         public async Task<int?> RefineChainAsync(DecisionContext<SelectChainData> context, int brainIndex, CancellationToken ct = default)
         {
-            if (await ApplySharedChainRulesAsync(context, brainIndex) is int sharedAnswer)
+            // Their turn (or ours before any searched decision): the line behind the last chain answer searched this turn is followed while
+            // nothing new was revealed; its step stands in for the brain's answer, and the shared chain rules still check it.
+            bool turnStartWindow = !IsSearchTwin && _ownTurnParity >= 0 && SearchWanted(context.Bot) &&
+                                   (!IsOwnTurn(context.Header) || _anchor is not { } anchored || anchored.Turn != context.Header.CurrentTurn);
+            var lineStep = turnStartWindow && !context.StateData.Forced && ChainOptionKeys(context.StateData) is { Count: >= 2 } lineOptions
+                ? TheirTurnLineStep(context.Bot, lineOptions) : null;
+            int lineIndex = lineStep is { } ls ? ChainIndexOf(context.StateData, ls.Key) : -2;
+            if (lineStep != null && lineIndex < -1)
+            {
+                _theirTurnLine = null;
+                lineStep = null;
+            }
+            int answerIn = lineStep != null ? lineIndex : brainIndex;
+            var offeredCards = context.StateData.SelectableCards ?? Array.Empty<DynamicCard>();
+            string Describe(int i) => i >= 0 && i < offeredCards.Length ? OmegaBotWrapper.Logging.CardNames.Get(offeredCards[i].ID) : "pass";
+            if (lineStep is { } followed)
+                context.Bot.LogNote($"search: chain window: nothing new revealed, playing the line behind the last chain answer: {Describe(lineIndex)} " +
+                                    $"(score {BoardEvaluator.CuPm(followed.Mean, followed.StdErr)} over {followed.Visits} lines; the brain's answer: {Describe(brainIndex)})");
+
+            if (await ApplySharedChainRulesAsync(context, answerIn) is int sharedAnswer)
+            {
+                // Logged when it changes the answer (seen 2026-11-24: the shared attack-boost rule silently turned the Blackwing brain's
+                // Kalut into a pass; the search had passed Mirror Force counting on that Kalut, and Shura died).
+                if (sharedAnswer != answerIn && !IsSearchTwin)
+                    context.Bot.LogNote(lineStep != null
+                        ? $"search: COMMITMENT BROKEN: the shared chain rules changed the line's {Describe(answerIn)} to {Describe(sharedAnswer)}"
+                        : $"shared chain rules: changed the brain's {Describe(brainIndex)} to {Describe(sharedAnswer)}");
+                if (lineStep is { } kept && sharedAnswer == answerIn)
+                    TheirTurnLineStepped(kept.Child);
+                else
+                    _theirTurnLine = null;
                 return sharedAnswer;
+            }
+            if (lineStep is { } step)
+            {
+                TheirTurnLineStepped(step.Child);
+                return answerIn;
+            }
 
             // The holds for this window, after the deck brain's answer (real bot and search twin alike).
             try { await RecordChainHoldsAsync(context, brainIndex); }

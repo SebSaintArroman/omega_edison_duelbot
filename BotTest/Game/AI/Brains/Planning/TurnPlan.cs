@@ -387,6 +387,7 @@ namespace BotTest.Game.AI.Brains
                 .FirstOrDefault(c => c.Response.Action == chosen.Action && c.Response.Index == chosen.Index)?.Key is string movedKey
                 ? SearchActions.KeyCardId(movedKey) : 0;
             LastMainMove = (context.Header.CurrentTurn, chosen.Action, movedCard);
+            NoteSetWindow(context.Header, chosen.Action);
             await RecordMainMoveAsync(context, chosen, movedCard);
             if (chosen.Action is MainAction.Summon or MainAction.SetMonster)
                 _normalSummonMadeTurn = context.Header.CurrentTurn;

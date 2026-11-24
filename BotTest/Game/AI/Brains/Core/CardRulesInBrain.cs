@@ -251,13 +251,18 @@ namespace BotTest.Game.AI.Brains
                     return boost.Index;
             }
 
-            if (!IsBattlePhase(phase) || !await CurrentField.IsBotUnderAttack(!ourTurn))
+            if (!IsBattlePhase(phase))
                 return brainIndex >= 0 ? -1 : null;
+            // A battle in progress, read from the battling monsters: Omega's UnderAttack flag is only set in the attack declaration's
+            // window and is false in the damage step's, where the boosts are offered (seen 2026-11-24: the Blackwing brain's Kalut onto
+            // Shura, attacked by Gardestrike, was turned into a pass here; the search had passed Mirror Force counting on it).
             var battler = await CurrentField.GetBotBattlingMonster(isOwnSide: true);
-            if (battler.ID <= 0)
+            var enemy = await CurrentField.GetBotBattlingMonster(isOwnSide: false);
+            bool inBattle = battler.ID > 0 && battler.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone &&
+                            (ourTurn || enemy.ID > 0 && enemy.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone);
+            if (!inBattle && !await CurrentField.IsBotUnderAttack(!ourTurn) || battler.ID <= 0)
                 return brainIndex >= 0 ? -1 : null;
 
-            var enemy = await CurrentField.GetBotBattlingMonster(isOwnSide: false);
             DynamicCard? defender = enemy.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone ? enemy : null;
             int lp = await CurrentField.GetBotLifePoints(isOwnSide: false);
             int required = CardRules.RequiredAttackBoost(battler, defender, defender == null, ourTurn, lp);

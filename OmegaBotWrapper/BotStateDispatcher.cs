@@ -254,7 +254,12 @@ namespace OmegaBotWrapper
                 "SelectPlace", _bot.BotID);
             LogZoneSelectionResponse("SelectPlace", selectPlaceResponse);
             await LogDecisionAsync(BotState.SelectPlace, placeData, selectPlaceChosen, selectPlaceResponse);
-            return BotResponseWriter.WriteZoneSelection(selectPlaceResponse);
+            // Omega's AI_Custom passes this int to PostSelectPlace, which (like WindBot) expects a
+            // zone BITMASK (1 << seq), not [player, location, seq]. Otherwise it falls back to the
+            // default order 2,1,3,0,4.
+            int selectPlaceMask = 1 << BitConverter.GetBytes(selectPlaceResponse)[2];
+            BotLogger.Log(_bot.BotID, "SelectPlace", $"Sending zone mask=0x{selectPlaceMask:X2} (seq {BitConverter.GetBytes(selectPlaceResponse)[2]})");
+            return BotResponseWriter.WriteZoneSelection(selectPlaceMask);
         }
 
         private async Task<byte[]?> HandleSelectPositionAsync(CancellationToken ct)

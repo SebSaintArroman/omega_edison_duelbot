@@ -604,3 +604,7 @@ BoardEvaluator.TargetEffectWeight = 1   # Scale on the value of a held card's se
 BoardEvaluator.MonsterCardValue = 0.7   # A non-token monster on the field counts as this many cards in CardAdvantageDelta (other cards count 1). User, 2026-11-24: "because monsters also get their stats, lower their base value for just being a card down to 0.7 on the field".
 BoardEvaluator.SingleTrapFutureValue = 0.5   # What single removal (D-Prison, Bottomless, Icarus Attack...) still threatens if it isn't used now, on top of the card itself (card units). User, 2026-11-24: 0.5 to start.
 BoardEvaluator.WipeTrapFutureValue = 1   # What a wipe trap (Mirror Force, Torrential Tribute) still threatens if it isn't used now, on top of the card itself (card units), in the exposures' trap cost. User, 2026-11-24: 1.0 to start.
+
+# added 2026-11-24 15:57 (new in the code since the file was written)
+# --- Search
+Search.ReplacedMatchLines = 1000   # The most lines the brain's move needs to match the move replacing it while its score isn't backed by its lines average.

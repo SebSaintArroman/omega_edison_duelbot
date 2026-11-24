@@ -259,6 +259,9 @@ namespace BotTest.Game.AI.Brains
             _plan = picks.Count > 0 ? (line.Turn, picks, 0) : null;
             int nextMain = line.Next + 1 + picks.Count;
             _searchLine = nextMain < line.Steps.Count ? line with { Next = nextMain } : null;
+            // The set plan's last set: the set window's spells/traps are done (no more are set this Main Phase).
+            if (_searchLine == null && _planInfo?.Source == SetPlanSource)
+                _setPlanDoneAt = (_currentHeader.CurrentTurn, _currentHeader.CurrentPhase);
             bot.LogNote($"plan ({_planInfo?.Source ?? "search"}): {step.Label}" +
                         (picks.Count > 0 ? $" ({string.Join(", ", picks.Select(p => p.Label))})" : ""));
             return key;

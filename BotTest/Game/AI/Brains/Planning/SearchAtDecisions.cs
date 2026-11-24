@@ -336,6 +336,10 @@ namespace BotTest.Game.AI.Brains
         /// <summary>A search option key in words ("set Icarus Attack"), for the log.</summary>
         private static string DescribeKey(string key)
         {
+            if (key == SearchActions.SetWindowKey)
+                return "go to the set window";
+            if (key.StartsWith(SearchActions.SetPlanPrefix, StringComparison.Ordinal))
+                return "set " + string.Join(", ", SearchActions.SetPlanCards(key).Select(k => OmegaBotWrapper.Logging.CardNames.Get(SearchActions.KeyCardId(k))));
             string verb = key.Split(':')[0] switch
             {
                 "attack" => "attack with",
@@ -740,20 +744,95 @@ namespace BotTest.Game.AI.Brains
                 return brainChoice;
             // Options the deck rules out entirely (e.g. Blackwing's Blizzard without a revive target) are left out of what the search may pick.
             var choices = SearchActions.Idle(WithoutRuledOut(data)).Where(Allowed).ToList();
+            // In the set window (we set a card this Main Phase) only sets, position changes and the end of the turn; no more spell/trap
+            // sets once its set plan is played out (user, 2026-11-24: an interrupted plan is "restarted as a process").
+            bool inSetWindow = !IsSearchTwin && InSetWindow(context.Header), setPlanDone = inSetWindow && SetPlanDone(context.Header);
+            if (inSetWindow)
+                choices = choices.Where(c => c.Response.Action is MainAction.SetMonster or MainAction.Repos or MainAction.ToEndPhase ||
+                                             c.Response.Action == MainAction.SetSpell && !setPlanDone).ToList();
             var brainKey = choices.FirstOrDefault(c => c.Response.Action == brainChoice.Action && c.Response.Index == brainChoice.Index)?.Key;
-            if (choices.Count < 2 || brainKey == null)
+            // The spell/trap sets are one move, the set window (SearchActions.SetWindowKey): the brain's set is its way in.
+            var spellSets = choices.Where(c => c.Response.Action == MainAction.SetSpell).ToList();
+            var keys = choices.Where(c => c.Response.Action != MainAction.SetSpell).Select(c => c.Key).ToHashSet();
+            if (spellSets.Count > 0)
+                keys.Add(SearchActions.SetWindowKey);
+            string? searchBrainKey = brainKey != null && spellSets.Count > 0 && brainKey.StartsWith(SearchActions.SetSpellPrefix, StringComparison.Ordinal)
+                ? SearchActions.SetWindowKey : brainKey;
+            if (searchBrainKey == null && inSetWindow && keys.Contains("end"))
+            {
+                context.Bot.LogNote("search: in the set window: the brain's move isn't a set, a position change or the end of the turn; ending the turn stands in for it");
+                searchBrainKey = "end";
+            }
+            IdleCmdResponse ResponseFor(string key) => key == brainKey ? brainChoice : choices.First(c => c.Key == key).Response;
+            if (searchBrainKey == null)
                 return brainChoice;
-            var keys = choices.Select(c => c.Key).ToHashSet();
+            if (keys.Count < 2 && searchBrainKey != SearchActions.SetWindowKey)
+                return ResponseFor(searchBrainKey);
             int turn = context.Header.CurrentTurn;
             var phase = (DuelPhase)context.Header.CurrentPhase;
-            var outcome = await SearchUntilSureAsync(context.Bot, BotState.SelectIdleCmd, brainKey, all.Select(c => c.Key).ToList(), keys, summonUsed,
+            var outcome = await SearchUntilSureAsync(context.Bot, BotState.SelectIdleCmd, searchBrainKey, all.Select(c => c.Key).ToList(), keys, summonUsed,
                 battleDone: phase == DuelPhase.Main2, inBattle: false, ct);
             if (outcome == null)
-                return brainChoice;
-            var better = Better(context.Bot, outcome, brainKey, keys, "main", turn);
-            FollowPlan(context.Bot, outcome, better?.Key ?? brainKey, turn, overriding: better != null);
-            CommitLineIfOverriding(context.Bot, outcome, better?.Key ?? brainKey, turn, overriding: better != null);
-            return better == null ? brainChoice : choices.First(c => c.Key == better.Key).Response;
+                return searchBrainKey == SearchActions.SetWindowKey ? brainChoice : ResponseFor(searchBrainKey);
+            var better = Better(context.Bot, outcome, searchBrainKey, keys, "main", turn);
+            string chosenKey = better?.Key ?? searchBrainKey;
+            if (chosenKey == SearchActions.SetWindowKey)
+                return StartSetPlan(context.Bot, context.Header, outcome, spellSets, brainChoice, overriding: better != null);
+            FollowPlan(context.Bot, outcome, chosenKey, turn, overriding: better != null);
+            CommitLineIfOverriding(context.Bot, outcome, chosenKey, turn, overriding: better != null);
+            return ResponseFor(chosenKey);
+        }
+
+        // ------------------------------------------------------------------ the set window
+
+        /// <summary>The plan source of a set plan being played out (TurnPlan.AdoptPlan).</summary>
+        private const string SetPlanSource = "set window";
+
+        // The Main Phase (turn, phase) in which the real turn set a card (the set window is open), and the one whose set plan was played out.
+        private (int Turn, int Phase) _setWindowAt = (-1, -1);
+        private (int Turn, int Phase) _setPlanDoneAt = (-1, -1);
+
+        private bool InSetWindow(BotStateHeader header) => _setWindowAt == (header.CurrentTurn, header.CurrentPhase);
+
+        private bool SetPlanDone(BotStateHeader header) => _setPlanDoneAt == (header.CurrentTurn, header.CurrentPhase);
+
+        /// <summary>A set made in a Main Phase opens the real turn's set window (DeckBotBrain.TurnPlan.AfterMainMoveAsync).</summary>
+        private void NoteSetWindow(BotStateHeader header, MainAction action)
+        {
+            if (!IsSearchTwin && action is MainAction.SetSpell or MainAction.SetMonster &&
+                (DuelPhase)header.CurrentPhase is DuelPhase.Main1 or DuelPhase.Main2)
+                _setWindowAt = (header.CurrentTurn, header.CurrentPhase);
+        }
+
+        /// <summary>
+        /// The set window was chosen: the search's set plan (every spell/trap it sets) is played in a random order (user, 2026-11-24:
+        /// "execute them in a random order, so that the order of setting cards never affects anything"). Its first set now, the rest
+        /// as a plan followed whole; anything the plan didn't expect (their chain: a new card revealed) drops it, and the next decision
+        /// plans the set window afresh from the cards left.
+        /// </summary>
+        private IdleCmdResponse StartSetPlan(DuelBotWrapper bot, BotStateHeader header, SearchOutcome outcome,
+            List<SearchActions.Choice<IdleCmdResponse>> spellSets, IdleCmdResponse brainChoice, bool overriding)
+        {
+            CommitLineIfOverriding(bot, outcome, SearchActions.SetWindowKey, header.CurrentTurn, overriding);
+            var offered = spellSets.Select(c => c.Key).ToList();
+            var plan = outcome.Plans?.GetValueOrDefault(SearchActions.SetWindowKey)?.FirstOrDefault();
+            var cards = plan == null ? new List<string>()
+                : SearchActions.SetPlanCards(plan.Key).Select(k => SearchActions.MatchKey(k, offered)).OfType<string>().ToList();
+            if (cards.Count == 0)
+            {
+                var fallback = spellSets.FirstOrDefault(c => c.Response.Action == brainChoice.Action && c.Response.Index == brainChoice.Index) ?? spellSets[0];
+                bot.LogNote($"search: set window without an explored set plan: {fallback.Label} (the next decision plans the rest)");
+                return fallback.Response;
+            }
+            var order = cards.OrderBy(_ => Random.Shared.Next()).ToList();
+            string Label(string key) => spellSets.First(c => c.Key == key).Label;
+            bot.LogNote($"search: set window: {plan!.Label}; in a random order: {string.Join(" -> ", order.Select(Label))}");
+            var rest = order.Skip(1).Select(k => new PlanStep(BotState.SelectIdleCmd, k, Label(k))).ToList();
+            if (rest.Count > 0)
+                AdoptPlan(bot, SetPlanSource, "the set plan, in a random order", rest);
+            else
+                _setPlanDoneAt = (header.CurrentTurn, header.CurrentPhase);
+            return spellSets.First(c => c.Key == order[0]).Response;
         }
 
         public async Task<BattleCmdResponse> RefineBattleAsync(DecisionContext<BattleCmdData> context, BattleCmdResponse brainChoice, CancellationToken ct = default)
@@ -1041,7 +1120,19 @@ namespace BotTest.Game.AI.Brains
         /// played and for replacing the brain's (seen 2026-11-17: the search stopped on settled scores, then wouldn't count the better move
         /// for "too few lines", and the brain's move went through on a stale score).
         /// </summary>
-        private bool HasItsLines(RootStat s) => s.Visits >= MinPlayLines || s.Visits >= ScreenLines && s.StdErr <= SettledError;
+        private bool HasItsLines(RootStat s) => s.Visits >= MinPlayLines || s.Visits >= ScreenLines && s.StdErr <= SettledError && ScoreBacked(s);
+
+        /// <summary>
+        /// Whether a move's score is backed by its lines: within 2 standard errors of its lines average. The error bar is the average's,
+        /// so it only settles a score that is the average; a score read through a few of its follow-ups, far above the average, isn't
+        /// settled by it (seen 2026-11-24: Reinforcement of the Army "settled" at -0.15 over 174 lines, lines average -1.14, and was
+        /// replaced by set Icarus Attack; with 1094 lines one decision later it scored +0.59; user: "that was the correct play").
+        /// </summary>
+        private static bool ScoreBacked(RootStat s) => double.IsNaN(s.Average) || s.Mean - s.Average <= 2 * s.StdErr;
+
+        /// <summary>The most lines the brain's move needs to match the move replacing it while its score isn't backed (ScoreBacked).</summary>
+        [Tunable("The most lines the brain's move needs to match the move replacing it while its score isn't backed by its lines average.", Section = "Search")]
+        public static readonly Tuned<int> ReplacedMatchLines = new(1000);
 
         private RootStat? BestByScore(SearchOutcome outcome, string brainKey, IReadOnlySet<string> legal) =>
             outcome.Root.Where(s => legal.Contains(s.Key) && (HasItsLines(s) || s.Key == brainKey))
@@ -1174,7 +1265,11 @@ namespace BotTest.Game.AI.Brains
                          !double.IsNaN(s.Unexplored) && s.Unexplored >= top.Mean - 2 * Math.Sqrt(top.StdErr * top.StdErr + s.StdErr * s.StdErr)) &&
                         !transposed.Any(p => p.A == top.Key && p.B == s.Key || p.A == s.Key && p.B == top.Key))
                     .ToList();
-                bool hasEvidence = Met(top) && (replaced == null || Met(replaced)) && unscreened.Count == 0 && challengers.All(Met);
+                // The brain's move, while its score isn't backed by its lines (ScoreBacked), needs as many lines as the move replacing it
+                // (up to ReplacedMatchLines): the same justification on both sides (user, 2026-11-16), so a wide move isn't replaced on the
+                // average of its early, unconverged follow-ups.
+                int replacedNeed = replaced == null || ScoreBacked(replaced) ? 0 : Math.Min(top.Visits, ReplacedMatchLines);
+                bool hasEvidence = Met(top) && (replaced == null || Met(replaced) && replaced.Visits >= replacedNeed) && unscreened.Count == 0 && challengers.All(Met);
                 bool enough = elapsed >= MinThinkMs && hasEvidence;
                 // The time limit (user, 2026-11-16: "if it gets to 30s, just take the best move available whatever it is and flag it really
                 // loudly in the logs ... give a full breakdown as to what went wrong").
@@ -1229,7 +1324,7 @@ namespace BotTest.Game.AI.Brains
                     string progress = $"search: still thinking ({elapsed / 1000.0:0} s): {outcome.TreeVisits} lines; best so far {top.Label} " +
                                       $"(score {BoardEvaluator.CuPm(top.Mean, top.StdErr)} over {top.Visits} lines)" +
                                       (replaced != null ? $", the brain's {replaced.Label} {BoardEvaluator.CuPm(replaced.Mean, replaced.StdErr)} over {replaced.Visits}" : "") +
-                                      $"; each needs {need} lines" + (unscreened.Count > 0 ? $", {unscreened.Count} move(s) still under {ScreenLines}" : "") +
+                                      $"; each needs {need} lines" + (replaced != null && replaced.Visits < replacedNeed ? $" (the brain's move {replacedNeed}: its score isn't backed by its lines yet)" : "") + (unscreened.Count > 0 ? $", {unscreened.Count} move(s) still under {ScreenLines}" : "") +
                                       (challengers.Count(s => !Met(s)) is > 0 and var close ? $", {close} move(s) within error of the best still short" : "");
                     bot.LogNote(progress);
                     // Live too (user, 2026-11-16: "I would still like to see more information about how the search is progressing
@@ -1244,6 +1339,8 @@ namespace BotTest.Game.AI.Brains
                 short_.AddRange(challengers.Where(s => !Met(s)).Select(s => s.Key));
                 // The unscreened moves first, up to ScreenLines each; then the two being compared, up to the requirement.
                 _focusRoot = unscreened.Count > 0 ? (unscreened, ScreenLines) : short_.Count > 0 ? (short_, need)
+                    // The brain's move short of the replacing move's lines while its score isn't backed: it gets them.
+                    : replaced != null && replaced.Visits < replacedNeed ? (new List<string> { replaced.Key }, replacedNeed)
                     // All have their lines but the best isn't clearly ahead (past TaperAfterMs): the two being compared get the next run's lines.
                     : elapsed >= TaperAfterMs && !resolved && runnerUp != null ? (new List<string> { top.Key, runnerUp.Key }, Math.Max(top.Visits, runnerUp.Visits) + need)
                     : null;
@@ -1645,6 +1742,7 @@ namespace BotTest.Game.AI.Brains
                 if (_main2Summons.Turn == turn)
                     view.Main2Summoned.AddRange(_main2Summons.Codes);
                 view.ActivatedThisTurn.AddRange(_activatedThisTurn);
+                view.LylaEffectUsed = LylaEffectTurn == turn;
                 view.Record = await BuildTurnRecordAsync();
                 // The board a mid-chain replay rebuilds (DeckBotBrain.MidChain): this decision, and our answers from here on.
                 if (IsOwnTurn(_currentHeader))
@@ -1736,6 +1834,14 @@ namespace BotTest.Game.AI.Brains
             var search = new Mcts(view, tree, start, rootState, brainKey, used, settings, evaluator, SearchBrains(bot), rootHolds)
             {
                 MayChoose = PlanMayChoose, Suggestions = PlanSuggestions, UsedEffects = _usedEffects.ToArray(),
+                // A settled root move gets no more lines while another isn't: it has its lines and its score is backed by them.
+                RootSettled = IsSearchTwin ? null : (visits, score, average, err) =>
+                {
+                    var stat = new RootStat("", "", visits, score, average, err);
+                    return HasItsLines(stat) && ScoreBacked(stat);
+                },
+                StartInSetWindow = !IsSearchTwin && rootState == BotState.SelectIdleCmd && InSetWindow(_currentHeader),
+                StartSetPlanDone = !IsSearchTwin && rootState == BotState.SelectIdleCmd && SetPlanDone(_currentHeader),
                 // A routine the brain's move starts here: lines through that move follow it, so the routine is scored on the engine.
                 Routine = _planAdoptedThisDecision && _searchLine is { } routineLine && _planInfo?.Source.StartsWith("routine") == true
                     ? (brainKey, routineLine.Steps.Skip(routineLine.Next).Where(IsMainOrBattle).ToList(), RoutineMatch)
@@ -1794,8 +1900,15 @@ namespace BotTest.Game.AI.Brains
             var field = await CurrentField.GetBotField();
             var own = field.OwnSide;
             var enemy = field.EnemySide;
+            SearchView.BattleCard? Battler(CardInfo side) =>
+                side.HasBattlingMonster && side.BattlingMonster.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone
+                    ? new(side.BattlingMonster.ID, side.BattlingMonster.CurrentCoordinates.Sequence) : null;
+            bool ourAttack = IsOwnTurn(_currentHeader);
+            var attacker = Battler(ourAttack ? own : enemy);
+            var target = Battler(ourAttack ? enemy : own);
             var view = new SearchView
             {
+                AttackInProgress = attacker is { } active ? new(ourAttack ? 0 : 1, active, target) : null,
                 RealTurn = _currentHeader.CurrentTurn,
                 StrategicState = StrategicState,
                 ThreatHistory = _threatenedState.Copy(),

@@ -117,8 +117,8 @@ namespace BotTest.Game.AI.Brains
 
         /// <summary>The rules for one main-phase prompt: Allowed filters each (card, action), Finish forces what must be done.</summary>
         public MainMoves ForMain(Prompt prompt, IdleCmdData idle, bool ourTurn, DuelHost? host, bool setWindowChosen, bool allowSetsBeforePlays,
-            bool positionWindowChosen = false) =>
-            new(this, prompt, idle, ourTurn, host, setWindowChosen, allowSetsBeforePlays, positionWindowChosen);
+            bool positionWindowChosen = false, bool setPlanDone = false) =>
+            new(this, prompt, idle, ourTurn, host, setWindowChosen, allowSetsBeforePlays, positionWindowChosen, setPlanDone);
 
         internal sealed class MainMoves
         {
@@ -126,7 +126,7 @@ namespace BotTest.Game.AI.Brains
             private readonly Prompt _prompt;
             private readonly IdleCmdData _idle;
             private readonly DuelHost? _host;
-            private readonly bool _setWindowChosen, _allowSetsBeforePlays, _positionWindowChosen;
+            private readonly bool _setWindowChosen, _allowSetsBeforePlays, _positionWindowChosen, _setPlanDone;
             private readonly SideSummary? _own, _theirs;
             private readonly ThreatenedState.Assessment? _threatAssessment;
             private readonly TagRules.BotStrategicState _strategicState;
@@ -143,8 +143,9 @@ namespace BotTest.Game.AI.Brains
             private Dictionary<(int Id, int Attack), bool>? _threatAnswers;
 
             public MainMoves(SearchMoveRules rules, Prompt prompt, IdleCmdData idle, bool ourTurn, DuelHost? host, bool setWindowChosen, bool allowSetsBeforePlays,
-                bool positionWindowChosen = false)
+                bool positionWindowChosen = false, bool setPlanDone = false)
             {
+                _setPlanDone = setPlanDone && ourTurn && prompt.Player == 0;
                 _rules = rules;
                 _prompt = prompt;
                 _idle = idle;
@@ -365,8 +366,9 @@ namespace BotTest.Game.AI.Brains
                 action == MainAction.SetMonster && _rules._plannedSetCardId > 0 && SearchHost.Is(id, _rules._plannedSetCardId);
 
             /// <summary>
-            /// The allowed moves, finished: the set window closes when a play is on offer (sets wait for nothing else to do), a
-            /// must-activate tag limits play to eligible activations, and mandatory moves are marked with their rule.
+            /// The allowed moves, finished: no Battle Phase once the line is in the set window, no more spell/trap sets once its
+            /// set plan is played out, a must-activate tag limits play to eligible activations, and mandatory moves are marked with
+            /// their rule.
             /// </summary>
             public List<(SearchActions.Choice<IdleCmdResponse> Choice, string? Reason)> Finish(List<SearchActions.Choice<IdleCmdResponse>> choices)
             {
@@ -374,12 +376,12 @@ namespace BotTest.Game.AI.Brains
                 var strategicState = _strategicState;
                 if (_setWindowChosen)
                     choices = choices.Where(c => c.Response.Action != MainAction.ToBattlePhase).ToList();
-                // At the root, compare sets with other plays. In a brain rollout, allow its chosen set.
-                // A line that chooses a set still enters the normal set window.
-                if (!_allowSetsBeforePlays && strategicState != TagRules.BotStrategicState.Desperate && _prompt.Player == 0 &&
-                    choices.Any(c => c.Response.Action is MainAction.Summon or MainAction.SpSummon or MainAction.Activate))
-                    choices.RemoveAll(c => c.Response.Action is MainAction.SetMonster or MainAction.SetSpell &&
-                        !SetsAnytime(SearchActions.KeyCardId(c.Key), c.Response.Action));
+                // Sets stay on offer beside the plays: the search sees the set window as one move (SearchActions.SetWindowKey) next
+                // to them, and monster sets next to the Normal Summon (user, 2026-11-24: "it should be able to see 'go to set window'
+                // in that list of options"; "I don't want them deprioritised against the normal summon"). Once the line's set plan
+                // is played out, no more spells/traps are set.
+                if (_setPlanDone)
+                    choices.RemoveAll(c => c.Response.Action == MainAction.SetSpell);
                 var ruleContext = _prompt.Player == 0
                     ? _rules.BaseContext(host?.Summary(0), host?.Summary(1), host?.LifePoints(0) ?? _rules._view.LifePoints[0],
                             host?.LifePoints(1) ?? _rules._view.LifePoints[1]) with

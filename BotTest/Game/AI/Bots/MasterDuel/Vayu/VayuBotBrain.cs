@@ -1235,6 +1235,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         // ...and its own main-phase Heavy Storm / MST rules.
         protected override bool HandlesStapleIdle => true;
 
+        // Zone placement plans for Card Trooper's 1900 (it mills in the priority window right after the summon).
+        protected override int PlacementAttack(int cardId, int attack) =>
+            cardId == CardId.CardTrooper ? Math.Max(attack, 1900) : attack;
+
         // Into an empty field the generic brain attacks smallest first; Chaos Sorcerer always goes last.
         protected override IReadOnlyCollection<int> AttackLast { get; } = new[] { CardId.ChaosSorcerer };
 

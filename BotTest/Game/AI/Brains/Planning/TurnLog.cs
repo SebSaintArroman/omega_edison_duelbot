@@ -34,6 +34,9 @@ namespace BotTest.Game.AI.Brains
             public required SearchView View { get; init; }
             public required int Generation { get; init; }
             public ReplayStep? Answer { get; set; }
+            public IReadOnlyList<string>? ChainOptions { get; set; }
+
+            public ReplayCheckpoint ToReplay() => new(State, Phase, View, Answer, ChainOptions);
         }
 
         private TurnStartSnapshot? _turnStart;
@@ -312,7 +315,10 @@ namespace BotTest.Game.AI.Brains
                 MarkCardActivated(activated);
             if (IsSearchTwin || _checkpoints.Count == 0 || _checkpoints[^1].Answer != null || _checkpoints[^1].State != state)
                 return;
-            _checkpoints[^1].Answer = ReplayKeys.Of(state, data, response);
+            var checkpoint = _checkpoints[^1];
+            checkpoint.Answer = ReplayKeys.Of(state, data, response);
+            if (checkpoint.View.AttackInProgress != null && data is SelectChainData chain)
+                checkpoint.ChainOptions = SearchActions.ChainOptionKeys(chain).Where(key => key != "pass").ToList();
         }
 
         /// <summary>
@@ -341,7 +347,7 @@ namespace BotTest.Game.AI.Brains
             try
             {
                 var replay = TurnReplay.Prepare(start.View, ours, start.Turn,
-                    checkpoints.Select(c => new ReplayCheckpoint(c.State, c.Phase, c.View, c.Answer)).ToList());
+                    checkpoints.Select(c => c.ToReplay()).ToList());
                 SearchHost.Register(replay.Start.AllKnownIds().Concat(checkpoints.SelectMany(c => c.View.AllKnownIds())));
                 var runs = new List<ReplayRun>();
                 using (var engine = new PuzzleEngine(SearchHost.Cards, SearchHost.Scripts, start.Turn * 7919))
@@ -382,10 +388,12 @@ namespace BotTest.Game.AI.Brains
             string brainKey = brainIndex >= 0 && brainIndex < (chain.SelectableCards?.Length ?? 0)
                 ? $"chain:{SearchActions.CardKey(chain.SelectableCards![brainIndex])}:{(brainIndex < (chain.Descriptions?.Length ?? 0) ? chain.Descriptions![brainIndex] : 0)}"
                 : chain.Forced ? options[0] : "pass";
+            _theirTurnLine = null;
             var outcome = await TurnStartSearchAsync(context.Bot, BotState.SelectChain, options, brainKey, ct);
             if (outcome == null)
                 return null;
             var better = Better(context.Bot, outcome, brainKey, options.ToHashSet(), "chain", context.Header.CurrentTurn);
+            CommitTheirTurnLine(context.Bot, better?.Key ?? brainKey);
             return better == null ? null : ChainIndexOf(chain, better.Key) is var index and >= -1 ? index : null;
         }
 
@@ -463,7 +471,7 @@ namespace BotTest.Game.AI.Brains
                 return null;
             }
             bool ours = start.Turn % 2 == _ownTurnParity;
-            var checkpoints = _checkpoints.Select(c => new ReplayCheckpoint(c.State, c.Phase, c.View, c.Answer)).ToList();
+            var checkpoints = _checkpoints.Select(c => c.ToReplay()).ToList();
             var replay = TurnReplay.Prepare(start.View, ours, start.Turn, checkpoints);
             replay.Start.BlankNextDraw = !ours;
             var now = _checkpoints[^1].View;
@@ -476,7 +484,9 @@ namespace BotTest.Game.AI.Brains
             string dealt = replay.DescribeStart();
             MctsTree tree;
             MctsNode root;
-            if (_turnStartTree is { } kept && kept.Turn == start.Turn && kept.Dealt == dealt && kept.Tree.Find(rootKey) is { } known)
+            // The tree's board keys do not distinguish attack-response windows on the same field.
+            if (now.AttackInProgress == null && _turnStartTree is { } kept && kept.Turn == start.Turn &&
+                kept.Dealt == dealt && kept.Tree.Find(rootKey) is { } known)
             {
                 (tree, root) = (kept.Tree, known);
                 bot.LogNote($"search: continuing this turn's tree at this decision ({known.Visits} line(s) already through it, nothing new revealed since)");
@@ -518,7 +528,117 @@ namespace BotTest.Game.AI.Brains
             if (misses > 0)
                 FlagReplayIssue(bot, $"search: REPLAY MISS: {misses} line(s) didn't reach this {rootState} from the turn's start (first: {firstMiss})" +
                             (outcome is not { Root.Count: > 0 } ? "; no line reached it, the brain answers" : ""));
+            _lastTurnStartSearch = outcome is { Root.Count: > 0 } ? (start.Turn, dealt, root) : null;
             return outcome is { Root.Count: > 0 } ? outcome : null;
+        }
+
+        // The last search from the turn's start: its turn, what the replay dealt, and its root node.
+        private (int Turn, string Dealt, MctsNode Root)? _lastTurnStartSearch;
+
+        // ------------------------------------------------------------------ the line behind a chain answer, followed (their turn)
+
+        /// <summary>
+        /// The line behind the last chain answer searched from the turn's start: the tree node after that answer, and what the replay dealt
+        /// then. Later chain windows this turn play its steps while nothing new was revealed (user, 2026-11-24: "the search that committed to
+        /// skipping mirror force *because* of kalut should have been able to pre-commit the later decision to using kalut ... no new
+        /// information was revealed - the line should've been followed").
+        /// </summary>
+        private (int Turn, string Dealt, MctsNode Node)? _theirTurnLine;
+
+        /// <summary>What the turn's replay deals now (TurnReplay.DescribeStart), or null with no snapshot: it changes when something new is seen.</summary>
+        private string? CurrentDealt()
+        {
+            if (_turnStart is not { BeforeDraw: true } start || start.Turn != _currentHeader.CurrentTurn || _ownTurnParity < 0 || _checkpoints.Count == 0)
+                return null;
+            bool ours = start.Turn % 2 == _ownTurnParity;
+            return TurnReplay.Prepare(start.View, ours, start.Turn, _checkpoints.Select(c => c.ToReplay()).ToList()).DescribeStart();
+        }
+
+        /// <summary>Commits the line behind the chain answer just chosen at a search from the turn's start.</summary>
+        private void CommitTheirTurnLine(DuelBotWrapper bot, string chosenKey)
+        {
+            _theirTurnLine = null;
+            if (IsSearchTwin || _lastTurnStartSearch is not { } last || last.Turn != _currentHeader.CurrentTurn)
+                return;
+            MctsNode? child;
+            lock (last.Root.Lock)
+                child = last.Root.Children.FirstOrDefault(kv => NodeLoose(kv.Key) == NodeLoose(chosenKey)).Value;
+            if (child != null)
+                _theirTurnLine = (last.Turn, last.Dealt, child);
+        }
+
+        /// <summary>
+        /// The committed line's step at this chain window: from the node after our last answer, past their passes, to our next chain window;
+        /// its best answer there among those on offer (PlanNodeStep). Null (and the line dropped, with the reason logged) when something new
+        /// was revealed, they did something else, another prompt of ours came first, the window isn't the one the line reached, or the line's
+        /// step there is thin; then the search runs.
+        /// </summary>
+        private (string Key, MctsNode Child, double Mean, int Visits, double StdErr)? TheirTurnLineStep(DuelBotWrapper bot, IReadOnlyList<string> options)
+        {
+            if (IsSearchTwin || _theirTurnLine is not { } line)
+                return null;
+            if (line.Turn != _currentHeader.CurrentTurn)
+            {
+                _theirTurnLine = null;
+                return null;
+            }
+            string? why = WalkTheirTurnLine(line, options, out var step, out var child);
+            if (why == null)
+                return (step!.Value.Key, child!, step.Value.Mean, step.Value.Visits, step.Value.StdErr);
+            _theirTurnLine = null;
+            bot.LogNote($"search: the line behind the last chain answer isn't followed here ({why}); searching");
+            return null;
+        }
+
+        /// <summary>The walk for TheirTurnLineStep: null when the line's step here was found, else why not.</summary>
+        private string? WalkTheirTurnLine((int Turn, string Dealt, MctsNode Node) line, IReadOnlyList<string> options,
+            out (string Key, double Mean, int Visits, double StdErr)? step, out MctsNode? child)
+        {
+            step = null;
+            child = null;
+            if (CurrentDealt() != line.Dealt)
+                return "something new was revealed since";
+            var node = line.Node;
+            var seen = new HashSet<MctsNode>(ReferenceEqualityComparer.Instance);
+            while (true)
+            {
+                MctsNode? next = null;
+                lock (node.Lock)
+                {
+                    if (node.ChildPlayer == 1)
+                    {
+                        next = node.Children.GetValueOrDefault("pass");
+                        if (next == null || !seen.Add(node))
+                            return "their next move in the line isn't a pass";
+                    }
+                    else if (node.ChildPlayer < 0)
+                        return "its lines never got this far";
+                    else if (node.ChildState != BotState.SelectChain)
+                        return $"its next prompt of ours is a {node.ChildState}, not this chain window";
+                }
+                if (next == null)
+                    break;
+                node = next;
+            }
+            var offered = options.Select(NodeLoose).ToHashSet();
+            List<string> explored;
+            lock (node.Lock)
+                explored = node.Children.Where(kv => !kv.Key.StartsWith('@') && kv.Value.Visits > 0).Select(kv => NodeLoose(kv.Key)).ToList();
+            if (explored.Count == 0 || explored.Any(k => !offered.Contains(k)))
+                return "its chain window there offers other answers than this one";
+            step = PlanNodeStep(node, options);
+            if (step is not { } found || found.Visits < StartLines)
+                return $"its step here is thin ({step?.Visits ?? 0} lines)";
+            lock (node.Lock)
+                child = node.Children.FirstOrDefault(kv => NodeLoose(kv.Key) == NodeLoose(found.Key)).Value;
+            return child == null ? "its step has no node" : null;
+        }
+
+        /// <summary>The committed line's step was played: the line goes on from its node.</summary>
+        private void TheirTurnLineStepped(MctsNode child)
+        {
+            if (_theirTurnLine is { } line)
+                _theirTurnLine = line with { Node = child };
         }
 
         // The tree of this turn's searches from the turn's start, and what the replay dealt when it was built (TurnReplay.DescribeStart).
