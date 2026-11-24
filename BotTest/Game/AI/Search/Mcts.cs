@@ -101,6 +101,10 @@ namespace BotTest.Game.AI.Search
     {
         public TimeSpan ReportElapsed { get; init; }
 
+        /// <summary>Real options no line found at the root (a replayed game that differs from the real one): never searched, so the
+        /// other options' scores can't decide (user, 2026-11-24). Set by the replaying searches (MidChain, TurnLog).</summary>
+        public IReadOnlyList<string> NeverOffered { get; init; } = Array.Empty<string>();
+
         public RootStat? Stat(string key) => Root.FirstOrDefault(r => r.Key == key) ??
             (SearchActions.SameMoveIn(key, Root.Select(r => r.Key)) is { } same ? Root.FirstOrDefault(r => r.Key == same) : null);
     }
@@ -117,6 +121,10 @@ namespace BotTest.Game.AI.Search
         /// <summary>Each child's move as named at this node (its own Label can belong to another parent after a transposition merge: seen
         /// 2026-11-18, "change position of Bora" logged as "set Reinforcement of the Army", the move the merged node was first reached by).</summary>
         public Dictionary<string, string>? ChildLabels;
+
+        /// <summary>At a search's root: every option key a line found offered there (call under this node's lock). A real option missing
+        /// from it was never searched at all (SearchAtDecisions.NeverOffered).</summary>
+        public HashSet<string>? Offered;
 
         /// <summary>The name of the move to this child here (call under this node's lock).</summary>
         public string LabelOf(string key, MctsNode child) => ChildLabels != null && ChildLabels.TryGetValue(key, out var label) ? label : child.Label;
@@ -413,6 +421,14 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>The root decision's key (DecisionKey with its options) for a search from the turn's start.</summary>
         public string? RootKey { get; init; }
+
+        /// <summary>
+        /// The real decision's option keys, for a search that replays to it (Replay, FromTurnStart). The replayed game can put a card in
+        /// another zone than the real one, and a field card's key holds its zone: at the root such an option is filed under the real key
+        /// (SearchActions.ToLiveKeys), or it gets no lines and loses by default (user, 2026-11-24: Brain Control's Card Trooper in M4 never
+        /// searched as a tribute, Machina Fortress tributed instead).
+        /// </summary>
+        public IReadOnlyCollection<string>? LiveRootKeys { get; init; }
 
         private static void MarkOpen(MctsNode node, int choices)
         {
@@ -1125,6 +1141,11 @@ namespace BotTest.Game.AI.Search
                 BattleRemovalRisk = () => host.Summary(1).Monsters.Count(m => !m.FaceUp ||
                     SearchHost.Available && SearchHost.Cards.Get(m.Code)?.Text is { } text &&
                     System.Text.RegularExpressions.Regex.IsMatch(text, @"destroyed by battle", System.Text.RegularExpressions.RegexOptions.IgnoreCase)),
+                // No trap can be activated: a face-up, unnegated Jinzo on either side, or a face-up Royal Decree.
+                TrapsNegated = () => host.Summary(0).Monsters.Concat(host.Summary(1).Monsters)
+                                         .Any(m => m.FaceUp && !m.Negated && LineTally.Is(m.Code, new[] { CardId.Jinzo })) ||
+                                     host.Summary(0).SpellCodes.Concat(host.Summary(1).SpellCodes)
+                                         .Any(s => s.FaceUp && LineTally.Is(s.Code, new[] { CardId.RoyalDecree })),
                 // A DARK monster in our hand (Allure of Darkness banishes one instead of the whole hand).
                 DarkInHand = () => host.Summary(0).HandCodes.Any(c => (SearchHost.Type(c) & 0x1) != 0 && (SearchHost.Attribute(c) & 0x20) != 0),
                 // Our other face-up attack-position monsters, while the Battle Phase is still to come or under way (#135).
@@ -1537,7 +1558,9 @@ namespace BotTest.Game.AI.Search
                         routineNext = routine.Steps.Count; // a step not on offer: the routine breaks off here
                     }
                     if (rootReached && inTree && OptionsFor(prompt, ours, rng, host, setWindowChosen, positionWindowPhase == host.Turn * 0x10000 + host.Phase, allowSetsBeforePlays: node == _start, brain: brain, setPlanDone: PlanDone())
-                            is { Count: > 0 } options &&
+                            is { Count: > 0 } rawOptions &&
+                        (node == _start && LiveRootKeys != null ? AsLiveKeys(rawOptions, LiveRootKeys) : rawOptions) is var options &&
+                        (node != _start || NoteOffered(node, prompt, LiveRootKeys)) &&
                         (options.Count > 1 || ours && (prompt.Data is IdleCmdData ||
                          prompt.Data is SelectChainData && (node == _start || FromTurnStart != null))))
                     {
@@ -2255,6 +2278,41 @@ namespace BotTest.Game.AI.Search
 
         private static string? MatchKey(List<Option> options, byte[] packet, BotState state) =>
             MatchOption(options, packet, state)?.Key;
+
+        /// <summary>
+        /// At a card pick: records the cards a line found selectable at the root (MctsNode.Offered), as "card:" keys under the real
+        /// decision's keys where only a zone differs. The cards, not the options: the search's own rules leave some options out on purpose
+        /// (DiscardPicks, EffectPicks, no cancel on our cost picks). Always true (used inside a condition).
+        /// </summary>
+        private static bool NoteOffered(MctsNode root, Prompt prompt, IReadOnlyCollection<string>? live)
+        {
+            var cards = prompt.Data switch
+            {
+                SelectCardData d => d.SelectableCards,
+                SelectTributeData d => d.SelectableCards,
+                SelectUnselectCardData d => d.SelectableCards,
+                SelectSumData d => d.SelectableCards,
+                _ => null,
+            };
+            if (cards == null || cards.Length == 0)
+                return true;
+            var keys = cards.Select(c => $"card:{SearchActions.CardKey(c)}").Distinct().ToList();
+            if (live != null)
+            {
+                var map = SearchActions.ToLiveKeys(keys, SearchActions.PickCardKeys(live).ToList());
+                keys = keys.Select(k => map.TryGetValue(k, out var real) ? real : k).ToList();
+            }
+            lock (root.Lock)
+                (root.Offered ??= new HashSet<string>()).UnionWith(keys);
+            return true;
+        }
+
+        /// <summary>The root's options under the real decision's keys where only a zone differs (LiveRootKeys).</summary>
+        private static List<Option> AsLiveKeys(List<Option> options, IReadOnlyCollection<string> live)
+        {
+            var map = SearchActions.ToLiveKeys(options.Select(o => o.Key).ToList(), live);
+            return map.Count == 0 ? options : options.Select(o => map.TryGetValue(o.Key, out var real) ? o with { Key = real } : o).ToList();
+        }
 
         // ---------------------------------------------------------------- reporting
 

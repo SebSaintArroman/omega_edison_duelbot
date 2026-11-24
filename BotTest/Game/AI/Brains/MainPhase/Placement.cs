@@ -65,16 +65,21 @@ namespace BotTest.Game.AI.Brains
                 existing.Add((card.CurrentCoordinates.Sequence, PlacementKey(card.ID, card.Attack, attacks, battleEffect, intoMonsters, oppLp)));
             }
 
-            // The free zone with the fewest monsters out of order around it; ties: toward the front if it should attack
-            // before everything there, toward the back if after, otherwise the middle of the gap.
+            // User, 2026-11-24: "monsters should be placed in middle first so we can decide what side to place others on relative to
+            // them"; "keeping them tight in the middle is more important - it's more likely to want to put one first or last than in the
+            // middle". The first monster in the middle. One that should attack first or last: the free zone with the fewest monsters out
+            // of order around it, next to the group on its side (room left on both ends). One that belongs between others: the group
+            // kept tight and central first (the zone next to a monster of ours, nearest the middle), its order only after that.
             int before = existing.Count(e => e.Key < newKey);
             int after = existing.Count(e => e.Key > newKey);
             int Inversions(int zone) =>
                 existing.Count(e => e.Key < newKey && e.Zone > zone) + existing.Count(e => e.Key > newKey && e.Zone < zone);
-            int best = free
-                .OrderBy(Inversions)
-                .ThenBy(zone => after == 0 ? -zone : before == 0 ? zone : Math.Abs(zone - 2))
-                .First();
+            int Gap(int zone) => existing.Count == 0 ? 0 : existing.Min(e => Math.Abs(e.Zone - zone));
+            int best = existing.Count == 0
+                ? free.OrderBy(zone => Math.Abs(zone - 2)).First()
+                : before > 0 && after > 0
+                    ? free.OrderBy(Gap).ThenBy(zone => Math.Abs(zone - 2)).ThenBy(Inversions).First()
+                    : free.OrderBy(Inversions).ThenBy(Gap).ThenBy(zone => after == 0 ? zone : -zone).First();
 
             string order = intoMonsters ? "into their monsters: Goyo-type first, then largest first" : "into an empty field: smallest first";
             context.Bot.LogNote($"deck brain: place {CardNames.Get(state.CardID)} in M{best + 1} so the server's zone-order attacks follow our plan " +

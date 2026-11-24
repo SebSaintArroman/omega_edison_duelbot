@@ -91,6 +91,7 @@
         public const int GoyoGuardianPreErrata = 7391468;
         public const int GranmargTheRockMonarch = 60229110;
         public const int HeavyStorm = 19613556;
+        public const int HeraldOfOrangeLight = 17266660;
         public const int Honest = 37742478;
         public const int IcarusAttack = 53567095;
         public const int IndomitableGladiatorBeast = 55136228;

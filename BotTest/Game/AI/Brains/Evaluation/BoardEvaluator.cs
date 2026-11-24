@@ -318,29 +318,48 @@ namespace BotTest.Game.AI.Brains
         public static readonly Tuned<double> WinBonus = new(10);
         [Tunable("A won line: each card of ours it used up costs this much (card units) in the win's part of its score; the board it leaves doesn't count there (user, 2026-11-18).")]
         public static readonly Tuned<double> WinCardCost = new(1.0);
-        [Tunable("A won line's bonus when the win carries any risk (WinBonus is only for a sure win). User, 2026-11-18: risk is risky, an overspent win that fails loses.")]
-        public static readonly Tuned<double> RiskyWinBonus = new(5);
 
         /// <summary>
         /// The chance a win found in a line really happens: none of their unknown set cards is a stopper that would have fired (the lines never
         /// fire them): Mirror Force (if we attacked), Torrential Tribute, and any other stopper (Bottomless, D-Prison...), each at the deck
         /// read's chance. Their hand traps (Honest, Gorz) aren't counted here yet.
         /// </summary>
-        public double WinChance(bool attacked, SideSummary? theirsAtEnd = null)
+        public double WinChance(bool attacked, SideSummary? theirsAtEnd = null, SideSummary? oursAtEnd = null, bool? firstDirectHitLethal = null,
+            bool usedMonsterEffect = false)
         {
             static double Not(double p) => 1 - Math.Clamp(p, 0, 1);
-            double chance = (attacked ? Not(MirrorForceChance) : 1) * Not(TorrentialChance) * Not(OtherStopChance);
+            // Every set card they had as the decision began counts, even one the line destroyed: they can chain it on the way (user,
+            // 2026-11-24). While a face-up Jinzo / Royal Decree negates traps (user, 2026-11-24: "all traps were negated so there was no
+            // risk"), only the stoppers that aren't traps (Book of Moon...) can.
+            bool trapsOff = theirsAtEnd is { } th && oursAtEnd is { } ou && TrapsNegatedIn(ou, th);
+            double mirror = trapsOff ? 0 : MirrorForceChance;
+            double torrential = trapsOff ? 0 : TorrentialChance;
+            double other = trapsOff ? QuickPlayStopChance : OtherStopChance;
+            double chance = (attacked ? Not(mirror) : 1) * Not(torrential) * Not(other);
+            // Herald of Orange Light (user, 2026-11-24): a monster effect of ours on the way to the win could be negated.
+            if (usedMonsterEffect)
+                chance *= Not(OrangeLightChance);
             // Monsters that work from their hand (user, 2026-11-17): Honest and Kalut only with an attack-position LIGHT / Blackwing monster
             // of theirs out (set in HonestChance / KalutChance), Battle Fader against any attack, Gorz when the win's direct hit came into a
             // field with no cards of theirs.
             if (attacked)
             {
                 chance *= Not(HonestChance) * Not(KalutChance) * Not(BattleFaderChance);
-                if (theirsAtEnd is { } t && t.Monsters.Count == 0 && t.SpellCodes.Count == 0)
+                // Gorz comes out only after a direct hit they survive: not when the turn's first direct hit (whichever monster made it in
+                // the attack order, after any attacks into their monsters) was lethal (user, 2026-11-24: DAD's 2800 into 2600 LP).
+                if (theirsAtEnd is { } t && t.Monsters.Count == 0 && t.SpellCodes.Count == 0 && firstDirectHitLethal != true)
                     chance *= Not(GorzChance);
             }
             return chance;
         }
+
+        /// <summary>No trap can be activated: a face-up, unnegated Jinzo on either side, or a face-up Royal Decree.</summary>
+        public static bool TrapsNegatedIn(SideSummary ours, SideSummary theirs) =>
+            ours.Monsters.Concat(theirs.Monsters).Any(m => m.FaceUp && !m.Negated && SearchHost.Is(m.Code, Jinzo)) ||
+            ours.SpellCodes.Concat(theirs.SpellCodes).Any(s => s.FaceUp && SearchHost.Is(s.Code, RoyalDecree));
+
+        /// <summary>The chance one of their unknown sets is a stopper that isn't a trap (Book of Moon...): what's left under Jinzo / Royal Decree.</summary>
+        public double QuickPlayStopChance { get; init; }
 
         /// <summary>Their hand monsters that stop a lethal battle, each the deck read's chance it's in their hand (0 when it can't act here:
         /// Honest needs an attack-position LIGHT monster of theirs, Kalut a Blackwing).</summary>
@@ -348,6 +367,8 @@ namespace BotTest.Game.AI.Brains
         public double KalutChance { get; init; }
         public double GorzChance { get; init; }
         public double BattleFaderChance { get; init; }
+        /// <summary>Herald of Orange Light in their hand (with another Fairy): negates a monster effect of ours on the way to the win.</summary>
+        public double OrangeLightChance { get; init; }
 
         /// <param name="penalty">Strong suggestions the line went against (card units, see DeckBotBrain.PlanSuggestions).</param>
         /// <param name="ourTurnEnd">Our side and theirs as our turn ended (null if the line didn't get there), and whether we attacked.</param>
@@ -450,11 +471,20 @@ namespace BotTest.Game.AI.Brains
             // card of ours the line used up; if it doesn't, the board the line actually ends with.
             if (won)
             {
-                double chance = WinChance(ourTurnEnd?.Attacked ?? true, theirs);
-                // The win's bonus by its risk (user, 2026-11-18: "non-risk wins are worth 10, other wins just get a +5"; "a sliver of risk halving the
-                // bonus doesn't feel wrong to me - it's like a black swan effect - lots of those winning lines will cause you to lose if they go
-                // wrong because you overspend"): WinBonus only for a sure win, RiskyWinBonus for any other.
-                double bonus = chance >= 1 ? WinBonus : RiskyWinBonus;
+                bool usedMonsterEffect = host.TurnPlayer == 0 &&
+                    host.ActivatedInTurn(0, host.Turn).Any(code => (SearchHost.Type(code) & 0x1) != 0);
+                double chance = WinChance(ourTurnEnd?.Attacked ?? true, theirs, ours, host.FirstDirectHitLethal, usedMonsterEffect);
+                // An actually sure win (user, 2026-11-24: "a sure win (*actually* sure), then it doesn't matter how many cards it uses"): the
+                // win chance alone decides ("the only cards in their hand that could matter" are Gorz, Battle Fader, Kalut, Honest and Herald
+                // of Orange Light, all in WinChance). It scores above every line still alive (1, past the alive ceiling), whatever it spent.
+                if (chance >= 1)
+                {
+                    Part("Sure win (above every line still alive)", center + WinBonus - before);
+                    return 1.0;
+                }
+                // The bonus by the win's chance (user, 2026-11-24: "give the win bonus as 10*percentage chance of win"; 50% gets +5): the
+                // expected value below already weighs it by the chance, so the bonus itself is the full WinBonus. Cards still costed.
+                double bonus = WinBonus;
                 diff = chance * (center + bonus - WinCardCost * Math.Max(0, cardsSpent) - penalty) + (1 - chance) * diff; // the rules it broke cost in both
                 Part("Win (by its chance, in place of the board)", diff - before);
             }

@@ -187,10 +187,13 @@ namespace BotTest.Game.AI.Brains
                 MirrorForceChance = _unknownMirror,
                 TorrentialChance = _unknownTorrential,
                 OtherStopChance = _otherStopChance,
+                QuickPlayStopChance = _quickStopChance,
                 HonestChance = lightOut ? InHand(Honest) : 0,
                 KalutChance = blackwingOut ? InHand(BlackwingKalutTheMoonShadow) : 0,
                 GorzChance = Math.Max(InHand(GorzTheEmissaryOfDarkness), BrainGorzChance(view)),
                 BattleFaderChance = InHand(BattleFader),
+                // Herald needs another Fairy in hand to send with it.
+                OrangeLightChance = view.EnemyHandCount >= 2 ? InHand(HeraldOfOrangeLight) : 0,
                 HeavyStormChance = _heavyChance,
                 IcarusChance = _unknownIcarus,
                 RiskPress = RiskPressNow,
@@ -225,7 +228,7 @@ namespace BotTest.Game.AI.Brains
 
         // Their unknown set cards' odds of being Mirror Force, Torrential, or another stopper (Bottomless, D-Prison, ...), for
         // scoring lines. Set cards known for certain (pinned) are in the lines themselves, so they're left out here.
-        private double _unknownMirror, _unknownTorrential, _otherStopChance;
+        private double _unknownMirror, _unknownTorrential, _otherStopChance, _quickStopChance;
         // The chance they have Heavy Storm for our set cards (the brain's read of their hand and draws), for the exposure.
         private double _heavyChance;
         // Their unknown set cards' chance of Icarus Attack (Blackwing lists only: no list data, no Icarus), for the exposure.
@@ -244,6 +247,9 @@ namespace BotTest.Game.AI.Brains
             if (unknown.Count == 0 || TrapsNegated && !OpponentDeckPredictor.HasListData)
             {
                 _unknownMirror = _unknownTorrential = _otherStopChance = _unknownIcarus = 0;
+                // Traps negated without list data: their sets can still be quick-play stoppers (a sure win must count them).
+                _quickStopChance = unknown.Count == 0 ? 0
+                    : 1 - Math.Pow(1 - SetCardStopsPushChance * QuickPlayShareOfStoppers, unknown.Count);
                 return;
             }
             double Any(Func<int, double> chance) => 1 - unknown.Aggregate(1.0, (none, zone) => none * (1 - Math.Clamp(chance(zone), 0, 1)));
@@ -252,6 +258,8 @@ namespace BotTest.Game.AI.Brains
             double any = Any(zone => OpponentDeck.StopChance(zone) ?? (TrapsNegated ? SetCardStopsPushChance * QuickPlayShareOfStoppers : SetCardStopsPushChance));
             _unknownIcarus = Any(zone => OpponentDeck.SetZoneChance(zone, IcarusAttack) ?? 0);
             _otherStopChance = Math.Max(0, any - _unknownMirror - _unknownTorrential - _unknownIcarus);
+            // Stoppers that still work while traps are negated (the win's risk under a Jinzo still up when it lands).
+            _quickStopChance = Any(zone => OpponentDeck.QuickPlayStopChance(zone) ?? SetCardStopsPushChance * QuickPlayShareOfStoppers);
         }
 
         private Func<SearchBrain>? SearchBrains(DuelBotWrapper bot) =>

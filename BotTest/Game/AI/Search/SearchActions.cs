@@ -415,6 +415,32 @@ namespace BotTest.Game.AI.Search
         }
 
         /// <summary>
+        /// Keys of a replayed game's options that mean a real option in another zone (a card the replay put elsewhere: user, 2026-11-24,
+        /// Brain Control's Card Trooper), each to the real key. Only one-to-one matches by LooseKey among the keys that don't already
+        /// match exactly: two copies of a card in different zones can't be told apart, and stay as they are.
+        /// </summary>
+        /// <summary>The cards of these pick keys, each as a one-card key ("card:K"; "cards:K1+K2" gives both); other keys ("cancel") give none.</summary>
+        public static IEnumerable<string> PickCardKeys(IEnumerable<string> pickKeys) =>
+            pickKeys.SelectMany(k => k.StartsWith("card:") ? new[] { k }
+                : k.StartsWith("cards:") ? k[6..].Split('+').Select(c => "card:" + c) : Array.Empty<string>()).Distinct();
+
+        public static Dictionary<string, string> ToLiveKeys(IReadOnlyCollection<string> simKeys, IReadOnlyCollection<string> liveKeys)
+        {
+            var map = new Dictionary<string, string>();
+            var simLeft = simKeys.Where(k => !liveKeys.Contains(k)).Distinct().ToList();
+            if (simLeft.Count == 0)
+                return map;
+            var liveLeft = liveKeys.Where(k => !simKeys.Contains(k)).Distinct().ToList();
+            foreach (var group in simLeft.GroupBy(LooseKey))
+            {
+                var real = liveLeft.Where(k => LooseKey(k) == group.Key).Take(2).ToList();
+                if (group.Count() == 1 && real.Count == 1)
+                    map[group.First()] = real[0];
+            }
+            return map;
+        }
+
+        /// <summary>
         /// The one key among these that is the same action on the same card as this one, when one side has no effect description (Omega
         /// reports some activations with none: seen 2026-11-17, Swap Frog's return to hand as "&lt;&gt;", so the live move "…:0" matched no option
         /// of the search's engine, which gives it its real description: no verdict, and every mid-chain replay after it missed). Null when

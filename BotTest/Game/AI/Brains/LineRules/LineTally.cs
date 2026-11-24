@@ -40,6 +40,9 @@ namespace BotTest.Game.AI.Brains
         /// "destroyed by battle" effect (Machina Fortress). More sources can join this count later.</summary>
         public Func<int>? BattleRemovalRisk { get; set; }
 
+        /// <summary>No trap can be activated now (a face-up, unnegated Jinzo on either side, or a face-up Royal Decree).</summary>
+        public Func<bool>? TrapsNegated { get; set; }
+
 
         // Our monsters' effects on offer before the Battle Phase (by card), and whether their board could remove a monster in it then.
         private readonly HashSet<int> _effectsBeforeBattle = new();
@@ -207,6 +210,10 @@ namespace BotTest.Game.AI.Brains
                     // right (user, 2026-11-15), so it wins the ties. Not Lyla (her effect waits for the Battle Phase), not a union
                     // equip (chained to Fortress's summon, a Bottomless takes both).
                     int code = cards[index].ID;
+                    // Lyla's effect offered in a chain window (after her summon) counts like her idle activation.
+                    if (!_battle && Is(code, Lyla) && cards[index].CurrentCoordinates is
+                        { Controller: 0, Location: (byte)OmegaBotWrapper.Enum.CardLocation.MonsterZone })
+                        _lyla = true;
                     double lockCost = cards[index].CurrentCoordinates.Controller == 0 ? AttackLock(code, note) : 0;
                     if (cards[index].CurrentCoordinates.Location == (byte)OmegaBotWrapper.Enum.CardLocation.MonsterZone &&
                         cards[index].CurrentCoordinates.Controller == 0 && !Is(code, Lyla) && !Is(code, Unions))
@@ -309,8 +316,11 @@ namespace BotTest.Game.AI.Brains
                     // circumstance; user, 2026-11-18: "why do we have two holds of set for battle phase? we should only have one".)
                     if (_lyla)
                     {
-                        cost += Charge("Lyla's effect before the Battle Phase", LineRules.LylaBeforeBattleCost);
-                        note?.Invoke($"  (Lyla's effect in Main Phase 1, then the Battle Phase: -{LineRules.LylaBeforeBattleCost:0.#})");
+                        // Traps negated (Jinzo, Royal Decree): no trap for her to clear the way past (user, 2026-11-24).
+                        bool trapsOff = TrapsNegated?.Invoke() == true;
+                        double lylaCost = trapsOff ? LineRules.LylaBeforeBattleTrapsNegatedCost : LineRules.LylaBeforeBattleCost;
+                        cost += Charge(trapsOff ? "Lyla's effect before the Battle Phase, traps negated" : "Lyla's effect before the Battle Phase", lylaCost);
+                        note?.Invoke($"  (Lyla's effect in Main Phase 1, then the Battle Phase{(trapsOff ? ", with traps negated" : "")}: -{lylaCost:0.#})");
                     }
                     if (_equips > 0)
                     {

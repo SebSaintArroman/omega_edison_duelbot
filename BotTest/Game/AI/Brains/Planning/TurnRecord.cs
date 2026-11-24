@@ -148,6 +148,15 @@ namespace BotTest.Game.AI.Brains
                 DropPlan(bot, why);
         }
 
+        /// <summary>Our Lyla's effect sent in a chain window of our turn before the Battle Phase: the record's Lyla flag.</summary>
+        private void RecordChainLyla(int card)
+        {
+            if (IsSearchTwin || !IsOwnTurn(_currentHeader) || _currentHeader.CurrentTurn != _recordTurn || _recBattle ||
+                !LineTally.Is(card, LineTally.Lyla))
+                return;
+            _recLyla = true;
+        }
+
         /// <summary>Our real main-phase move (after it's chosen): what it adds to the record.</summary>
         private async Task RecordMainMoveAsync(DecisionContext<IdleCmdData> context, IdleCmdResponse chosen, int movedCard)
         {

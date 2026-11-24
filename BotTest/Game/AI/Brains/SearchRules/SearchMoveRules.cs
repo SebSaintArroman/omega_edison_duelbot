@@ -613,6 +613,12 @@ namespace BotTest.Game.AI.Brains
                 list = list.Where(option => IndexOf(option) < 0 ||
                     (CardRuleRegistry.TagsFor(cards[IndexOf(option)].ID, activationContext with { IsDoomed = IsDoomed(cards[IndexOf(option)]) })
                         & TagRules.Tag.DoNotActivate) == 0).ToList();
+            // DeclineEffectOnSummon: not in the card's own summon window (Lyla offered right after her summon), as in EffectAnswer.
+            if (prompt.Player == 0 && !chain.Forced && host != null)
+                list = list.Where(option => IndexOf(option) < 0 ||
+                    cards[IndexOf(option)].CurrentCoordinates.Location != (byte)CardLocation.MonsterZone ||
+                    !host.IsSummonWindow(0, cards[IndexOf(option)].ID) ||
+                    (CardRuleRegistry.TagsFor(cards[IndexOf(option)].ID, activationContext) & TagRules.Tag.DeclineEffectOnSummon) == 0).ToList();
             if (prompt.Player != 0)
                 return list;
             if (!chain.Forced)

@@ -1134,6 +1134,30 @@ namespace BotTest.Game.AI.Brains
         [Tunable("The most lines the brain's move needs to match the move replacing it while its score isn't backed by its lines average.", Section = "Search")]
         public static readonly Tuned<int> ReplacedMatchLines = new(1000);
 
+        /// <summary>The real pick options with a card no line of a replaying search found selectable at its root (MctsNode.Offered). None
+        /// when the root isn't a card pick (nothing recorded).</summary>
+        private static IReadOnlyList<string> NeverOffered(MctsNode root, IEnumerable<string> options)
+        {
+            lock (root.Lock)
+                return root.Offered is not { } offered ? Array.Empty<string>()
+                    : options.Where(k => SearchActions.PickCardKeys(new[] { k }).Any(c => !offered.Contains(c))).ToList();
+        }
+
+        /// <summary>
+        /// A pick whose real options weren't all searched (SearchOutcome.NeverOffered): the scores of the others can't decide it (user,
+        /// 2026-11-24: Card Trooper never searched as a tribute, so Machina Fortress won by default). Logged loudly and flagged for review.
+        /// True when the search must not decide.
+        /// </summary>
+        private bool PickNotFullySearched(DuelBotWrapper bot, SearchOutcome outcome, IReadOnlyList<SearchActions.Pick> picks, string fallback)
+        {
+            if (outcome.NeverOffered.Count == 0)
+                return false;
+            string names = string.Join(", ", outcome.NeverOffered.Select(k => picks.FirstOrDefault(p => p.Key == k)?.Label ?? k));
+            FlagReplayIssue(bot, $"search: !!! UNSEARCHED OPTION(S) at a pick: {names} never came up in the replayed lines " +
+                                 $"(searched: {string.Join(", ", outcome.Root.Select(s => $"{s.Label} n={s.Visits}"))}); not decided by score, {fallback}");
+            return true;
+        }
+
         private RootStat? BestByScore(SearchOutcome outcome, string brainKey, IReadOnlySet<string> legal) =>
             outcome.Root.Where(s => legal.Contains(s.Key) && (HasItsLines(s) || s.Key == brainKey))
                 .OrderByDescending(s => s.Mean).FirstOrDefault();

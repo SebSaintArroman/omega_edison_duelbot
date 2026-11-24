@@ -57,6 +57,10 @@ internal sealed partial class DuelHost : IDisposable
     internal int AttackDeclarations { get; private set; }
     internal int ChainLinksStarted { get; private set; }
     internal bool IsDirectAttack => _attack is { Target: null };
+
+    /// <summary>This turn's first battle damage from a direct attack: whether it took the defender to 0 (null: no direct hit yet). Gorz
+    /// only comes out after a direct hit they survive.</summary>
+    internal bool? FirstDirectHitLethal { get; private set; }
     private readonly List<(int Player, int Code, int Location)> _pendingChainEffects = new();
     internal IReadOnlyList<(int Player, int Code, int Location)> PendingChainEffects => _pendingChainEffects;
     private int _resolvingChainIndex = -1;
@@ -486,6 +490,7 @@ internal sealed partial class DuelHost : IDisposable
                 Turn++;
                 _attackedThisTurn.Clear();
                 _summonedThisTurn.Clear();
+                FirstDirectHitLethal = null;
                 PreviousTurnSummonedAndAttackedWithThreat = _summonedAndAttackedWithThreat;
                 _summonedAndAttackedWithThreat = false;
                 _decisionsThisTurn = 0;
@@ -651,6 +656,9 @@ internal sealed partial class DuelHost : IDisposable
                 if (player < 2)
                 {
                     _lp[player] = Math.Max(0, _lp[player] - (int)amount);
+                    if (id == Msg.Damage && InDamageStep && FirstDirectHitLethal == null &&
+                        _attack is { Target: null } direct && direct.Attacker.Controller != player)
+                        FirstDirectHitLethal = _lp[player] == 0;
                     Event?.Invoke($"  player {player} {(id == Msg.Damage ? "takes" : "pays")} {amount} (LP {_lp[player]})");
                 }
                 return null;

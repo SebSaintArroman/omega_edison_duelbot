@@ -312,7 +312,12 @@ namespace BotTest.Game.AI.Brains
             // Every activation we send counts as activated this turn, whoever chose it (the search's too: Brain Control's borrow check).
             if (!IsSearchTwin && ReplayKeys.Of(state, data, response) is { } sent &&
                 (sent.Key.StartsWith($"{(int)MainAction.Activate}:") || sent.Key.StartsWith("chain:")) && SearchActions.KeyCardId(sent.Key) is > 0 and var activated)
+            {
                 MarkCardActivated(activated);
+                // Lyla's effect from a chain window (after her summon), before the Battle Phase: recorded like her idle activation.
+                if (sent.Key.StartsWith("chain:"))
+                    RecordChainLyla(activated);
+            }
             if (IsSearchTwin || _checkpoints.Count == 0 || _checkpoints[^1].Answer != null || _checkpoints[^1].State != state)
                 return;
             var checkpoint = _checkpoints[^1];
@@ -451,6 +456,8 @@ namespace BotTest.Game.AI.Brains
                 return null;
             var outcome = await TurnStartSearchAsync(bot, state, options, options[0], ct);
             var best = outcome == null ? null : BestByScore(outcome, options[0], options.ToHashSet());
+            if (outcome != null && PickNotFullySearched(bot, outcome, picks, "the brain picks"))
+                return null;
             if (best == null || best.Key == "cancel")
                 return null;
             var pick = picks.First(p => p.Key == best.Key);
@@ -513,6 +520,7 @@ namespace BotTest.Game.AI.Brains
                     var search = new Mcts(replay.Start, tree, root, rootState, brainKey, Array.Empty<int>(), settings, evaluator, SearchBrains(bot), holds)
                     {
                         MayChoose = PlanMayChoose, Suggestions = PlanSuggestions, FromTurnStart = replay, RootKey = rootKey,
+                        LiveRootKeys = options,
                     };
                     int seed = Interlocked.Increment(ref _searchSeed);
                     var more = await Task.Run(() => search.Run(seed, ct), ct);
@@ -529,7 +537,7 @@ namespace BotTest.Game.AI.Brains
                 FlagReplayIssue(bot, $"search: REPLAY MISS: {misses} line(s) didn't reach this {rootState} from the turn's start (first: {firstMiss})" +
                             (outcome is not { Root.Count: > 0 } ? "; no line reached it, the brain answers" : ""));
             _lastTurnStartSearch = outcome is { Root.Count: > 0 } ? (start.Turn, dealt, root) : null;
-            return outcome is { Root.Count: > 0 } ? outcome : null;
+            return outcome is { Root.Count: > 0 } ? outcome with { NeverOffered = NeverOffered(root, options) } : null;
         }
 
         // The last search from the turn's start: its turn, what the replay dealt, and its root node.

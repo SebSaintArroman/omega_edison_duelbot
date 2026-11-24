@@ -95,7 +95,7 @@ namespace BotTest.Game.AI.Brains
             new(new[] { BlackwingBlizzardTheFarNorth }, TagRules.Tag.ActivateOnSummon),
 
             // Lyla's optional effect is declined only in her summon window.
-            new(new[] { CardId.LylaLightswornSorceress }, TagRules.Tag.DeclineEffectOnSummon),
+            new(new[] { CardId.LylaLightswornSorceress, CardId.LylaLightswornSorceressPreErrata }, TagRules.Tag.DeclineEffectOnSummon),
     
             // Skill Successor
             new(new[] { CardId.SkillSuccessor }, TagRules.Tag.StatChangeEffect | TagRules.Tag.DoNotActivate,

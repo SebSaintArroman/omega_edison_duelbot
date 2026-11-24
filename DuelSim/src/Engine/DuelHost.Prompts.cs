@@ -544,8 +544,9 @@ internal sealed partial class DuelHost
             (1, Ocg.LocSZone, (int)((free >> 24) & 0xff)),
         };
         var group = groups.FirstOrDefault(g => g.Mask != 0);
-        // Main monster zones the way Omega fills them: it ignores the zone the bot asks for and takes the first free one
-        // centre-out (M3, M2, M4, M1, M5). Other zones use their own order.
+        // The fill order when no zone is given (the fallback): main monster zones centre-out (M3, M2, M4, M1, M5) as Omega fills
+        // them by default, other zones in their own order. A zone the bot asks for is honoured, as Omega does since the wrapper sends
+        // a zone bitmask (2026-11-24).
         static IEnumerable<int> ZoneOrder(uint location) => location == Ocg.LocMZone ? new[] { 2, 1, 3, 0, 4, 5, 6, 7 } : Enumerable.Range(0, 8);
         var allZones = groups.SelectMany(g => ZoneOrder(g.Location).Where(s => (g.Mask & (1 << s)) != 0)
             .Select(s => (Player: Absolute(player, g.Relative), Location: (byte)g.Location, Sequence: (byte)s))).ToList();
@@ -583,8 +584,9 @@ internal sealed partial class DuelHost
             {
                 int value = Responses.ReadInt(packet);
                 int relative = value & 0xff, location = (value >> 8) & 0xff, sequence = (value >> 16) & 0xff;
-                // A main monster zone: Omega ignores the choice (see ZoneOrder), so the engine gets Omega's zone instead.
-                if (location == Ocg.LocMZone && sequence < 5 && count == 1)
+                // The zone asked for, as live Omega places it (user, 2026-11-24: the replay put Brain Control's Card Trooper in M3, the
+                // real game in M4, so the search never tried it as a tribute). One that isn't free falls back to the fill order.
+                if (!allZones.Contains((Absolute(player, relative), (byte)location, (byte)sequence)))
                     return Encode(Array.Empty<(int, byte, byte)>());
                 return Encode(new[] { (Absolute(player, relative), (byte)location, (byte)sequence) });
             },

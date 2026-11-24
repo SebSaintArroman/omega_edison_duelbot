@@ -509,7 +509,6 @@ EffectEvaluator.SelfSummonValue = 0.25   # A monster effect that only Special Su
 # --- MctsEvaluator
 BoardEvaluator.WinBonus = 10   # A line that wins: this many card units on top of its position, times the chance the win really works (WinChance). Large.
 BoardEvaluator.WinCardCost = 1   # A won line: each card of ours it used up costs this much (card units) in the win's part of its score; the board it leaves doesn't count there. User, 2026-11-18.
-BoardEvaluator.RiskyWinBonus = 5   # A won line's bonus when the win carries any risk (WinBonus is only for a sure win). User, 2026-11-18: risk is risky, an overspent win that fails loses.
 LineRules.DustshootBonus = 1   # A line that activates our Trap Dustshoot gains this (card units): it removes a card from their hand almost always, but the lines' unseen hand cards are blanks. User, 2026-11-18.
 # --- SearchCardValues
 CardValues.GraveFloor = 0   # A card that works from the graveyard is worth at least this there (card points), whatever its graveyard effects score.

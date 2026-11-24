@@ -535,6 +535,10 @@ namespace BotTest.Game.AI.Brains
                 _deckSearched = view.OwnDeck.Count;
                 _deckPickedSinceSearch = 0;
                 var best = outcome == null ? null : BestByScore(outcome, original ?? options[0], options.ToHashSet());
+                // An option the replayed lines never met: no verdict here; the plan's pick, or else the search from the turn's start.
+                if (outcome != null && PickNotFullySearched(bot, outcome, picks,
+                        original != null ? "the plan's pick kept" : "searching from the turn's start"))
+                    best = null;
                 // A re-search that beats the plan's pick only inside the scores' uncertainty keeps the plan's pick, and is flagged for review
                 // (user, 2026-11-19: Plaguespreader's cost re-searched, Sirocco over the plan's Jar of Greed by 0.10 +/-0.6, and the plan's
                 // Grepher discard of Sirocco was lost; "keeping a plan's choice *if* the re-search is within uncertainty ... flagging these as close calls").
@@ -672,6 +676,7 @@ namespace BotTest.Game.AI.Brains
                     var search = new Mcts(view, tree, start, rootState, brainKey, used, settings, evaluator, SearchBrains(bot), holds)
                     {
                         MayChoose = PlanMayChoose, Suggestions = PlanSuggestions, Replay = script, UsedEffects = _usedEffects.ToArray(),
+                        LiveRootKeys = options,
                     };
                     int seed = Interlocked.Increment(ref _searchSeed);
                     var more = await Task.Run(() => search.Run(seed, ct), ct);
@@ -689,7 +694,7 @@ namespace BotTest.Game.AI.Brains
             if (misses > 0)
                 FlagReplayIssue(bot, $"search: REPLAY MISS: {misses} line(s) didn't reach this chain window from the last searched decision " +
                             $"(first: {firstMiss}){(outcome?.Root.Count == 0 ? "; no line reached it, the brain answers" : "")}");
-            return outcome is { Root.Count: > 0 } ? outcome : null;
+            return outcome is { Root.Count: > 0 } ? outcome with { NeverOffered = NeverOffered(start, options) } : null;
         }
 
         // Our zones as our turn began (zone -> code, position): a card that's different now arrived or changed this turn.

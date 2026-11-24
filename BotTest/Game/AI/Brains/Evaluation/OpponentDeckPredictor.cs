@@ -621,6 +621,10 @@ namespace BotTest.Game.AI.Brains
         public double? StopChance(int zone) =>
             HasListData ? StopperIds.Sum(id => SetZoneChance(zone, id) ?? 0) : null;
 
+        /// <summary>The same, stoppers that aren't traps only (Book of Moon...): what still works under Jinzo / Royal Decree.</summary>
+        public double? QuickPlayStopChance(int zone) =>
+            HasListData ? StopperIds.Where(id => (BotTest.Game.AI.Search.SearchHost.Type(id) & 0x4) == 0).Sum(id => SetZoneChance(zone, id) ?? 0) : null;
+
         /// <summary>The likeliest identities of their set card in this spell/trap zone (for the log).</summary>
         public string DescribeSetZone(int zone, int top = 3) => Describe(monster: false, zone, top);
 
