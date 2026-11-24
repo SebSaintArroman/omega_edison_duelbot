@@ -3,7 +3,6 @@ using OmegaBotWrapper.Struct;
 using OmegaBotWrapper;
 using BotTest.Utils;
 using OmegaBotWrapper.States;
-using BotTest.Game.AI.Enums;
 
 namespace BotTest.Game.Field
 {
@@ -383,20 +382,6 @@ namespace BotTest.Game.Field
         {
             var trapCards = await GetCardsInLocation(CardLocation.SpellZone);
             return trapCards.Any(card => card.IsCode(trap) && card.IsFaceup()); ;
-        }
-
-        public async Task<bool> PlayerDestroyAllSpellAndTraps()
-        {
-            IEnumerable<DynamicCard> spellsTrapsCards = await GetPlayerSpellsCardsInSpellZone();
-            var cardsActivated = spellsTrapsCards.Where(card => card.IsFaceup());
-            return cardsActivated.Any(card => Enum.IsDefined(typeof(DestroyAllSpellsTraps), card.ID));
-        }
-
-        public async Task<bool> PlayerDestroyAllCards()
-        {
-            IEnumerable<DynamicCard> spellsTrapsCards = await GetPlayerSpellsCardsInSpellZone();
-            var cardsActivated = spellsTrapsCards.Where(card => card.IsFaceup());
-            return cardsActivated.Any(card => Enum.IsDefined(typeof(DestroyAllCards), card.ID));
         }
     }
 

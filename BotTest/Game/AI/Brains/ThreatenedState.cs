@@ -1,5 +1,6 @@
 using BotTest.Game.AI.Search;
 using OmegaBotWrapper.Enum;
+using static BotTest.Game.AI.CardId;
 
 namespace BotTest.Game.AI.Brains
 {
@@ -7,14 +8,13 @@ namespace BotTest.Game.AI.Brains
 
     internal sealed class ThreatenedState
     {
-        internal readonly record struct Assessment(IReadOnlyList<StrategicCard> Threats, int Answers)
+        internal readonly record struct Assessment(IReadOnlyList<StrategicCard> Threats, int Answers, bool IsPressuring = false)
         {
             public TagRules.BotStrategicState State =>
-                Threats.Count > Answers ? TagRules.BotStrategicState.Threatened : TagRules.BotStrategicState.Base;
+                Threats.Count > Answers ? TagRules.BotStrategicState.Threatened :
+                IsPressuring ? TagRules.BotStrategicState.Pressuring : TagRules.BotStrategicState.Base;
         }
 
-        private const int Bottomless = 29401950;
-        private const int Stardust = 44508094;
         private readonly Dictionary<(int Zone, int Code), HashSet<(int Zone, int Code)>> _presentWhenSet = new();
 
         public void Clear() => _presentWhenSet.Clear();
@@ -33,7 +33,7 @@ namespace BotTest.Game.AI.Brains
         {
             var fieldMonsters = enemyMonsters.Where(card => card.FaceUp && card.Code > 0).ToList();
             var occupied = fieldMonsters.Select(card => (card.Zone, card.Code)).ToHashSet();
-            var bottomless = ownSpells.Where(card => !card.FaceUp && SearchHost.Is(card.Code, Bottomless))
+            var bottomless = ownSpells.Where(card => !card.FaceUp && SearchHost.Is(card.Code, BottomlessTrapHole))
                 .Select(card => (card.Zone, card.Code)).ToHashSet();
             foreach (var key in _presentWhenSet.Keys.Where(key => !bottomless.Contains(key)).ToList())
                 _presentWhenSet.Remove(key);
@@ -44,7 +44,9 @@ namespace BotTest.Game.AI.Brains
                     _presentWhenSet.Add(key, new(occupied));
 
             if (fieldMonsters.Count == 0)
-                return new(Array.Empty<StrategicCard>(), 0);
+                return new(Array.Empty<StrategicCard>(), 0,
+                    PressuringState.Applies(ownLp, enemyLp, enemyMonsters.Count,
+                        ownMonsters.Where(card => card.FaceUp && card.AttackPosition).Select(card => card.Attack)));
 
             int deckAttack = SearchHost.Available ? deck.Select(SearchHost.Cards.Get)
                 .Where(card => card is { Level: > 0 and <= 4 } && (card.Type & (int)CardType.Monster) != 0)
@@ -52,7 +54,7 @@ namespace BotTest.Game.AI.Brains
             int boardAttack = ownMonsters.Select(card => !card.FaceUp && SearchHost.Available
                 ? SearchHost.Cards.Get(card.Code)?.Attack ?? card.Attack : card.Attack).DefaultIfEmpty(0).Max();
             var context = new CardRuleRegistry.Context(deck, hand, enemyHand, ownLp, enemyLp, false,
-                OpponentHasStardustDragon: fieldMonsters.Any(card => SearchHost.Is(card.Code, Stardust)),
+                OpponentHasStardustDragon: fieldMonsters.Any(card => SearchHost.Is(card.Code, StardustDragon)),
                 OwnMonsterIds: ownMonsters.Select(card => card.Code).ToArray());
             var threats = fieldMonsters.Where(card =>
                 (CardRuleRegistry.TagsFor(card.Code, context) & TagRules.Tag.Threat) != 0 ||

@@ -21,6 +21,7 @@ namespace OmegaBotWrapper.Logging
         /// <summary>Joins a part and its sub-row in a part's name ("Our cards (hand, field, graveyard) :: Hand"): sub-rows split a part
         /// (how the two sides' cards are worked out) and aren't counted again in the totals.</summary>
         public const string SubPart = " :: ";
+        public const string CardChanges = SubPart + "Cards changed" + SubPart;
 
         public string Move { get; private init; } = "";
         public double Score { get; private init; }
@@ -39,7 +40,7 @@ namespace OmegaBotWrapper.Logging
 
         /// <summary>A part's sub-rows (its name before SubPart), largest first, by their own names.</summary>
         public IEnumerable<(string Name, double Value)> SubRows(string part) =>
-            Parts.Where(p => p.Name.StartsWith(part + SubPart, StringComparison.Ordinal))
+            Parts.Where(p => p.Name.StartsWith(part + SubPart, StringComparison.Ordinal) && !p.Name.Contains(CardChanges))
                 .Select(p => (p.Name.Substring(part.Length + SubPart.Length), p.Value)).OrderByDescending(p => Math.Abs(p.Value));
 
         private static double Num(string s) => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
@@ -101,13 +102,25 @@ namespace OmegaBotWrapper.Logging
                 foreach (var (name, value) in list)
                 {
                     sb.AppendLine($"{indent}  {name.PadRight(width)}{Signed(value),8}");
-                    // How the part is made up (the two sides' cards: life points, monsters, sets, hand, graveyard...).
                     foreach (var (sub, subValue) in SubRows(name).Where(r => Math.Abs(r.Value) >= 0.005))
                         sb.AppendLine($"{indent}      - {sub.PadRight(Math.Max(0, width - 6))}{Signed(subValue),8}");
+                    string cardPrefix = name + CardChanges;
+                    var changes = Parts.Where(p => p.Name.StartsWith(cardPrefix, StringComparison.Ordinal))
+                        .OrderBy(p => p.Name, StringComparer.Ordinal).ToList();
+                    if (changes.Count > 0)
+                        sb.AppendLine($"{indent}      Cards changed (average copies per scored line)");
+                    foreach (var (card, copies) in changes)
+                    {
+                        string count = copies < 0.001 ? "<0.001" : copies.ToString("0.###", CultureInfo.InvariantCulture);
+                        sb.AppendLine($"{indent}        - {card.Substring(cardPrefix.Length)} ({count})");
+                    }
                 }
             }
             Section("Positive contributions", Positive);
             Section("Negative contributions", Negative);
+            var neutral = TopLevel.Where(p => p.Value == 0).ToList();
+            if (neutral.Count > 0)
+                Section("No net contribution", neutral);
             sb.AppendLine($"{indent}{"Net contribution".PadRight(width + 2)}{Signed(Net),8}");
             if (LossRate > 0 || Lethal > 0)
                 sb.AppendLine($"{indent}(not in the table: {LossRate:P0} of its lines lost outright, scored 0" +

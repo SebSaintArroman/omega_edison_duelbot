@@ -5,6 +5,7 @@ using OmegaBotWrapper.Heuristics;
 using OmegaBotWrapper.Logging;
 using OmegaBotWrapper.States;
 using OmegaBotWrapper.Struct;
+using static BotTest.Game.AI.CardId;
 
 namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
 {
@@ -26,37 +27,37 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         // ------------------------------------------------------------------ tunable numbers (bot-tuning-GladiatorBeasts.txt, user 2026-11-16)
 
         [Tunable("A Gladiator board's worth for the tag-out weighing: per monster, this + GladBodyPerThousand x ATK/1000.")]
-        public static double GladBodyBase = 0.6;
+        public static readonly Tuned<double> GladBodyBase = new(0.6);
         [Tunable("A Gladiator board's worth: card units per 1000 ATK of each monster.")]
-        public static double GladBodyPerThousand = 0.8;
+        public static readonly Tuned<double> GladBodyPerThousand = new(0.8);
         [Tunable("A face-down monster of theirs with at least this Ryko chance counts as a flip effect coming (War Chariot worth more).")]
-        public static double FlipThreatChance = 0.25;
+        public static readonly Tuned<double> FlipThreatChance = new(0.25);
         [Tunable("Tag-out value: Murmillo's kill counts this share when Raigeki Break in hand could do it too.")]
-        public static double TagMurmilloOtherAnswerShare = 0.5;
+        public static readonly Tuned<double> TagMurmilloOtherAnswerShare = new(0.5);
         [Tunable("Tag-out value: Bestiari destroying a spell/trap of theirs (card units).")]
-        public static double TagBestiariValue = 1;
+        public static readonly Tuned<double> TagBestiariValue = new(1);
         [Tunable("Tag-out value: Bestiari's extra when they have 2+ spells/traps to choose from.")]
-        public static double TagBestiariChoiceBonus = 0.3;
+        public static readonly Tuned<double> TagBestiariChoiceBonus = new(0.3);
         [Tunable("Tag-out value: Equeste returning War Chariot.")]
-        public static double TagEquesteChariotValue = 1;
+        public static readonly Tuned<double> TagEquesteChariotValue = new(1);
         [Tunable("Tag-out value: Equeste's extra for War Chariot when a monster effect of theirs is likely next turn.")]
-        public static double TagEquesteChariotNeededBonus = 0.5;
+        public static readonly Tuned<double> TagEquesteChariotNeededBonus = new(0.5);
         [Tunable("Tag-out value: Equeste returning a Gladiator Beast.")]
-        public static double TagEquesteGladValue = 1;
+        public static readonly Tuned<double> TagEquesteGladValue = new(1);
         [Tunable("Tag-out value: Equeste returning a Gladiator Beast with one already in hand.")]
-        public static double TagEquesteGladWithOneInHand = 0.8;
+        public static readonly Tuned<double> TagEquesteGladWithOneInHand = new(0.8);
         [Tunable("Tag-out value: Retiari banishing an important card from their graveyard.")]
-        public static double TagRetiariStrongValue = 1.2;
+        public static readonly Tuned<double> TagRetiariStrongValue = new(1.2);
         [Tunable("Tag-out value: Retiari banishing a minor card from their graveyard.")]
-        public static double TagRetiariMinorValue = 0.3;
+        public static readonly Tuned<double> TagRetiariMinorValue = new(0.3);
         [Tunable("Tag-out value: Darius reviving a Gladiator Beast for Gyzarus / Heraklinos.")]
-        public static double TagDariusUsefulValue = 1.2;
+        public static readonly Tuned<double> TagDariusUsefulValue = new(1.2);
         [Tunable("Tag-out value: Darius when its revive sets nothing up.")]
-        public static double TagDariusIdleValue = 0.1;
+        public static readonly Tuned<double> TagDariusIdleValue = new(0.1);
         [Tunable("Tag-out value: the share of the tagged-in monster's body (ATK table) that counts.")]
-        public static double TagBodyShare = 0.2;
+        public static readonly Tuned<double> TagBodyShare = new(0.2);
         [Tunable("Tag-out value: extra when the tagged-in monster is bigger than their best attacker.")]
-        public static double TagBodySafeBonus = 0.3;
+        public static readonly Tuned<double> TagBodySafeBonus = new(0.3);
 
         /// <summary>
         /// Indomitable Gladiator Beast may go off in a Main Phase while it can come back for another use: its GY effect returns it
@@ -66,10 +67,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         /// </summary>
         protected override async Task<bool> StatBoostMayGoEarlyAsync(DynamicCard card, DuelPhase phase)
         {
-            if (!card.IsCode(GladCardId.IndomitableGladiatorBeast) || phase is not (DuelPhase.Main1 or DuelPhase.Main2))
+            if (!card.IsCode(CardId.IndomitableGladiatorBeast) || phase is not (DuelPhase.Main1 or DuelPhase.Main2))
                 return false;
             var grave = (await CurrentField.GetBotField()).OwnSide.Grave ?? Array.Empty<int>();
-            return grave.Any(id => GladCardId.GladCards.Contains(id) || GladCardId.GladCards.Contains(Search.SearchHost.CanonicalId(id)));
+            return grave.Any(id => CardId.GladCards.Contains(id) || CardId.GladCards.Contains(Search.SearchHost.CanonicalId(id)));
         }
 
         public GladiatorBeastsBotBrain(
@@ -86,7 +87,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
 
         private static void Note<T>(DecisionContext<T> context, string message) => context.Bot.LogNote($"glads: {message}");
 
-        private static bool IsGlad(DynamicCard card) => card.ID > 0 && card.IsCode(GladCardId.GladMonsters);
+        private static bool IsGlad(DynamicCard card) => card.ID > 0 && card.IsCode(CardId.GladMonsters);
 
         // Shield Warrior works from the graveyard (banish it: our monsters survive a battle): set, it bluffs a Ryko and gets
         // there by being destroyed (user, 2026-11-11). Ryko too (the shared default).
@@ -100,7 +101,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         // even when it would lose, if Shield Warrior / Waboku keep it alive (user, 2026-11-11). Not a negated one (Darius'
         // revive): its tag-out is negated too. Heraklinos has no tag-out.
         protected override string? BattleGain(DynamicCard attacker) =>
-            SummonLock(attacker) == null && attacker.Negator.Location == 0 && (attacker.IsCode(GladCardId.Glads) || attacker.IsCode(GladCardId.Gyzarus))
+            SummonLock(attacker) == null && attacker.Negator.Location == 0 && (attacker.IsCode(CardId.Glads) || attacker.IsCode(CardId.GladiatorBeastGyzarus))
                 ? "it tags out after battling (a tag-in with its effect)" : null;
 
         internal override bool RewardGladiatorBattles => true;
@@ -109,13 +110,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         // negates it (for 800 LP), so it counts too.
         private static readonly int[] SummonLockMonsters =
         {
-            59509952, // Archlord Kristya
-            47084486, // Vanity's Fiend
-            72634965, // Vanity's Ruler
-            42009836, // Fossil Dyna Pachycephalo
-            10963799, 19740112, 46145256, 47961808, 73356503, 84478195, // the Barrier Statues
+            ArchlordKristya, // Archlord Kristya
+            VanitysFiend, // Vanity's Fiend
+            VanitysRuler, // Vanity's Ruler
+            FossilDynaPachycephalo, // Fossil Dyna Pachycephalo
+            BarrierStatueOfTheTorrent, BarrierStatueOfTheDrought, BarrierStatueOfTheHeavens, BarrierStatueOfTheInferno, BarrierStatueOfTheStormwinds, BarrierStatueOfTheAbyss, // the Barrier Statues
         };
-        private const int RoyalOppression = 93016201;
 
         // Royal Oppression face-up on their side (see OnFieldRefreshed).
         private bool _oppression;
@@ -140,7 +140,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 .OrderByDescending(Power).FirstOrDefault();
             if (target.ID <= 0)
                 return null;
-            bool TagsOut(DynamicCard m) => m.ID > 0 && m.IsFaceup() && m.Negator.Location == 0 && (m.IsCode(GladCardId.Glads) || m.IsCode(GladCardId.Gyzarus));
+            bool TagsOut(DynamicCard m) => m.ID > 0 && m.IsFaceup() && m.Negator.Location == 0 && (m.IsCode(CardId.Glads) || m.IsCode(CardId.GladiatorBeastGyzarus));
             var ours = await GetBotMonsterCardsAsync();
             if (!TagsOut(attacker) && !ours.Any(m => TagsOut(m) && (m.Attacked || m.IsAttack())))
                 return null;
@@ -152,7 +152,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         /// monster"): its value is the tag-out after battle, which Ryko's flip takes away. A negated one (Darius' revive) still is.
         /// </summary>
         protected override bool IsExpendable(DynamicCard card) =>
-            card.IsCode(GladCardId.ShieldWarrior) || // CSV M6: Shield Warrior is expendable (it works from the graveyard)
+            card.IsCode(CardId.ShieldWarrior) || // CSV M6: Shield Warrior is expendable (it works from the graveyard)
             !(IsGlad(card) && card.Negator.Location == 0) && base.IsExpendable(card);
 
         private static readonly System.Text.RegularExpressions.Regex GainsAtkText = new(@"gains (\d+) ATK",
@@ -217,10 +217,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             var hand = await GetBotHandCardsAsync();
             // Raigeki Break's discards are kept in hand: Shield Warrior, Indomitable Gladiator Beast and Skill Successor (all work from the
             // GY), in that order, but no more of them than we have Raigeki Breaks (in hand or set): one discard each (user, 2026-11-17).
-            int raigekis = hand.Count(c => c.IsCode(GladCardId.RaigekiBreak)) +
-                           (await CurrentField.GetCardsInSpellZone()).Count(c => c.IsCode(GladCardId.RaigekiBreak));
-            var discards = hand.Where(c => c.IsCode(GladCardId.ShieldWarrior, GladCardId.IndomitableGladiatorBeast, GladCardId.SkillSuccessor))
-                .OrderBy(c => c.IsCode(GladCardId.ShieldWarrior) ? 0 : c.IsCode(GladCardId.IndomitableGladiatorBeast) ? 1 : 2)
+            int raigekis = hand.Count(c => c.IsCode(CardId.RaigekiBreak)) +
+                           (await CurrentField.GetCardsInSpellZone()).Count(c => c.IsCode(CardId.RaigekiBreak));
+            var discards = hand.Where(c => c.IsCode(CardId.ShieldWarrior, CardId.IndomitableGladiatorBeast, CardId.SkillSuccessor))
+                .OrderBy(c => c.IsCode(CardId.ShieldWarrior) ? 0 : c.IsCode(CardId.IndomitableGladiatorBeast) ? 1 : 2)
                 .Take(raigekis).Select(c => c.ID).ToList();
             foreach (int keep in discards.Distinct())
                 foreach (var (cards, action) in new[] { (data.SummonableCards, MainAction.Summon), (data.MonsterSetableCards, MainAction.SetMonster), (data.SpellSetableCards, MainAction.SetSpell) })
@@ -266,29 +266,29 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
 
         internal override double SearchSetupValue(DuelSim.Engine.SideSummary own)
         {
-            if (!own.Monsters.Any(m => m.FaceUp && Search.SearchHost.Is(m.Code, GladCardId.Darius)))
+            if (!own.Monsters.Any(m => m.FaceUp && Search.SearchHost.Is(m.Code, CardId.GladiatorBeastDarius)))
                 return 0;
             return -own.Monsters
-                .Where(m => m.FaceUp && m.Negated && GladCardId.Glads.Any(id => Search.SearchHost.Is(m.Code, id)))
-                .Sum(m => GladBodyBase + GladBodyPerThousand * (m.AttackPosition ? m.Attack : m.Defense * Search.MctsEvaluator.DefenceShare) / 1000);
+                .Where(m => m.FaceUp && m.Negated && CardId.Glads.Any(id => Search.SearchHost.Is(m.Code, id)))
+                .Sum(m => GladBodyBase + GladBodyPerThousand * (m.AttackPosition ? m.Attack : m.Defense * BoardEvaluator.DefenceShare) / 1000);
         }
 
         // (No deck graveyard values: Shield Warrior, Skill Successor and Indomitable have their own graveyard readings; user, 2026-11-17.)
 
         protected override int[] ValueSetIds => GladValueSets;
 
-        private static readonly int[] GladValueSets = { GladCardId.Ryko, GladCardId.ShieldWarrior };
+        private static readonly int[] GladValueSets = { CardId.RykoLightswornHunter, CardId.ShieldWarrior };
 
         // Gladiator Beasts first as Normal Summons (they tag out after battling): Laquari / Darius / Equeste carry the
         // engine; Bestiari next (its own effect needs a tag-in, but it's Gyzarus material); the small ones last.
         protected override int SafeSummonPriority(DynamicCard card, List<DynamicCard> hand) =>
-            card.IsCode(GladCardId.Laquari) ? 0
-            : card.IsCode(GladCardId.Darius) ? 1
-            : card.IsCode(GladCardId.Equeste) ? 2
-            : card.IsCode(GladCardId.Bestiari) ? 3
-            : card.IsCode(GladCardId.CardTrooper, GladCardId.Lyla) ? 4
-            : card.IsCode(GladCardId.Retiari) ? 5
-            : card.IsCode(GladCardId.Murmillo) ? 6
+            card.IsCode(CardId.GladiatorBeastLaquari) ? 0
+            : card.IsCode(CardId.GladiatorBeastDarius) ? 1
+            : card.IsCode(CardId.GladiatorBeastEqueste) ? 2
+            : card.IsCode(CardId.GladiatorBeastBestiari) ? 3
+            : card.IsCode(CardId.CardTrooper, CardId.LylaLightswornSorceress) ? 4
+            : card.IsCode(CardId.GladiatorBeastRetiari) ? 5
+            : card.IsCode(CardId.GladiatorBeastMurmillo) ? 6
             : 7;
 
         // ------------------------------------------------------------------ main phase
@@ -306,27 +306,27 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             int theirCards = enemyMonsters.Count + enemySpells.Count;
 
             if (botMonsters.Count == 1 && botMonsters[0].IsFaceup() && IsGlad(botMonsters[0]) &&
-                !enemyMonsters.Any(card => card.IsFaceup() && card.IsCode(GladCardId.StardustDragon)) &&
+                !enemyMonsters.Any(card => card.IsFaceup() && card.IsCode(CardId.StardustDragon)) &&
                 enemySpells.Count + enemyMonsters.Count(card => !IsExpendable(card)) >= 2 &&
                 (MirrorForceChance > 0 || !TrapsNegated && enemySpells.Any(card => !card.IsFaceup() &&
-                    (card.IsCode(GladCardId.BottomlessTrapHole) ||
-                     OpponentDeck.SetZoneChance(card.CurrentCoordinates.Sequence, GladCardId.BottomlessTrapHole) > 0))))
+                    (card.IsCode(CardId.BottomlessTrapHole) ||
+                     OpponentDeck.SetZoneChance(card.CurrentCoordinates.Sequence, CardId.BottomlessTrapHole) > 0))))
             {
-                bool bestiariOnField = botMonsters[0].IsCode(GladCardId.Bestiari);
+                bool bestiariOnField = botMonsters[0].IsCode(CardId.GladiatorBeastBestiari);
                 var material = (state.MonsterSetableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault(card =>
-                    bestiariOnField ? IsGlad(card) && !card.IsCode(GladCardId.Bestiari) : card.IsCode(GladCardId.Bestiari));
+                    bestiariOnField ? IsGlad(card) && !card.IsCode(CardId.GladiatorBeastBestiari) : card.IsCode(CardId.GladiatorBeastBestiari));
                 if (material.ID > 0 &&
-                    (await CurrentField.GetCardsInLocation(CardLocation.Extra)).Any(card => card.IsCode(GladCardId.Gyzarus)) &&
+                    (await CurrentField.GetCardsInLocation(CardLocation.Extra)).Any(card => card.IsCode(CardId.GladiatorBeastGyzarus)) &&
                     await StartRoutineAsync(context, "go for Gyzarus", "set the second material before contact fusion",
                         new[]
                         {
                             new RoutineStep(MainAction.SetMonster, material.ID, $"set {CardNames.Get(material.ID)}"),
-                            new RoutineStep(MainAction.SpSummon, GladCardId.Gyzarus, "contact fuse Gyzarus")
+                            new RoutineStep(MainAction.SpSummon, CardId.GladiatorBeastGyzarus, "contact fuse Gyzarus")
                         }, gladiatorSet: material.ID) is IdleCmdResponse goForGyzarus)
                     return goForGyzarus;
             }
 
-            if (!hand.Any(card => card.IsCode(GladCardId.Waboku)))
+            if (!hand.Any(card => card.IsCode(CardId.Waboku)))
             {
                 state.MonsterSetableCards = (state.MonsterSetableCards ?? Array.Empty<DynamicCard>())
                     .Where(card => !CardRules.IsGladiatorBeast(card.ID)).ToArray();
@@ -348,33 +348,33 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
 
             // Held, for the search: Raigeki Break on nothing worth it (a small monster, a set card), and attack boosts outside a
             // plan that gets a Glad over a wall (a boost spent for no battle is a card thrown away).
-            if (TryGetActivable(state, GladCardId.RaigekiBreak, out _))
-                Hold(GladCardId.RaigekiBreak, MainAction.Activate, GladRules.RaigekiThreat);
+            if (TryGetActivable(state, CardId.RaigekiBreak, out _))
+                Hold(CardId.RaigekiBreak, MainAction.Activate, GladRules.RaigekiThreat);
             foreach (var card in (state.ActivableCards ?? Array.Empty<DynamicCard>())
-                         .Where(card => card.IsCode(GladCardId.SkillSuccessor) ||
-                                        card.IsCode(GladCardId.IndomitableGladiatorBeast) && card.CurrentCoordinates.Location != (byte)CardLocation.Grave))
+                         .Where(card => card.IsCode(CardId.SkillSuccessor) ||
+                                        card.IsCode(CardId.IndomitableGladiatorBeast) && card.CurrentCoordinates.Location != (byte)CardLocation.Grave))
                 Hold(card.ID, MainAction.Activate, GladRules.BoostOverWall);
 
             // Indomitable Gladiator Beast from the GY: 2 Gladiator Beast cards back to the deck (more tag-ins) for a card in hand.
             // Any "Gladiator Beast" card pays (War Chariot too; seen 2026-11-11: Laquari + War Chariot went uncounted).
-            if (TryGetActivable(state, GladCardId.IndomitableGladiatorBeast, out var indomitable) &&
+            if (TryGetActivable(state, CardId.IndomitableGladiatorBeast, out var indomitable) &&
                 indomitable.CurrentCoordinates.Location == (byte)CardLocation.Grave &&
-                grave.Count(card => card.IsCode(GladCardId.GladCards)) >= 2 && Rule(GladRules.IndomitableRecycle))
+                grave.Count(card => card.IsCode(CardId.GladCards)) >= 2 && Rule(GladRules.IndomitableRecycle))
             {
                 Note(context, "Indomitable Gladiator Beast back to the hand: 2 Gladiator Beasts from the GY go back to the deck to tag in again");
                 return indomitable.MainActivateFromIndex();
             }
 
             // Gyzarus: destroys up to 2 of their cards on summon (and tags out into 2 Gladiator Beasts after battling).
-            if (TryGetSpecialSummon(state, GladCardId.Gyzarus, out var gyzarus) && theirCards > 0 && Rule(GladRules.Gyzarus))
+            if (TryGetSpecialSummon(state, CardId.GladiatorBeastGyzarus, out var gyzarus) && theirCards > 0 && Rule(GladRules.Gyzarus))
             {
                 Note(context, $"contact fuse Gyzarus (Bestiari + 1 Gladiator Beast): it destroys up to 2 of their {theirCards} card(s)");
                 return gyzarus.SpecialSummon();
             }
 
             // Bestiari as the Normal Summon next to another Gladiator Beast: Gyzarus straight after.
-            var otherGlad = botMonsters.FirstOrDefault(card => card.IsFaceup() && IsGlad(card) && !card.IsCode(GladCardId.Bestiari));
-            if (TryGetSummonable(state, GladCardId.Bestiari, out var bestiari) && otherGlad.ID > 0 && theirCards > 0 &&
+            var otherGlad = botMonsters.FirstOrDefault(card => card.IsFaceup() && IsGlad(card) && !card.IsCode(CardId.GladiatorBeastBestiari));
+            if (TryGetSummonable(state, CardId.GladiatorBeastBestiari, out var bestiari) && otherGlad.ID > 0 && theirCards > 0 &&
                 botMonsters.Count < 5 && Rule(GladRules.BestiariForGyzarus))
             {
                 Note(context, $"normal summon Bestiari next to {CardNames.Get(otherGlad.ID)}: Gyzarus next, destroying up to 2 of their cards");
@@ -382,7 +382,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             }
 
             // Heraklinos after the battle (or with no battle to come): 3000, and it negates their Spell/Traps for a discard.
-            if (TryGetSpecialSummon(state, GladCardId.Heraklinos, out var heraklinos) && (main2 || !state.CanBattlePhase) &&
+            if (TryGetSpecialSummon(state, CardId.GladiatorBeastHeraklinos, out var heraklinos) && (main2 || !state.CanBattlePhase) &&
                 hand.Count >= 1 && (enemySpells.Count > 0 || await OppHandAsync() >= 3) && Rule(GladRules.Heraklinos))
             {
                 Note(context, "contact fuse Heraklinos (Laquari + 2 Gladiator Beasts): it negates their Spell/Traps, and we have a card to discard");
@@ -413,7 +413,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             rest.SummonableCards = Array.Empty<DynamicCard>();
             rest.MonsterSetableCards = Array.Empty<DynamicCard>();
             rest.SpecialSummonableCards = (state.SpecialSummonableCards ?? Array.Empty<DynamicCard>())
-                .Where(card => !card.IsCode(GladCardId.Gyzarus, GladCardId.Heraklinos)).ToArray();
+                .Where(card => !card.IsCode(CardId.GladiatorBeastGyzarus, CardId.GladiatorBeastHeraklinos)).ToArray();
             if (trapBattleAhead || gorzLive)
                 rest.SpellSetableCards = Array.Empty<DynamicCard>();
             return await base.OnIdleCmdAsync(context with { StateData = rest }, ct);
@@ -445,17 +445,17 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
 
             var activable = state.ActivableCards ?? Array.Empty<DynamicCard>();
             bool Is(DynamicCard card, int id, CardLocation where) => card.IsCode(id) && card.CurrentCoordinates.Location == (byte)where;
-            int skillGrave = activable.Count(card => Is(card, GladCardId.SkillSuccessor, CardLocation.Grave));
-            int skillSet = activable.Count(card => Is(card, GladCardId.SkillSuccessor, CardLocation.SpellZone));
+            int skillGrave = activable.Count(card => Is(card, CardId.SkillSuccessor, CardLocation.Grave));
+            int skillSet = activable.Count(card => Is(card, CardId.SkillSuccessor, CardLocation.SpellZone));
             bool glad = IsGlad(attacker);
-            bool indHand = glad && activable.Any(card => Is(card, GladCardId.IndomitableGladiatorBeast, CardLocation.Hand));
-            bool indGrave = glad && activable.Any(card => Is(card, GladCardId.IndomitableGladiatorBeast, CardLocation.Grave));
+            bool indHand = glad && activable.Any(card => Is(card, CardId.IndomitableGladiatorBeast, CardLocation.Hand));
+            bool indGrave = glad && activable.Any(card => Is(card, CardId.IndomitableGladiatorBeast, CardLocation.Grave));
             int availableBoost = 800 * skillGrave + 400 * skillSet + (indHand ? 500 : 0);
-            bool recycle = availableBoost < need && indGrave && grave.Count(card => card.IsCode(GladCardId.GladCards)) >= 2;
+            bool recycle = availableBoost < need && indGrave && grave.Count(card => card.IsCode(CardId.GladCards)) >= 2;
             if (availableBoost + (recycle ? 500 : 0) < need || !Rule(GladRules.BoostOverWall))
             {
                 // No boosts get over it: Raigeki Break it instead, if it's worth two cards (Raigeki + the discard).
-                var raigeki = activable.FirstOrDefault(card => Is(card, GladCardId.RaigekiBreak, CardLocation.SpellZone));
+                var raigeki = activable.FirstOrDefault(card => Is(card, CardId.RaigekiBreak, CardLocation.SpellZone));
                 if (raigeki.ID > 0 && (await GetBotHandCardsAsync()).Count > 0 && await RaigekiWorthyAsync(wall) is string worth &&
                     Rule(GladRules.RaigekiThreat))
                 {
@@ -468,7 +468,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             string attackerName = CardNames.Get(attacker.ID);
             var steps = new List<RoutineStep>();
             if (recycle)
-                steps.Add(new RoutineStep(MainAction.Activate, GladCardId.IndomitableGladiatorBeast, "Indomitable back to the hand", null, CardLocation.Grave));
+                steps.Add(new RoutineStep(MainAction.Activate, CardId.IndomitableGladiatorBeast, "Indomitable back to the hand", null, CardLocation.Grave));
             steps.Add(RoutineStep.Battle);
             string why = $"{attackerName} can beat {CardNames.Get(wall.ID)} with at least {need} extra ATK in battle";
             if (await StartRoutineAsync(context, "boost over a wall", why, steps) is not IdleCmdResponse first)
@@ -498,14 +498,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 return null;
             var attacker = botMonsters.Where(m => m.ID > 0 && m.IsFaceup() && m.IsAttack() && !m.Attacked)
                 .OrderBy(m => m.CurrentCoordinates.Sequence).FirstOrDefault();
-            if (attacker.ID <= 0 || !IsGlad(attacker) || BattleGain(attacker) == null || attacker.IsCode(GladCardId.Bestiari))
+            if (attacker.ID <= 0 || !IsGlad(attacker) || BattleGain(attacker) == null || attacker.IsCode(CardId.GladiatorBeastBestiari))
                 return null;
             var second = botMonsters.FirstOrDefault(m => m.ID > 0 && m.IsFaceup() && IsGlad(m) && m.CurrentCoordinates.Sequence != attacker.CurrentCoordinates.Sequence);
             if (second.ID <= 0)
                 return null;
-            bool bestiariInDeck = !hand.Concat(grave).Concat(botMonsters).Any(c => c.IsCode(GladCardId.Bestiari)) &&
-                                  !((await CurrentField.GetBotField()).OwnSide.Banish ?? Array.Empty<int>()).Contains(GladCardId.Bestiari);
-            bool gyzarusInExtra = (await CurrentField.GetCardsInLocation(CardLocation.Extra)).Any(c => c.IsCode(GladCardId.Gyzarus));
+            bool bestiariInDeck = !hand.Concat(grave).Concat(botMonsters).Any(c => c.IsCode(CardId.GladiatorBeastBestiari)) &&
+                                  !((await CurrentField.GetBotField()).OwnSide.Banish ?? Array.Empty<int>()).Contains(CardId.GladiatorBeastBestiari);
+            bool gyzarusInExtra = (await CurrentField.GetCardsInLocation(CardLocation.Extra)).Any(c => c.IsCode(CardId.GladiatorBeastGyzarus));
             if (!bestiariInDeck || !gyzarusInExtra)
                 return null;
             int lp = await CurrentField.GetBotLifePoints();
@@ -536,7 +536,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                     AimAt(bot, wall, AimKind.Committed, $"{CardNames.Get(attacker.ID)} battles {CardNames.Get(wall.ID)} to tag out into Bestiari (Gyzarus for their Ryko)");
                     _tagBestiariTurn = turn;
                 }),
-                new RoutineStep(MainAction.SpSummon, GladCardId.Gyzarus, $"contact fuse Gyzarus (Bestiari + {CardNames.Get(second.ID)}): destroy the Ryko"),
+                new RoutineStep(MainAction.SpSummon, CardId.GladiatorBeastGyzarus, $"contact fuse Gyzarus (Bestiari + {CardNames.Get(second.ID)}): destroy the Ryko"),
             };
             return await StartRoutineAsync(context, "Gyzarus for a set Ryko",
                 $"their face-down is Ryko {FaceDownRykoChance(ryko):P0}: {weigh}", steps);
@@ -548,7 +548,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         private async Task<IdleCmdResponse?> TryRaigekiThreatAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> enemyMonsters)
         {
             var raigeki = (state.ActivableCards ?? Array.Empty<DynamicCard>())
-                .FirstOrDefault(card => card.IsCode(GladCardId.RaigekiBreak) && card.CurrentCoordinates.Location == (byte)CardLocation.SpellZone);
+                .FirstOrDefault(card => card.IsCode(CardId.RaigekiBreak) && card.CurrentCoordinates.Location == (byte)CardLocation.SpellZone);
             if (raigeki.ID <= 0 || (await GetBotHandCardsAsync()).Count == 0)
                 return null;
             foreach (var threat in enemyMonsters.Where(card => card.ID > 0 && card.IsFaceup()).OrderByDescending(card => card.GetRealPower()))
@@ -588,7 +588,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             int previous = index - 1;
             while (previous >= 0 && steps[previous].Key.StartsWith("card:"))
                 previous--;
-            if (previous < 0 || KeyCardId(steps[previous].Key) != GladCardId.RaigekiBreak)
+            if (previous < 0 || KeyCardId(steps[previous].Key) != CardId.RaigekiBreak)
                 return cost;
             int code = KeyCardId(key);
             var monster = theirs.Monsters.FirstOrDefault(m => m.Code == code || Search.SearchHost.CanonicalId(m.Code) == code);
@@ -614,13 +614,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             int Find(int id) => Array.FindIndex(options, card => card.IsCode(id) && card.CurrentCoordinates.Controller == 0);
 
             // War Chariot: their Effect Monster's effect, negated and destroyed (only offered while we have a Gladiator Beast).
-            if (theirLink && Find(GladCardId.WarChariot) is int chariot and >= 0 && Rule(GladRules.WarChariot))
+            if (theirLink && Find(CardId.GladiatorBeastWarChariot) is int chariot and >= 0 && Rule(GladRules.WarChariot))
             {
                 Note(context, "Gladiator Beast War Chariot: negate their monster's effect and destroy it");
                 return chariot;
             }
             // Heraklinos: discard 1 to negate their Spell/Trap.
-            if (theirLink && Find(GladCardId.Heraklinos) is int herak and >= 0 && (await GetBotHandCardsAsync()).Count > 0 &&
+            if (theirLink && Find(CardId.GladiatorBeastHeraklinos) is int herak and >= 0 && (await GetBotHandCardsAsync()).Count > 0 &&
                 Rule(GladRules.HeraklinosNegate))
             {
                 Note(context, "Heraklinos: discard 1 to negate their Spell/Trap");
@@ -633,7 +633,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             if (!await PaysOnBattleDestructionAsync(battling) && await BoostToWinBattleAsync(context, options) is int earlyBoost)
                 return earlyBoost;
             // Raigeki Break on their attacker when it's worth two cards (a big threat) and it would win the battle or hit us.
-            if (!IsOwnTurn(context.Header) && Find(GladCardId.RaigekiBreak) is int raigeki and >= 0 && (await GetBotHandCardsAsync()).Count > 0)
+            if (!IsOwnTurn(context.Header) && Find(CardId.RaigekiBreak) is int raigeki and >= 0 && (await GetBotHandCardsAsync()).Count > 0)
             {
                 var attacker = await CurrentField.GetBotBattlingMonster(isOwnSide: false);
                 var defender = await CurrentField.GetBotBattlingMonster(isOwnSide: true);
@@ -652,7 +652,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             // Our Gladiator Beasts' own triggers: the tag-outs at the end of the Battle Phase, Gyzarus' destruction on summon,
             // Darius' revive.
             int own = Array.FindIndex(options, card => IsGlad(card) && card.CurrentCoordinates.Controller == 0 &&
-                                                      !card.IsCode(GladCardId.Heraklinos));
+                                                      !card.IsCode(CardId.GladiatorBeastHeraklinos));
             if (!theirLink && own >= 0 && Rule(GladRules.TagOut))
             {
                 Note(context, $"use {CardNames.Get(options[own].ID)}'s effect");
@@ -690,27 +690,27 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
 
             // Contact Fusion materials (our Gladiator Beasts on the field): Bestiari / Laquari as required, then the least useful.
             if (allOurs && In(CardLocation.MonsterZone) && indexed.All(x => IsGlad(x.Card)) && LastMainMove is { Action: MainAction.SpSummon } fusion &&
-                fusion.Turn == context.Header.CurrentTurn && (fusion.CardId == GladCardId.Gyzarus || fusion.CardId == GladCardId.Heraklinos ||
-                                                              Search.SearchHost.CanonicalId(fusion.CardId) is GladCardId.Gyzarus or GladCardId.Heraklinos))
+                fusion.Turn == context.Header.CurrentTurn && (fusion.CardId == CardId.GladiatorBeastGyzarus || fusion.CardId == CardId.GladiatorBeastHeraklinos ||
+                                                              Search.SearchHost.CanonicalId(fusion.CardId) is CardId.GladiatorBeastGyzarus or CardId.GladiatorBeastHeraklinos))
             {
-                int key = fusion.CardId == GladCardId.Gyzarus || Search.SearchHost.CanonicalId(fusion.CardId) == GladCardId.Gyzarus
-                    ? GladCardId.Bestiari : GladCardId.Laquari;
-                return Pick(indexed.OrderBy(x => x.Card.IsCode(key) ? 0 : 1).ThenBy(x => x.Card.IsCode(GladCardId.Laquari) ? 1 : 0)
+                int key = fusion.CardId == CardId.GladiatorBeastGyzarus || Search.SearchHost.CanonicalId(fusion.CardId) == CardId.GladiatorBeastGyzarus
+                    ? CardId.GladiatorBeastBestiari : CardId.GladiatorBeastLaquari;
+                return Pick(indexed.OrderBy(x => x.Card.IsCode(key) ? 0 : 1).ThenBy(x => x.Card.IsCode(CardId.GladiatorBeastLaquari) ? 1 : 0)
                     .ThenBy(x => x.Card.GetRealPower()), count, "contact fusion materials");
             }
 
             // The tag-in from the deck (a tag-out, or Gyzarus' two).
-            if (hint == DHint.SPSUMMON && allOurs && In(CardLocation.Deck) && indexed.All(x => x.Card.IsCode(GladCardId.Glads)) && Rule(GladRules.TagPick))
+            if (hint == DHint.SPSUMMON && allOurs && In(CardLocation.Deck) && indexed.All(x => x.Card.IsCode(CardId.Glads)) && Rule(GladRules.TagPick))
             {
                 var retiari = await RetiariTargetAsync();
-                if (retiari.Strong && indexed.Any(x => x.Card.IsCode(GladCardId.Retiari)))
+                if (retiari.Strong && indexed.Any(x => x.Card.IsCode(CardId.GladiatorBeastRetiari)))
                     Note(context, $"Retiari can banish {retiari.Why} from their graveyard");
                 // A Bestiari staying on our field: Gyzarus in Main Phase 2 shuffles this tag-in back into the deck, so only its
                 // tag-in effect counts, not its body (user, 2026-11-11: "it may as well get retiari (or equeste or something)").
                 var ours = await GetBotMonsterCardsAsync();
                 bool dariusWorth = await DariusRevivesWorthAsync(ours, grave, (DuelPhase)context.Header.CurrentPhase);
                 var battlePhase = (DuelPhase)context.Header.CurrentPhase;
-                bool fodder = ours.Any(m => m.IsFaceup() && m.IsCode(GladCardId.Bestiari) && !CanTagOutNow(m, battlePhase)) &&
+                bool fodder = ours.Any(m => m.IsFaceup() && m.IsCode(CardId.GladiatorBeastBestiari) && !CanTagOutNow(m, battlePhase)) &&
                               (DuelPhase)context.Header.CurrentPhase is DuelPhase.BattleStart or DuelPhase.BattleStep or DuelPhase.Damage or DuelPhase.DamageCal or DuelPhase.Battle;
                 if (fodder)
                     Note(context, "tag in for its effect: Bestiari stays, so Gyzarus takes this one back to the deck in Main Phase 2");
@@ -720,7 +720,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 foreach (var x in indexed)
                 {
                     var (value, why) = TagValue(x.Card, enemyMonsters, enemySpells, grave, handNow, retiari.Strong, retiari.Any, fodder, dariusWorth);
-                    if (_tagBestiariTurn == context.Header.CurrentTurn && x.Card.IsCode(GladCardId.Bestiari))
+                    if (_tagBestiariTurn == context.Header.CurrentTurn && x.Card.IsCode(CardId.GladiatorBeastBestiari))
                         (value, why) = (value + 100, "the Bestiari planned for Gyzarus");
                     valued.Add((x, value, why));
                 }
@@ -741,7 +741,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             }
 
             // Darius' revive from the GY: Bestiari (Gyzarus material), Laquari, then the rest.
-            if (hint == DHint.SPSUMMON && allOurs && In(CardLocation.Grave) && indexed.All(x => x.Card.IsCode(GladCardId.Glads)))
+            if (hint == DHint.SPSUMMON && allOurs && In(CardLocation.Grave) && indexed.All(x => x.Card.IsCode(CardId.Glads)))
                 return Pick(indexed.OrderBy(x => ReviveRank(x.Card)), count, "Darius revives");
 
             // Equeste: a Gladiator Beast card from the GY to the hand.
@@ -752,11 +752,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 bool monsterEffectNext = enemyMonsters.Any(m => !m.IsFaceup() && FaceDownRykoChance(m) >= FlipThreatChance);
                 lock (OpponentDeck)
                     monsterEffectNext |= OpponentDeck.LikelyCards().Any(id => MonarchIds.Contains(id));
-                bool gyzarusNext = (await GetBotMonsterCardsAsync()).Any(m => m.IsFaceup() && IsGlad(m) && !m.IsCode(GladCardId.Bestiari));
+                bool gyzarusNext = (await GetBotMonsterCardsAsync()).Any(m => m.IsFaceup() && IsGlad(m) && !m.IsCode(CardId.GladiatorBeastBestiari));
                 double Worth(DynamicCard c) =>
-                    c.IsCode(GladCardId.WarChariot) ? (monsterEffectNext ? 5000 : 0)
-                    : c.IsCode(GladCardId.Bestiari) && gyzarusNext ? 4000
-                    : c.IsCode(GladCardId.Laquari) ? 2100
+                    c.IsCode(CardId.GladiatorBeastWarChariot) ? (monsterEffectNext ? 5000 : 0)
+                    : c.IsCode(CardId.GladiatorBeastBestiari) && gyzarusNext ? 4000
+                    : c.IsCode(CardId.GladiatorBeastLaquari) ? 2100
                     : c.HasType(CardType.Monster) ? c.Attack : -1;
                 return Pick(oursOnly.OrderByDescending(x => Worth(x.Card)), count,
                     $"Equeste returns (War Chariot when a monster effect of theirs is likely, Bestiari when Gyzarus follows, else the biggest ATK)");
@@ -800,7 +800,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         /// destruction is mandatory.
         /// </summary>
         // Monarchs: their summon effects are what War Chariot answers.
-        private static readonly int[] MonarchIds = { 9748752, 73125233, 26205777, 4929256, 51945556, 60229110 };
+        private static readonly int[] MonarchIds = { CaiusTheShadowMonarch, RaizaTheStormMonarch, ThestalosTheFirestormMonarch, MobiusTheFrostMonarch, ZaborgTheThunderMonarch, GranmargTheRockMonarch };
 
         /// <summary>
         /// CSV M3 (user, 2026-11-15: "score the tag-in choice dynamically depending on the board state and *all* known information"): what
@@ -814,13 +814,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             double value = 0;
             var faceUp = enemyMonsters.Where(m => m.IsFaceup()).ToList();
             int theirBest = faceUp.Where(m => m.IsAttack()).Select(m => m.Attack).DefaultIfEmpty(0).Max();
-            if (card.IsCode(GladCardId.Murmillo))
+            if (card.IsCode(CardId.GladiatorBeastMurmillo))
             {
                 var target = faceUp.OrderByDescending(m => m.GetRealPower()).FirstOrDefault();
                 if (target.ID > 0)
                 {
-                    double kill = 1 + Search.MctsEvaluator.AtkValue(target.GetRealPower());
-                    bool otherAnswer = hand.Any(c => c.IsCode(GladCardId.RaigekiBreak));
+                    double kill = 1 + BoardEvaluator.AtkValue(target.GetRealPower());
+                    bool otherAnswer = hand.Any(c => c.IsCode(CardId.RaigekiBreak));
                     if (otherAnswer)
                         kill *= TagMurmilloOtherAnswerShare;
                     value += kill;
@@ -829,7 +829,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 else
                     parts.Add("no face-up monster of theirs to destroy");
             }
-            else if (card.IsCode(GladCardId.Bestiari))
+            else if (card.IsCode(CardId.GladiatorBeastBestiari))
             {
                 if (enemySpells.Count > 0)
                 {
@@ -839,10 +839,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 else
                     parts.Add("no spell/trap of theirs to destroy");
             }
-            else if (card.IsCode(GladCardId.Equeste))
+            else if (card.IsCode(CardId.GladiatorBeastEqueste))
             {
-                bool chariot = grave.Any(g => g.IsCode(GladCardId.WarChariot));
-                bool gladThere = grave.Any(g => g.IsCode(GladCardId.Glads));
+                bool chariot = grave.Any(g => g.IsCode(CardId.GladiatorBeastWarChariot));
+                bool gladThere = grave.Any(g => g.IsCode(CardId.Glads));
                 bool monsterEffectNext = enemyMonsters.Any(m => !m.IsFaceup() && FaceDownRykoChance(m) >= FlipThreatChance);
                 lock (OpponentDeck)
                     monsterEffectNext |= OpponentDeck.LikelyCards().Any(id => MonarchIds.Contains(id));
@@ -860,12 +860,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 else
                     parts.Add("nothing in our graveyard to return");
             }
-            else if (card.IsCode(GladCardId.Retiari))
+            else if (card.IsCode(CardId.GladiatorBeastRetiari))
             {
                 value += retiariStrong ? TagRetiariStrongValue : retiariAny ? TagRetiariMinorValue : 0;
                 parts.Add(retiariStrong ? "banishes an important card from their graveyard" : retiariAny ? "banishes a minor card from their graveyard" : "their graveyard is empty");
             }
-            else if (card.IsCode(GladCardId.Darius))
+            else if (card.IsCode(CardId.GladiatorBeastDarius))
             {
                 value += dariusWorth ? TagDariusUsefulValue : TagDariusIdleValue;
                 parts.Add(dariusWorth ? "revives a Gladiator Beast for Gyzarus/Heraklinos" : "its revive sets nothing up");
@@ -873,10 +873,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             if (!gyzarusFodder)
             {
                 // The body: what it's worth on the field, more when nothing of theirs runs it over next turn.
-                int atk = card.IsCode(GladCardId.Laquari) ? 2100 : card.Attack;
-                double body = TagBodyShare * Search.MctsEvaluator.AtkValue(atk) + (atk > theirBest ? TagBodySafeBonus : 0);
+                int atk = card.IsCode(CardId.GladiatorBeastLaquari) ? 2100 : card.Attack;
+                double body = TagBodyShare * BoardEvaluator.AtkValue(atk) + (atk > theirBest ? TagBodySafeBonus : 0);
                 value += body;
-                if (card.IsCode(GladCardId.Laquari))
+                if (card.IsCode(CardId.GladiatorBeastLaquari))
                     parts.Add(atk > theirBest ? "2100 ATK: survives their turn" : "2100 ATK");
             }
             return (value, parts.Count == 0 ? "body only" : string.Join("; ", parts));
@@ -888,31 +888,31 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             var faceUpThreat = enemyMonsters.Where(m => m.IsFaceup()).OrderByDescending(m => m.GetRealPower()).FirstOrDefault();
             bool theirSpellTrap = enemySpells.Count > 0;
             bool anySpellTrapOfOurs = OwnSpellTrapCount > 0;
-            bool gladInGrave = grave.Any(g => g.IsCode(GladCardId.Glads));
-            bool goodInGrave = grave.Any(g => g.IsCode(GladCardId.Bestiari, GladCardId.Laquari, GladCardId.WarChariot));
+            bool gladInGrave = grave.Any(g => g.IsCode(CardId.Glads));
+            bool goodInGrave = grave.Any(g => g.IsCode(CardId.GladiatorBeastBestiari, CardId.GladiatorBeastLaquari, CardId.GladiatorBeastWarChariot));
             // Only the tag-in effect matters (Gyzarus fodder): Murmillo on a threat, Retiari, Equeste, Bestiari's destroy, Darius;
             // Laquari (only a body) last.
             if (gyzarusFodder)
-                return card.IsCode(GladCardId.Murmillo) ? (faceUpThreat.ID > 0 ? 0 : 99)
-                    : card.IsCode(GladCardId.Retiari) ? (retiariAny ? 1 : 98)
-                    : card.IsCode(GladCardId.Equeste) ? (goodInGrave || gladInGrave ? 2 : 6)
-                    : card.IsCode(GladCardId.Bestiari) ? (theirSpellTrap ? 3 : 7)
-                    : card.IsCode(GladCardId.Darius) ? (dariusWorth ? 4 : 12)
+                return card.IsCode(CardId.GladiatorBeastMurmillo) ? (faceUpThreat.ID > 0 ? 0 : 99)
+                    : card.IsCode(CardId.GladiatorBeastRetiari) ? (retiariAny ? 1 : 98)
+                    : card.IsCode(CardId.GladiatorBeastEqueste) ? (goodInGrave || gladInGrave ? 2 : 6)
+                    : card.IsCode(CardId.GladiatorBeastBestiari) ? (theirSpellTrap ? 3 : 7)
+                    : card.IsCode(CardId.GladiatorBeastDarius) ? (dariusWorth ? 4 : 12)
                     : 9;
-            if (card.IsCode(GladCardId.Murmillo))
+            if (card.IsCode(CardId.GladiatorBeastMurmillo))
                 return faceUpThreat.ID > 0 && faceUpThreat.GetRealPower() >= 1800 ? 0 : faceUpThreat.ID > 0 ? 5 : 99;
-            if (card.IsCode(GladCardId.Bestiari))
+            if (card.IsCode(CardId.GladiatorBeastBestiari))
                 return theirSpellTrap ? 1 : anySpellTrapOfOurs ? 98 : 6;
-            if (card.IsCode(GladCardId.Equeste))
+            if (card.IsCode(CardId.GladiatorBeastEqueste))
                 return goodInGrave ? 2 : 7;
-            if (card.IsCode(GladCardId.Darius))
+            if (card.IsCode(CardId.GladiatorBeastDarius))
                 return dariusWorth ? 3 : 12; // only worth it as Contact Fusion setup (see DariusRevivesWorthAsync)
             // Retiari banishes a card from their graveyard (user, 2026-11-11: "removing things from my grave is strong"): right
             // after Murmillo's big-threat kill when a graveyard effect, a revive target or a DAD-count DARK is there; ahead of
             // Laquari whenever their graveyard holds anything; last only when it's empty (the tag-in would do nothing).
-            if (card.IsCode(GladCardId.Retiari))
+            if (card.IsCode(CardId.GladiatorBeastRetiari))
                 return retiariStrong ? 1 : retiariAny ? 4 : 9;
-            if (card.IsCode(GladCardId.Laquari))
+            if (card.IsCode(CardId.GladiatorBeastLaquari))
                 return 5;
             return 10;
         }
@@ -956,42 +956,42 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         /// </summary>
         private static bool CanTagOutNow(DynamicCard card, DuelPhase phase) =>
             card.ID > 0 && card.IsFaceup() && card.Attacked && card.Negator.Location == 0 &&
-            (card.IsCode(GladCardId.Glads) || card.IsCode(GladCardId.Gyzarus)) &&
+            (card.IsCode(CardId.Glads) || card.IsCode(CardId.GladiatorBeastGyzarus)) &&
             phase is DuelPhase.BattleStart or DuelPhase.BattleStep or DuelPhase.Damage or DuelPhase.DamageCal or DuelPhase.Battle;
 
         private async Task<bool> DariusRevivesWorthAsync(List<DynamicCard> ours, List<DynamicCard> grave, DuelPhase phase)
         {
-            if (grave.Any(g => g.IsCode(GladCardId.Bestiari, GladCardId.Laquari)))
+            if (grave.Any(g => g.IsCode(CardId.GladiatorBeastBestiari, CardId.GladiatorBeastLaquari)))
                 return true;
-            if (!grave.Any(g => g.IsCode(GladCardId.Glads)))
+            if (!grave.Any(g => g.IsCode(CardId.Glads)))
                 return false;
-            if (ours.Any(m => m.IsFaceup() && m.IsCode(GladCardId.Bestiari, GladCardId.Laquari) && !CanTagOutNow(m, phase)))
+            if (ours.Any(m => m.IsFaceup() && m.IsCode(CardId.GladiatorBeastBestiari, CardId.GladiatorBeastLaquari) && !CanTagOutNow(m, phase)))
                 return true;
             if (!ours.Any(m => CanTagOutNow(m, phase)))
                 return false;
             // One of them still in the deck for that tag-out: copies run minus those seen (hand, graveyard, field, banished).
             var seen = (await GetBotHandCardsAsync()).Concat(grave).Concat(ours)
                 .Concat(await CurrentField.GetCardsInLocation(CardLocation.Removed)).Where(c => c.CurrentCoordinates.Controller == 0 || c.CurrentCoordinates.Location != (byte)CardLocation.Removed).ToList();
-            return seen.Count(c => c.IsCode(GladCardId.Bestiari)) < 1 || seen.Count(c => c.IsCode(GladCardId.Laquari)) < 3;
+            return seen.Count(c => c.IsCode(CardId.GladiatorBeastBestiari)) < 1 || seen.Count(c => c.IsCode(CardId.GladiatorBeastLaquari)) < 3;
         }
 
         private static int ReviveRank(DynamicCard card) =>
-            card.IsCode(GladCardId.Bestiari) ? 0 : card.IsCode(GladCardId.Laquari) ? 1 : card.IsCode(GladCardId.Equeste) ? 2
-            : card.IsCode(GladCardId.Darius) ? 3 : card.IsCode(GladCardId.Retiari) ? 4 : 5;
+            card.IsCode(CardId.GladiatorBeastBestiari) ? 0 : card.IsCode(CardId.GladiatorBeastLaquari) ? 1 : card.IsCode(CardId.GladiatorBeastEqueste) ? 2
+            : card.IsCode(CardId.GladiatorBeastDarius) ? 3 : card.IsCode(CardId.GladiatorBeastRetiari) ? 4 : 5;
 
         private static int EquesteRank(DynamicCard card) =>
-            card.IsCode(GladCardId.Bestiari) ? 0 : card.IsCode(GladCardId.Laquari) ? 1 : card.IsCode(GladCardId.WarChariot) ? 2
-            : card.IsCode(GladCardId.Darius) ? 3 : card.IsCode(GladCardId.Equeste) ? 4 : card.IsCode(GladCardId.IndomitableGladiatorBeast) ? 5 : 6;
+            card.IsCode(CardId.GladiatorBeastBestiari) ? 0 : card.IsCode(CardId.GladiatorBeastLaquari) ? 1 : card.IsCode(CardId.GladiatorBeastWarChariot) ? 2
+            : card.IsCode(CardId.GladiatorBeastDarius) ? 3 : card.IsCode(CardId.GladiatorBeastEqueste) ? 4 : card.IsCode(CardId.IndomitableGladiatorBeast) ? 5 : 6;
 
         // What we lose least by discarding (Raigeki Break's cost, Heraklinos'): GY-effect cards first.
         private static int DiscardRank(DynamicCard card) =>
-            card.IsCode(GladCardId.ShieldWarrior, GladCardId.SkillSuccessor) ? 0 // GY effects; Skill Successor: +800 from the GY (user, 2026-11-11: a good discard)
-            : card.IsCode(GladCardId.IndomitableGladiatorBeast) ? 1
-            : card.IsCode(GladCardId.Retiari) ? 3
-            : card.IsCode(GladCardId.Murmillo) ? 4
-            : card.IsCode(GladCardId.UpstartGoblin) ? 5
-            : card.IsCode(GladCardId.TrapStun, GladCardId.Waboku) ? 6
-            : card.IsCode(GladCardId.Glads) ? 8
+            card.IsCode(CardId.ShieldWarrior, CardId.SkillSuccessor) ? 0 // GY effects; Skill Successor: +800 from the GY (user, 2026-11-11: a good discard)
+            : card.IsCode(CardId.IndomitableGladiatorBeast) ? 1
+            : card.IsCode(CardId.GladiatorBeastRetiari) ? 3
+            : card.IsCode(CardId.GladiatorBeastMurmillo) ? 4
+            : card.IsCode(CardId.UpstartGoblin) ? 5
+            : card.IsCode(CardId.TrapStun, CardId.Waboku) ? 6
+            : card.IsCode(CardId.Glads) ? 8
             : 7;
 
         // Our Spell/Trap zone at this decision (Bestiari's tag-in would hit our own card when it holds the only ones).
@@ -1003,15 +1003,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         private bool _gladOnField;
 
         protected override IReadOnlyCollection<int> BaitCardIds =>
-            _gladOnField ? DefaultBaitCards.Append(GladCardId.SkillSuccessor).ToArray() : DefaultBaitCards;
+            _gladOnField ? DefaultBaitCards.Append(CardId.SkillSuccessor).ToArray() : DefaultBaitCards;
 
         protected override void OnFieldRefreshed(FieldInfo field)
         {
             _gladOnField = (field.OwnSide.MonsterZones ?? Array.Empty<CardArray>()).Any(zone => (zone.Cards ?? Array.Empty<int>()).FirstOrDefault() is int id && id > 0 &&
-                (GladCardId.GladMonsters.Contains(id) || GladCardId.GladMonsters.Contains(Search.SearchHost.CanonicalId(id))));
+                (CardId.GladMonsters.Contains(id) || CardId.GladMonsters.Contains(Search.SearchHost.CanonicalId(id))));
             _ownSpellTraps = (field.OwnSide.SpellZones ?? Array.Empty<CardArray>()).Count(zone => zone.Cards?.Any(id => id != 0) == true);
             _oppression = (field.EnemySide.SpellZones ?? Array.Empty<CardArray>())
-                .Any(zone => (zone.Cards ?? Array.Empty<int>()).FirstOrDefault() is int id && (id == RoyalOppression || id == RoyalOppression + 20));
+                .Any(zone => (zone.Cards ?? Array.Empty<int>()).FirstOrDefault() is int id && (id == CardId.RoyalOppression || id == CardId.RoyalOppression + 20));
         }
     }
 }

@@ -365,73 +365,67 @@ EffectEvaluator.RepeatableSummonBonus = 1.5   # Bonus for a Special Summon effec
 EffectEvaluator.ReviveTargetShare = 0.5   # Share of the best graveyard target's own score a reviver adds (Kinka-byo bringing back Moja, which in turn brings out King of the Beasts): reviving is only as good as what it revives.
 
 # --- LineTally
-LineTally.EffectAfterBattleCost = 0.5   # A monster effect of ours on offer in Main Phase 1, used only in Main Phase 2 after a Battle Phase while their board could remove that monster in the battle (a face-down flip, Fortress's battle trigger): this cost. User, 2026-11-18.
-LineTally.AttackLockCost = 0.4   # Per other monster of ours that could still attack, for an effect of ours that stops them attacking (Sirocco's boost, Chaos Sorcerer's banish): the downside of the effect, which a big enough gain (the boost winning a battle) overcomes. User, 2026-11-16: "stopping your things attacking is a negative part of an effect, it should have that".
-LineTally.DrawLaterCost = 0.5   # was 0.2 (CSV S4: too small to put draws first)
-LineTally.EquipBeforeBattleCost = 1.5
-LineTally.FusionWithoutBattleCost = 1.5
-LineTally.IdleSummonCost = 1.5
-LineTally.LylaBeforeBattleCost = 0.5
-LineTally.PriorityWindowBonus = 0.3   # Bonus (card units) for a monster's effect used in a chain window of our turn (its priority window) rather than later.
+LineRules.EffectAfterBattleCost = 0.5   # A monster effect of ours on offer in Main Phase 1, used only in Main Phase 2 after a Battle Phase while their board could remove that monster in the battle (a face-down flip, Fortress's battle trigger): this cost. User, 2026-11-18.
+LineRules.AttackLockCost = 0.4   # Per other monster of ours that could still attack, for an effect of ours that stops them attacking (Sirocco's boost, Chaos Sorcerer's banish): the downside of the effect, which a big enough gain (the boost winning a battle) overcomes. User, 2026-11-16: "stopping your things attacking is a negative part of an effect, it should have that".
+LineRules.DrawLaterCost = 0.5   # was 0.2 (CSV S4: too small to put draws first)
+LineRules.EquipBeforeBattleCost = 1.5
+LineRules.FusionWithoutBattleCost = 1.5
+LineRules.IdleSummonCost = 1.5
+LineRules.LylaBeforeBattleCost = 0.5
+LineRules.PriorityWindowBonus = 0.3   # Bonus (card units) for a monster's effect used in a chain window of our turn (its priority window) rather than later.
 
 # --- MctsEvaluator
-MctsEvaluator.AliveFloor = 0.05   # The least a position still alive at the horizon scores (and 1 minus the most): survival over a loss.
-MctsEvaluator.AtkTable = 0, 0.01, 0.011, 0.012, 0.013, 0.014, 0.015, 0.02, 0.021, 0.022, 0.03, 0.031, 0.04, 0.041, 0.3, 0.31, 0.4, 0.41, 0.5, 0.51, 1, 1.01, 1.1, 1.11, 1.2, 1.21, 1.25, 1.26, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7, 1.75, 1.8, 1.85, 1.9, 1.95, 2, 2.01, 2.1, 2.11, 2.2, 2.21, 2.25, 2.26, 2.4, 2.49, 2.5, 2.55, 2.6, 2.61, 2.62, 2.63, 2.7, 2.701, 2.702, 2.703, 2.8, 2.801, 2.802, 2.803, 2.804, 2.805, 2.806, 2.807, 2.808, 2.809, 2.81, 2.811, 2.812, 2.813, 2.814, 2.815, 2.816, 2.817, 2.818, 2.819, 2.82, 2.821, 2.822, 2.823, 2.824, 2.825, 2.826, 2.827, 2.828, 2.829, 2.83, 2.831, 2.832, 2.833, 2.834, 2.835, 2.836, 2.837, 2.838, 2.839, 2.84   # A monster's battle size in card units by ATK, one entry per 50 ATK from 0 to 5000 (above 5000 counts as 5000). Not linear: reshape it here.
-MctsEvaluator.AtkScale = 1.15   # Every ATK table value is multiplied by this. User, 2026-11-19: MonsterBase down to 0.3, stats scaled up to compensate (1.15 keeps 1800-2000 attackers where they were).
-MctsEvaluator.AttackerOddsStep = 100   # ATK steps of AttackerOdds: index i is "an attacker of at least i × 100 ATK".
-MctsEvaluator.BaitWeight = 0.5   # A set bait card gains this times our other sets' worth over the number of our sets (the share of a random pick).
-MctsEvaluator.DefenceShare = 1   # A monster in defence position counts this share of its DEF as its battle size (its ATK doesn't count there). User, 2026-11-18: 100%.
-MctsEvaluator.DominanceBonus = 0.1   # Bonus for the single largest face-up monster on the whole field, to its side (user, 2026-11-13: "move the dominance score down to just 0.1 for now, and only apply it if its the largest on both sides of the field ... nominal - a lever we can pull later"; the ATK table does most of the work).
-MctsEvaluator.DrawBonus = 0.5   # Bonus in card units for each card we draw after the searched decision.
-MctsEvaluator.ExplosivenessBase = 0.5   # Their unknown cards' risk scales with this plus their deck's explosiveness (0.5 + explosiveness).
-MctsEvaluator.FaceUpSpellBase = 0.3   # A face-up spell/trap's base worth, before its lasting effect.
-MctsEvaluator.FieldEffectWeight = 0.25   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
-MctsEvaluator.GenericAttackerAtk = 1400, 1600, 1800, 1900, 2100, 2400   # Without a deck read: the ATK bands of a typical deck's Level 4-or-lower attackers (paired with GenericAttackerChance; above the last band: 0).
-MctsEvaluator.GenericAttackerChance = 0.35, 0.28, 0.2, 0.14, 0.05, 0.02   # Without a deck read: the chance one unknown card is an attacker of at least that band's ATK (one per GenericAttackerAtk band).
-MctsEvaluator.GraveMonsterShare = 0.025   # A monster in the graveyard without a graveyard effect: this share of its field worth (spells/traps: 0). User, 2026-11-18.
-MctsEvaluator.HandAtkScale = 2000   # A monster in hand: its ATK counts as effect points at ATK / this.
-MctsEvaluator.HandCardBase = 0.8   # A card in hand: its base worth, before its effects and ATK.
-MctsEvaluator.HeldEffectWeight = 0.1   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
-MctsEvaluator.KeptDominanceBonus = 0   # Extra when that monster is the one that dominated when the search started. 0 for now: a lever for later.
-MctsEvaluator.LesserExposureWeight = 0.25   # Single-card removal and Icarus Attack count at this share of what Mirror Force / Torrential count (user, 2026-11-15: "~25%").
-MctsEvaluator.LowDeckCostPerCard = 0.5   # The deck-out cost per card under LowDeckFrom (card units).
-MctsEvaluator.LowDeckFrom = 5   # With our deck under this many cards, each missing card costs LowDeckCostPerCard (deck-out risk).
-MctsEvaluator.LowLpFullAt = 100   # Our LP at or below which a stopping/removing set card gets the full LowLpRemovalWeight.
-MctsEvaluator.LowLpRemovalWeight = 0.6   # With our LP at 0 (scaled up from ProtectionLpFrom), a set card that stops or removes an attacker gains this much.
-MctsEvaluator.LowLpScale = 1500   # How fast that value falls as our LP rise above LowLpFullAt: exp(-(LP - LowLpFullAt) / this). 1500: about 55% at 1000 LP, 28% at 2000, 7% at 4000, 0.5% at 8000.
-MctsEvaluator.LpHighWorth = 0   # Life points: everything from LpLowBand to 8000 is worth this many card units in all.
-MctsEvaluator.LpLowBand = 2000   # Life points: the band that counts at LpLowWorth.
-MctsEvaluator.LpLowWorth = 0   # Life points: the first LpLowBand of them are worth this many card units in all (each point matters more when low).
-MctsEvaluator.Main2BoardShare = 0.25   # Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn) count this share of their board value; monster sets count in full. User, 2026-11-18. 2026-11-19: 0.25 (was 0.5), "strengthen the penalty for summoning something in mp2".
-MctsEvaluator.MonsterBase = 0.3   # A face-up monster's base worth, before its ATK (the ATK table) and its effects. User, 2026-11-19: was 0.6, with AtkScale 1.15.
-MctsEvaluator.NoListNormalAttack = 1800   # Sitting duck without deck-list data: their assumed Level 4-or-lower attacker's ATK.
-MctsEvaluator.NoListTributeAttack = 2400   # Sitting duck without deck-list data: their assumed tribute attacker's ATK (user, 2026-11-18: 2400).
-MctsEvaluator.OversetCurve = 0.5   # The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).
-MctsEvaluator.PlusOneBonus = 1   # Per card of advantage won in our turn (card units, on top of the cards' own worth): a +1 (a card gained without losing one: Black Whirlwind's search, Pot of Greed) or a card of theirs taken for nothing (DAD's effect). A 1-for-1 trade is 0; a card spent for nothing (Kalut into a battle that changes nothing) is -1. User, 2026-11-16: "a very large bonus (per card)".
-MctsEvaluator.ProtectBodyShare = 0.5   # How much of a monster's body counts toward "how good it is" for protection (its effects count in full).
-MctsEvaluator.ProtectNeedCap = 2   # The most a monster's protection need counts for (card units).
-MctsEvaluator.ProtectionLpFrom = 4000   # Below this many life points, removal and protection gain value even with no monster to protect.
-MctsEvaluator.ProtectionWeight = 0.5   # A set card that protects (CardValue.Protects) gains this times what our most-at-risk monster needs (ProtectionNeed). Card units; adjust slowly.
-MctsEvaluator.RemoveThreatWeight = 0.3   # A set card that can remove a card of theirs already on the field gains this times that card's worth (card units).
-MctsEvaluator.ReserveWeight = 0.5   # Held monsters count at this share of their field worth: safe from the removal, but they accomplish nothing this turn (user, 2026-11-15: Fortress and Gearframe both out must beat Fortress alone with Gearframe held).
-MctsEvaluator.RiskDiscountMax = 0.6   # How much the fear of their cards drops at full pressure (risk tolerance at its top): 0.6 = to 40%.
-MctsEvaluator.Scale = 3   # How many card units of difference move the score from 0.5 to about 0.73 (the logistic's scale).
-MctsEvaluator.SetFlipBase = 0.9   # A face-down monster that gains from being set (a flip, a floater, a graveyard effect): its base worth.
-MctsEvaluator.SetFlipEffectWeight = 0.25   # Weight of a set flip / floater monster's effect points (its effect still to be used), like FieldEffectWeight: using it costs that much. User, 2026-11-18.
-MctsEvaluator.SetQuickPlayBase = 0.9   # A set quick-play spell's base worth, before what it will do.
-MctsEvaluator.SetSpellBase = 0.8   # A set normal / continuous / field / equip spell's base worth, before what it will do. User, 2026-11-19: back to 0.8, plus LineTally.SetNormalSpellCost 0.5 for setting a normal spell.
-MctsEvaluator.SetTrapBase = 1.25   # A set trap's base worth, before what it will do.
-MctsEvaluator.SittingDuckWeight = 0.5   # The sitting-duck loss counts this share of the threatened monster's value (user, 2026-11-18: 0.5 so monsters still get used).
-MctsEvaluator.TaperScale = 1   # How slowly the taper bends: 1 puts Absolute Zero (5.25 points with the "all" factor) at 3.45, Stardust (9) at 4.1, Shura (10) at 4.2.
-MctsEvaluator.TaperStart = 2   # Effect points are linear up to this, then taper (see Taper).
-MctsEvaluator.ThreatFirstShare = 0.6   # Their unknown cards' threat: the share of our best face-up monster at risk.
-MctsEvaluator.ThreatRestShare = 0.2   # Their unknown cards' threat: the share of each other face-up monster at risk.
-MctsEvaluator.ThreatRiskMax = 0.9   # The most of our board their unknown cards are assumed to answer (a chance, 0-1).
-MctsEvaluator.TributeSetupBase = 0.3   # A Level 5+ monster in hand with the tributes for it on the field: its base worth as a setup.
-MctsEvaluator.UnknownCardRisk = 0.08   # Each unknown card's share of the risk to our board (the explosiveness scales it). Tune from logs.
-MctsEvaluator.UnknownCardWorth = 0.5   # Each of their unknown cards (hand, set) counts as this much of a card of theirs.
-MctsEvaluator.UnknownSetWorth = 0.5   # The worth of an unknown set card of theirs, as a removal target.
-MctsEvaluator.WallValue = 0.3   # Any other face-down monster: just a wall (walls are worth little).
+BoardEvaluator.AliveFloor = 0.05   # The least a position still alive at the horizon scores (and 1 minus the most): survival over a loss.
+BoardEvaluator.AtkTable = 0, 0.01, 0.011, 0.012, 0.013, 0.014, 0.015, 0.02, 0.021, 0.022, 0.03, 0.031, 0.04, 0.041, 0.3, 0.31, 0.4, 0.41, 0.5, 0.51, 1, 1.01, 1.1, 1.11, 1.2, 1.21, 1.25, 1.26, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7, 1.75, 1.8, 1.85, 1.9, 1.95, 2, 2.01, 2.1, 2.11, 2.2, 2.21, 2.25, 2.26, 2.4, 2.49, 2.5, 2.55, 2.6, 2.61, 2.62, 2.63, 2.7, 2.701, 2.702, 2.703, 2.8, 2.801, 2.802, 2.803, 2.804, 2.805, 2.806, 2.807, 2.808, 2.809, 2.81, 2.811, 2.812, 2.813, 2.814, 2.815, 2.816, 2.817, 2.818, 2.819, 2.82, 2.821, 2.822, 2.823, 2.824, 2.825, 2.826, 2.827, 2.828, 2.829, 2.83, 2.831, 2.832, 2.833, 2.834, 2.835, 2.836, 2.837, 2.838, 2.839, 2.84   # A monster's battle size in card units by ATK, one entry per 50 ATK from 0 to 5000 (above 5000 counts as 5000). Not linear: reshape it here.
+BoardEvaluator.AtkScale = 1.15   # Every ATK table value is multiplied by this. User, 2026-11-19: MonsterBase down to 0.3, stats scaled up to compensate (1.15 keeps 1800-2000 attackers where they were).
+BoardEvaluator.AttackerOddsStep = 100   # ATK steps of AttackerOdds: index i is "an attacker of at least i × 100 ATK".
+BoardEvaluator.BaitWeight = 0.5   # A set bait card gains this times our other sets' worth over the number of our sets (the share of a random pick).
+BoardEvaluator.DefenceShare = 1   # A monster in defence position counts this share of its DEF as its battle size (its ATK doesn't count there). User, 2026-11-18: 100%.
+BoardEvaluator.DominanceBonus = 0.1   # Bonus for the single largest face-up monster on the whole field, to its side (user, 2026-11-13: "move the dominance score down to just 0.1 for now, and only apply it if its the largest on both sides of the field ... nominal - a lever we can pull later"; the ATK table does most of the work).
+BoardEvaluator.DrawBonus = 0.5   # Bonus in card units for each card we draw after the searched decision.
+BoardEvaluator.ExplosivenessBase = 0.5   # Their unknown cards' risk scales with this plus their deck's explosiveness (0.5 + explosiveness).
+BoardEvaluator.FaceUpSpellBase = 0.3   # A face-up spell/trap's base worth, before its lasting effect.
+BoardEvaluator.FieldEffectWeight = 0.25   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
+BoardEvaluator.GenericAttackerAtk = 1400, 1600, 1800, 1900, 2100, 2400   # Without a deck read: the ATK bands of a typical deck's Level 4-or-lower attackers (paired with GenericAttackerChance; above the last band: 0).
+BoardEvaluator.GenericAttackerChance = 0.35, 0.28, 0.2, 0.14, 0.05, 0.02   # Without a deck read: the chance one unknown card is an attacker of at least that band's ATK (one per GenericAttackerAtk band).
+BoardEvaluator.GraveMonsterShare = 0.025   # A monster in the graveyard without a graveyard effect: this share of its field worth (spells/traps: 0). User, 2026-11-18.
+BoardEvaluator.HandAtkScale = 2000   # Printed monster ATK is divided by this before adding it to held effect points.
+BoardEvaluator.HandCardBase = 0.8   # The base value of a known hand card in CardAdvantageDelta, before effects and printed ATK.
+BoardEvaluator.HeldEffectWeight = 0.1   # Weight of a card's effect points (EffectEvaluator: a searcher or negate ~4) next to its body.
+BoardEvaluator.KeptDominanceBonus = 0   # Extra when that monster is the one that dominated when the search started. 0 for now: a lever for later.
+BoardEvaluator.LesserExposureWeight = 0.25   # Single-card removal and Icarus Attack count at this share of what Mirror Force / Torrential count (user, 2026-11-15: "~25%").
+BoardEvaluator.LowLpFullAt = 100   # Our LP at or below which a stopping/removing set card gets the full LowLpRemovalWeight.
+BoardEvaluator.LowLpRemovalWeight = 0.6   # With our LP at 0 (scaled up from ProtectionLpFrom), a set card that stops or removes an attacker gains this much.
+BoardEvaluator.LowLpScale = 1500   # How fast that value falls as our LP rise above LowLpFullAt: exp(-(LP - LowLpFullAt) / this). 1500: about 55% at 1000 LP, 28% at 2000, 7% at 4000, 0.5% at 8000.
+BoardEvaluator.Main2BoardShare = 0.25   # Our face-up monsters summoned in Main Phase 2 (or on the duel's first turn) count this share of their board value; monster sets count in full. User, 2026-11-18. 2026-11-19: 0.25 (was 0.5), "strengthen the penalty for summoning something in mp2".
+BoardEvaluator.MonsterBase = 0   # A face-up monster's base worth, before its ATK (the ATK table) and its effects. User, 2026-11-24: 0 (was 0.3): a monster already counts as a card (MonsterCardValue 0.7) and gets its stats.
+BoardEvaluator.NoListNormalAttack = 1800   # Sitting duck without deck-list data: their assumed Level 4-or-lower attacker's ATK.
+BoardEvaluator.NoListTributeAttack = 2400   # Sitting duck without deck-list data: their assumed tribute attacker's ATK (user, 2026-11-18: 2400).
+BoardEvaluator.OversetCurve = 0.5   # The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).
+BoardEvaluator.PlusOneBonus = 1   # Scale for CardAdvantageDelta. At 1, known hand cards and set traps use their hand value, and other field cards count as one.
+BoardEvaluator.ProtectBodyShare = 0.5   # How much of a monster's body counts toward "how good it is" for protection (its effects count in full).
+BoardEvaluator.ProtectNeedCap = 2   # The most a monster's protection need counts for (card units).
+BoardEvaluator.ProtectionLpFrom = 4000   # Below this many life points, removal and protection gain value even with no monster to protect.
+BoardEvaluator.ProtectionWeight = 0.5   # A set card that protects (CardValue.Protects) gains this times what our most-at-risk monster needs (ProtectionNeed). Card units; adjust slowly.
+BoardEvaluator.RemoveThreatWeight = 0.3   # A set card that can remove a card of theirs already on the field gains this times that card's worth (card units).
+BoardEvaluator.ReserveWeight = 0.5   # Held monsters count at this share of their field worth: safe from the removal, but they accomplish nothing this turn (user, 2026-11-15: Fortress and Gearframe both out must beat Fortress alone with Gearframe held).
+BoardEvaluator.RiskDiscountMax = 0.6   # How much the fear of their cards drops at full pressure (risk tolerance at its top): 0.6 = to 40%.
+BoardEvaluator.Scale = 3   # How many card units of difference move the score from 0.5 to about 0.73 (the logistic's scale).
+BoardEvaluator.SetFlipBase = 0.9   # A face-down monster that gains from being set (a flip, a floater, a graveyard effect): its base worth.
+BoardEvaluator.SetFlipEffectWeight = 0.25   # Weight of a set flip / floater monster's effect points (its effect still to be used), like FieldEffectWeight: using it costs that much. User, 2026-11-18.
+BoardEvaluator.SetQuickPlayBase = 0.9   # A set quick-play spell's base worth, before what it will do.
+BoardEvaluator.SetSpellBase = 0.8   # A set normal / continuous / field / equip spell's base worth, before what it will do. User, 2026-11-19: back to 0.8, plus LineRules.SetNormalSpellCost 0.5 for setting a normal spell.
+BoardEvaluator.SetTrapBase = 0.01   # Nominal BoardScore bonus for setting a trap. Its intrinsic hand value is kept in CardAdvantageDelta.
+BoardEvaluator.SittingDuckWeight = 0.5   # The sitting-duck loss counts this share of the threatened monster's value (user, 2026-11-18: 0.5 so monsters still get used).
+BoardEvaluator.TaperScale = 1   # How slowly the taper bends: 1 puts Absolute Zero (5.25 points with the "all" factor) at 3.45, Stardust (9) at 4.1, Shura (10) at 4.2.
+BoardEvaluator.TaperStart = 2   # Effect points are linear up to this, then taper (see Taper).
+BoardEvaluator.ThreatFirstShare = 0.6   # Their unknown cards' threat: the share of our most valuable monster at risk, including face-down monsters.
+BoardEvaluator.ThreatRestShare = 0.2   # Their unknown cards' threat: the share of each other monster at risk, including face-down monsters.
+BoardEvaluator.ThreatRiskMax = 0.9   # The most of our board their unknown cards are assumed to answer (a chance, 0-1).
+BoardEvaluator.UnknownCardRisk = 0.08   # Each unknown card's share of the risk to our board (the explosiveness scales it). Tune from logs.
+BoardEvaluator.UnknownCardWorth = 0.5   # Each of their unknown cards (hand, set) counts as this much of a card of theirs.
+BoardEvaluator.UnknownSetWorth = 0.5   # The worth of an unknown set card of theirs, as a removal target.
+BoardEvaluator.WallValue = 0.3   # Any other face-down monster: just a wall (walls are worth little).
 
 # --- OpponentDeckPredictor
 OpponentDeckPredictor.DefaultTypeExplosiveness = 0.5   # Deck read: the explosiveness of a deck type neither DeckExplosiveness nor the deck data rates.
@@ -487,9 +481,9 @@ DeckBotBrain.HoldCost.deck.grave-banish-target = 0.75
 
 # added 2026-11-17 15:46 (new in the code since the file was written)
 # --- LineTally
-LineTally.EmptyBattleCost = 2   # A line that enters the Battle Phase and makes no attack (user, 2026-11-17: it should outweigh the Main Phase 2 gains).
+LineRules.EmptyBattleCost = 2   # A line that enters the Battle Phase and makes no attack (user, 2026-11-17: it should outweigh the Main Phase 2 gains).
 # --- MctsEvaluator
-MctsEvaluator.ClockByTurns = 1.5, 1, 0.5, 0.25, 0.25, 0.1, 0.1, 0.1   # A side's clock on the other, as part of the board (card units), by its length: entry 1 for a 1-turn clock, 2 for 2 turns, and so on; the last entry for that many turns or more (no clock = 0). User, 2026-11-18.
+BoardAssessment.ClockByTurns = 1.5, 1, 0.5, 0.25, 0.25, 0.1, 0.1, 0.1   # A side's clock on the other, as part of the board (card units), by its length: entry 1 for a 1-turn clock, 2 for 2 turns, and so on; the last entry for that many turns or more (no clock = 0). User, 2026-11-18.
 
 # added 2026-11-17 15:47 (new in the code since the file was written)
 # --- DeckBotBrain
@@ -503,8 +497,8 @@ DeckBotBrain.FairyFuelLimit = 4   # Against a Fairy deck: Fairies in their grave
 DeckBotBrain.FuelGoalDeckChance = 0.5   # The deck-read chance (their deck type, or their list running Dark Armed Dragon) from which a graveyard fuel goal applies.
 DeckBotBrain.HonestSuspectChance = 0.3   # Honest counts as suspected in their hand from this deck-read chance (or when known).
 # --- MctsEvaluator
-MctsEvaluator.DamageBonusPer1000 = 0.12   # A line that attacked gets this much extra (card units) per 1000 damage dealt in our turn, up to DamageBonusMax. Small: damage is mostly the clock's business. User, 2026-11-19: +20% (was 0.1).
-MctsEvaluator.OwnDamageShare = 0.8333   # Our life points lost by the end of a line count against it at this share of DamageBonusPer1000 (continuous). User, 2026-11-18. 2026-11-19: taking damage doubled to 0.10 per 1000 (0.8333 x 0.12).
+BoardEvaluator.DamageBonusPer1000 = 0.12   # A line that attacked gets this much extra (card units) per 1000 damage dealt in our turn, up to DamageBonusMax. Small: damage is mostly the clock's business. User, 2026-11-19: +20% (was 0.1).
+BoardEvaluator.OwnDamageShare = 0.8333   # Our life points lost by the end of a line count against it at this share of DamageBonusPer1000 (continuous). User, 2026-11-18. 2026-11-19: taking damage doubled to 0.10 per 1000 (0.8333 x 0.12).
 
 # added 2026-11-17 16:20 (new in the code since the file was written)
 # --- EffectEvaluator
@@ -513,12 +507,12 @@ EffectEvaluator.SelfSummonValue = 0.25   # A monster effect that only Special Su
 
 # added 2026-11-17 16:31 (new in the code since the file was written)
 # --- MctsEvaluator
-MctsEvaluator.WinBonus = 10   # A line that wins: this many card units on top of its position, times the chance the win really works (WinChance). Large.
-MctsEvaluator.WinCardCost = 1   # A won line: each card of ours it used up costs this much (card units) in the win's part of its score; the board it leaves doesn't count there. User, 2026-11-18.
-MctsEvaluator.RiskyWinBonus = 5   # A won line's bonus when the win carries any risk (WinBonus is only for a sure win). User, 2026-11-18: risk is risky, an overspent win that fails loses.
-MctsEvaluator.DustshootBonus = 1   # A line that activates our Trap Dustshoot gains this (card units): it removes a card from their hand almost always, but the lines' unseen hand cards are blanks. User, 2026-11-18.
+BoardEvaluator.WinBonus = 10   # A line that wins: this many card units on top of its position, times the chance the win really works (WinChance). Large.
+BoardEvaluator.WinCardCost = 1   # A won line: each card of ours it used up costs this much (card units) in the win's part of its score; the board it leaves doesn't count there. User, 2026-11-18.
+BoardEvaluator.RiskyWinBonus = 5   # A won line's bonus when the win carries any risk (WinBonus is only for a sure win). User, 2026-11-18: risk is risky, an overspent win that fails loses.
+LineRules.DustshootBonus = 1   # A line that activates our Trap Dustshoot gains this (card units): it removes a card from their hand almost always, but the lines' unseen hand cards are blanks. User, 2026-11-18.
 # --- SearchCardValues
-SearchCardValues.GraveFloor = 0   # A card that works from the graveyard is worth at least this there (card points), whatever its graveyard effects score.
+CardValues.GraveFloor = 0   # A card that works from the graveyard is worth at least this there (card points), whatever its graveyard effects score.
 
 # added 2026-11-17 16:43 (new in the code since the file was written)
 # --- EffectEvaluator
@@ -530,16 +524,15 @@ EffectEvaluator.GraveStatBoostValue = 0.75   # A graveyard effect that boosts AT
 
 # added 2026-11-17 17:03 (new in the code since the file was written)
 # --- MctsEvaluator
-MctsEvaluator.BigHitBonus = 0.25
-MctsEvaluator.BigHitDamage = 1500   # Damage dealt in a line from this much up earns BigHitBonus (card units, on top of the LP themselves). Small: adjust slowly.
+BoardEvaluator.BigHitBonus = 0.25
+BoardEvaluator.BigHitDamage = 1500   # Damage dealt in a line from this much up earns BigHitBonus (card units, on top of the LP themselves). Small: adjust slowly.
 
 # added 2026-11-17 19:37 (new in the code since the file was written)
 # --- MctsEvaluator
-MctsEvaluator.GorzReadyBonus = 0.3   # Gorz in our hand and our field empty at the end of a line: this small bonus (card units): Gorz can come out on their direct hit.
+LineRules.GorzReadyBonus = 0.3   # Gorz in our hand and our field empty at the end of a line: this small bonus (card units): Gorz can come out on their direct hit.
 
 # added 2026-11-17 20:01 (new in the code since the file was written)
 # --- DeckBotBrain
-DeckBotBrain.VayuPairShare = 1   # Combined graveyard value of a live Vayu pair as a share of the negated Synchro's attack-position body.
 
 # added 2026-11-17 20:06 (new in the code since the file was written)
 # --- EffectEvaluator
@@ -547,11 +540,11 @@ EffectEvaluator.TunerValue = 0.5   # A Tuner monster (in hand or on the field): 
 
 # added 2026-11-17 20:07 (new in the code since the file was written)
 # --- SearchCardValues
-SearchCardValues.VayuGraveReading = 0.8   # Vayu's own graveyard worth (card points; its pairing is scored by the Vayu / Blackwing brains on top). User, 2026-11-17: about as valuable in the GY as Plaguespreader, more than Necro Gardna.
+CardValues.VayuGraveReading = 0.8   # Vayu's own graveyard worth (card points; its pairing is scored by the Vayu / Blackwing brains on top). User, 2026-11-17: about as valuable in the GY as Plaguespreader, more than Necro Gardna.
 
 # added 2026-11-18 10:58 (new in the code since the file was written)
 # --- MctsEvaluator
-MctsEvaluator.TheirClockShare = 0.5   # Their clock on us counts this share of ClockByTurns against a line (ours on them counts in full). User, 2026-11-18: "tone down the penalty for being on a clock ... leave the bonus for the bot putting me on a clock as is".
+BoardAssessment.TheirClockShare = 0.5   # Their clock on us counts this share of ClockByTurns against a line (ours on them counts in full). User, 2026-11-18: "tone down the penalty for being on a clock ... leave the bonus for the bot putting me on a clock as is".
 
 # added 2026-11-18 11:29 (new in the code since the file was written)
 # --- DeckBotBrain
@@ -562,11 +555,11 @@ DeckBotBrain.HoldCost.deck.no-hand-trap-set = 6
 DeckBotBrain.DustshootSetAtHand = 3   # Trap Dustshoot is set (ending the turn without it is held) when their hand has this many cards or more.
 DeckBotBrain.UnknownCardTargetWorth = 1.5   # A face-down card of theirs as a target for a doomed Raigeki Break / Icarus Attack (effect points).
 # --- LineTally
-LineTally.AllureBonus = 0.3   # Allure of Darkness activated with a DARK in hand to banish: this small bonus (card units).
+LineRules.AllureBonus = 0.3   # Allure of Darkness activated with a DARK in hand to banish: this small bonus (card units).
 # --- MctsEvaluator
-MctsEvaluator.SolemnGuardCap = 2   # The most a hand card's worth counts for in the Solemn bonus (card units).
-MctsEvaluator.SolemnGuardMinWorth = 2   # A hand card counts as strong for the Solemn bonus from this worth (effect points plus ATK value).
-MctsEvaluator.SolemnGuardWeight = 0.3   # A set Solemn Judgment gains this times the worth of our strongest card still in hand (capped at SolemnGuardCap): it protects that play next turn.
+LineRules.SolemnGuardCap = 2   # The most a hand card's worth counts for in the Solemn bonus (card units).
+LineRules.SolemnGuardMinWorth = 2   # A hand card counts as strong for the Solemn bonus from this worth (effect points plus ATK value).
+LineRules.SolemnGuardWeight = 0.3   # A set Solemn Judgment gains this times the worth of our strongest card still in hand (capped at SolemnGuardCap): it protects that play next turn.
 
 # added 2026-11-18 11:42 (new in the code since the file was written)
 # --- DeckBotBrain
@@ -574,9 +567,9 @@ DeckBotBrain.HoldCost.deck.set-trap-dustshoot = 3
 
 # added 2026-11-18 21:24 (new in the code since the file was written)
 # --- MctsEvaluator
-MctsEvaluator.ClockBonus = 1.5   # A side's clock on the other, as part of the board: worth ClockBonus / turns (card units) for a clock of that many turns (1 turn = the full bonus; no clock = 0). The turns are the brain's own clock (BoardAssessment.TurnsToWin).
-MctsEvaluator.SetQuickPlayBonus = 0.1   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
-MctsEvaluator.SetTrapBonus = 0.25   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
+BoardEvaluator.ClockBonus = 1.5   # A side's clock on the other, as part of the board: worth ClockBonus / turns (card units) for a clock of that many turns (1 turn = the full bonus; no clock = 0). The turns are the brain's own clock (BoardAssessment.TurnsToWin).
+BoardEvaluator.SetQuickPlayBonus = 0.1   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
+BoardEvaluator.SetTrapBonus = 0.25   # The bonus of a set trap over the same trap in hand (it can act on their turn), and a much smaller one for a set quick-play spell (CSV S2/S3). Card units; numbers to confirm with the user.
 
 # added 2026-11-19 11:06 (new in the code since the file was written)
 # --- Search
@@ -584,15 +577,30 @@ Search.LineValueAvailableShare = 0.9   # A follow-up answer counts for a move's 
 
 # added 2026-11-19 11:39 (new in the code since the file was written)
 # --- LineTally
-LineTally.BrainControlUnusedCost = 2   # Brain Control whose monster goes back to them at the end of our turn (not tributed, not Synchro material, no win): this small cost. User, 2026-11-19: "the goal of it is to tribute or synchro with my monster, or win that turn".
-LineTally.EarlyTrapCost = 1.5   # A trap of ours fired on their turn in a window opened by nothing (no chain to answer, no attack, no summon just made; not their End Phase): it could have waited for the last possible moment. User, 2026-11-19.
-LineTally.ReturnTheirTurnCost = 1.5   # Return from the Different Dimension fired on their turn, even against an attack, unless Return is about to be destroyed: this cost, instead of EarlyTrapCost. Not on our turn (plenty of plays there). User, 2026-11-19.
-LineTally.SetNormalSpellCost = 0.5   # Setting a normal spell (it is worth less set than in hand, and shows a card): this line cost. User, 2026-11-19: "put the set spell value back to 0.8 and add back the line penalty of 0.5 for setting one".
+LineRules.BrainControlUnusedCost = 2   # Brain Control whose monster goes back to them at the end of our turn (not tributed, not Synchro material, no win): this small cost. User, 2026-11-19: "the goal of it is to tribute or synchro with my monster, or win that turn".
+LineRules.EarlyTrapCost = 1.5   # A trap of ours fired on their turn in a window opened by nothing (no chain to answer, no attack, no summon just made; not their End Phase): it could have waited for the last possible moment. User, 2026-11-19.
+LineRules.ReturnTheirTurnCost = 1.5   # Return from the Different Dimension fired on their turn, even against an attack, unless Return is about to be destroyed: this cost, instead of EarlyTrapCost. Not on our turn (plenty of plays there). User, 2026-11-19.
+LineRules.SkipNormalSummonCost = 2   # Cost for ending our turn against an empty monster field without using an available Normal Summon or monster set.
+LineRules.SetNormalSpellCost = 0.5   # Setting a normal spell (it is worth less set than in hand, and shows a card): this line cost. User, 2026-11-19: "put the set spell value back to 0.8 and add back the line penalty of 0.5 for setting one".
 
 # added 2026-11-19 13:09 (new in the code since the file was written)
 # --- LineTally
-LineTally.JarTheirTurnCost = 1.5   # Jar of Greed fired on their turn when it isn't about to be destroyed, nor clearing our field for Gorz against an attack (it's our only card, Gorz in hand): this cost, instead of EarlyTrapCost. User, 2026-11-19: those, or our own turn with no play, "are the only legitimate times".
-LineTally.OwnDestroyCost = 3   # Our own card picked for one of our effects that destroys (Mystical Space Typhoon on our own set card): this cost per card. User, 2026-11-19: "HUGE HUGE Error: mst destroy own card".
+LineRules.JarTheirTurnCost = 1.5   # Jar of Greed fired on their turn when it isn't about to be destroyed, nor clearing our field for Gorz against an attack (it's our only card, Gorz in hand): this cost, instead of EarlyTrapCost. User, 2026-11-19: those, or our own turn with no play, "are the only legitimate times".
+LineRules.OwnDestroyCost = 3   # Our own card picked for one of our effects that destroys (Mystical Space Typhoon on our own set card): this cost per card. User, 2026-11-19: "HUGE HUGE Error: mst destroy own card".
 # --- Mcts
 Mcts.UnexploredMinVisits = 10   # Lines a follow-up needs before UnexploredBest counts its mean: a move still scored on the average of its follow-ups, one of which already looks as good as the best move, keeps getting lines.
 Mcts.UnexploredErrors = 1   # While no follow-up of ours has LineValueVisits, a move is read through its best follow-up with UnexploredMinVisits, this many standard errors down, never below its plain average. User, 2026-11-19.
+
+# added 2026-11-24 11:59 (new in the code since the file was written)
+# --- BoardEvaluator
+BoardEvaluator.DeckSendHeldWeight = 1   # A held card that sends from our deck to the GY (Armageddon Knight, Dark Grepher) adds this share of the best GY value it can send, in card units. User, 2026-11-24: scored by the highest GY value of the deck cards it can send.
+
+# added 2026-11-24 12:15 (new in the code since the file was written)
+# --- BoardEvaluator
+BoardEvaluator.TargetEffectWeight = 1   # Scale on the value of a held card's searches / Special Summons / sends from a zone (TargetEffects), in card units. User, 2026-11-24: a monster is worth its best target, a spell or trap its average target (no base value), minus the cheapest hand card that pays a discard cost (cards that want the GY pay it for free).
+
+# added 2026-11-24 13:50 (new in the code since the file was written)
+# --- BoardEvaluator
+BoardEvaluator.MonsterCardValue = 0.7   # A non-token monster on the field counts as this many cards in CardAdvantageDelta (other cards count 1). User, 2026-11-24: "because monsters also get their stats, lower their base value for just being a card down to 0.7 on the field".
+BoardEvaluator.SingleTrapFutureValue = 0.5   # What single removal (D-Prison, Bottomless, Icarus Attack...) still threatens if it isn't used now, on top of the card itself (card units). User, 2026-11-24: 0.5 to start.
+BoardEvaluator.WipeTrapFutureValue = 1   # What a wipe trap (Mirror Force, Torrential Tribute) still threatens if it isn't used now, on top of the card itself (card units), in the exposures' trap cost. User, 2026-11-24: 1.0 to start.

@@ -26,10 +26,17 @@ namespace BotTest.Game.AI.Search
         public static string? FirstFailure;
 
         private readonly DeckBotBrain _twin;
+        private readonly bool _useForRollouts;
+        private Prompt? _idlePrompt;
+        private HashSet<(MainAction Action, int Index)>? _blockedIdleMoves;
+        private int _startingTurn;
+        private bool _normalSummonUsedAtStart;
+        private IReadOnlyCollection<int> _activatedAtStart = Array.Empty<int>();
 
-        public SearchBrain(DeckBotBrain playing, string deckName, string deckHash)
+        public SearchBrain(DeckBotBrain playing, string deckName, string deckHash, bool useForRollouts = true)
         {
             _twin = playing.CreateSearchTwin();
+            _useForRollouts = useForRollouts;
             _adapter = new BotBrainActionsAdapter(_twin, deckName, deckHash);
             _bot = new DuelBotWrapper(_adapter, Api);
         }
@@ -41,8 +48,13 @@ namespace BotTest.Game.AI.Search
         public Dictionary<string, (double Cost, string Rule)> HoldsFor(IEnumerable<string> keys) => _twin.HoldsFor(keys);
 
         /// <summary>Points this brain at the line being played (call before each line, on the search thread).</summary>
-        public void Attach(DuelHost host, int turnOffset)
+        public void Attach(DuelHost host, int turnOffset, int startingTurn, bool normalSummonUsedAtStart,
+            IReadOnlyCollection<int> activatedAtStart)
         {
+            _idlePrompt = null;
+            _startingTurn = startingTurn;
+            _normalSummonUsedAtStart = normalSummonUsedAtStart;
+            _activatedAtStart = activatedAtStart;
             Api.Host = host;
             Api.TurnOffset = turnOffset;
             Api.Reset();
@@ -51,15 +63,42 @@ namespace BotTest.Game.AI.Search
             ConsoleUtils.Muted = true;
         }
 
-        /// <summary>Our brain's answer to this prompt, as a bot packet, or null to let the policy answer.</summary>
-        public byte[]? Decide(Prompt prompt)
+        public HashSet<(MainAction Action, int Index)> BlockedIdleMoves(Prompt prompt, IdleCmdData data)
         {
+            if (_idlePrompt != prompt)
+            {
+                Api.Reset();
+                var header = Api.Header();
+                _bot.BeginOfflineDecision(header);
+                var context = new DecisionContext<IdleCmdData>
+                {
+                    Bot = _bot, State = BotState.SelectIdleCmd, Header = header, StateData = data
+                };
+                var host = Api.Host!;
+                bool atStartingTurn = host.Turn == _startingTurn;
+                bool normalSummonUsed = host.SearchNormalSummonOrSetUsed || atStartingTurn && _normalSummonUsedAtStart;
+                var activated = host.ActivatedInTurn(0, host.Turn);
+                _twin.PrepareIdleMoveRulesAsync(context, normalSummonUsed, atStartingTurn ? activated.Concat(_activatedAtStart) : activated)
+                    .GetAwaiter().GetResult();
+                _blockedIdleMoves = _twin.BlockedIdleMovesAsync(context, SearchActions.Idle(data).Select(move => move.Response))
+                    .GetAwaiter().GetResult();
+                _idlePrompt = prompt;
+            }
+            return _blockedIdleMoves!;
+        }
+
+        /// <summary>Our brain's answer to this prompt, as a bot packet, or null to let the policy answer.</summary>
+        /// <param name="data">The prompt's options narrowed (SearchActions.WithoutAnswer): asked again after the search refused an answer.</param>
+        public byte[]? Decide(Prompt prompt, object? data = null)
+        {
+            if (!_useForRollouts)
+                return null;
             long start = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
                 Api.Reset(); // the line moved on since the last decision
                 _bot.BeginOfflineDecision(Api.Header());
-                var packet = prompt.Data switch
+                var packet = (data ?? prompt.Data) switch
                 {
                     IdleCmdData idle => SearchActions.Packet(_adapter.OnIdleCmd(idle).GetAwaiter().GetResult()),
                     BattleCmdData battle => SearchActions.Packet(_adapter.OnBattleCmd(battle).GetAwaiter().GetResult()),

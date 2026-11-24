@@ -1,20 +1,15 @@
-using static BotTest.Game.AI.Bots.MasterDuel.Blackwing.BlackwingCardId;
-using BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts;
+﻿using BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts;
 using BotTest.Game.AI.Bots.MasterDuel.HeroFrog;
 using BotTest.Game.AI.Bots.MasterDuel.Machina;
 using OmegaBotWrapper.Enum;
 using OmegaBotWrapper.Struct;
+using static BotTest.Game.AI.CardId;
 
 namespace BotTest.Game.AI.Brains
 {
     /// <summary>Per-card rules. Shared keyword behavior is defined in TagRules.cs.</summary>
     internal static partial class CardRules
     {
-        private const int Honest = 37742478;
-        private const int Shrink = 55713623;
-        private const int Unifrog = 56052205;
-        private const int FlipFlopFrog = 81278754;
-        private const int ThoughtRulerArchfiend = 70780151;
 
         internal static bool ThreatTriggersOnNormalSummon(int code) =>
             Search.SearchHost.Available && Search.SearchHost.Cards.Get(code)?.Text is { } text &&
@@ -25,14 +20,16 @@ namespace BotTest.Game.AI.Brains
         internal static bool ReinforcementCanSearch(int type, long race, int level) =>
             (type & (int)CardType.Monster) != 0 && (race & (int)CardRace.Warrior) != 0 && level is > 0 and <= 4;
 
-        internal static readonly int[] GrepherDiscards =
-            { NecroGardna, PlaguespreaderZombie, BlackwingVayuTheEmblemOfHonor, BlackwingSiroccoTheDawn, BlackwingElphinTheRaven };
+        /// <summary>A DARK monster with the GoodDiscard tag: what Dark Grepher's effect can discard and is happy to.</summary>
+        internal static bool IsGoodDarkDiscard(int id) =>
+            CardRuleRegistry.AnyCardWithTag(new[] { id }, TagRules.Tag.GoodDiscard) &&
+            (Search.SearchHost.Type(id) & 0x1) != 0 && (Search.SearchHost.Attribute(id) & 0x20) != 0;
 
         internal static bool ReinforcementNeedsGardna(CardRuleRegistry.Context context) =>
             context.DarkGrepherAvailable && context.OwnDeck.Any(id => Search.SearchHost.Is(id, NecroGardna)) &&
-            !context.OwnHand.Any(id => GrepherDiscards.Any(discard => Search.SearchHost.Is(id, discard)));
+            !context.OwnHand.Any(IsGoodDarkDiscard);
 
-        internal static readonly int[] SwapFrogDeckTargets = { HeroFrogCardId.TreebornFrog, HeroFrogCardId.SwapFrog, HeroFrogCardId.DupeFrog, Unifrog, FlipFlopFrog, HeroFrogCardId.Substitoad };
+        internal static readonly int[] SwapFrogDeckTargets = { CardId.TreebornFrog, CardId.SwapFrog, CardId.DupeFrog, CardId.Unifrog, CardId.FlipFlopFrog, CardId.Substitoad };
 
         internal static bool IsGladiatorBeast(int id) =>
             (Search.SearchHost.Type(id) & 0x1) != 0 &&
@@ -50,13 +47,13 @@ namespace BotTest.Game.AI.Brains
         internal static readonly CardRuleRegistry.Rule[] Definitions =
         {
             // Ryko, Lightsworn Hunter
-            new(new[] { MachinaCardId.RykoLightswornHunter, RykoLightswornHunter }, TagRules.Tag.SetOnly),
+            new(new[] { CardId.RykoLightswornHunter, RykoLightswornHunterPreErrata }, TagRules.Tag.SetOnly),
 
             // Super-Nimble Mega Hamster
             // Card-specific exception: while there are no Rykos in the deck, disable the SetOnly tag.
-            new(new[] { MachinaCardId.SuperNimbleMegaHamster }, TagRules.Tag.SetOnly,
+            new(new[] { CardId.SuperNimbleMegaHamster }, TagRules.Tag.SetOnly,
                 TagsToDisableWhen: context =>
-                    !context.OwnDeck.Any(id => Search.SearchHost.Is(id, MachinaCardId.RykoLightswornHunter))
+                    !context.OwnDeck.Any(id => Search.SearchHost.Is(id, CardId.RykoLightswornHunter))
                         ? TagRules.Tag.SetOnly : TagRules.Tag.None),
 
             // Card Trooper: activate its summon effect only while at least five cards remain in our deck,
@@ -68,62 +65,69 @@ namespace BotTest.Game.AI.Brains
                 SelectOptionIndex: (_, optionCount) => optionCount > 0 ? optionCount - 1 : null),
 
             // Armageddon Knight
-            new(new[] { ArmageddonKnight }, TagRules.Tag.ActivateOnSummon),
+            new(new[] { ArmageddonKnight }, TagRules.Tag.ActivateOnSummon | TagRules.Tag.DoNotSet,
+                SendGoodDiscardFromDeck: true),
 
             // Reinforcement of the Army
+            // Its search takes Necro Gardna when Dark Grepher needs a discard and the hand has none (ReinforcementNeedsGardna).
             new(new[] { ReinforcementOfTheArmy }, TagRules.Tag.DoNotActivate,
                 TagsToDisableWhen: context => !context.NormalSummonUsed || context.ReinforcementHasSingleTarget ||
-                    ReinforcementNeedsGardna(context) ? TagRules.Tag.DoNotActivate : TagRules.Tag.None),
+                    ReinforcementNeedsGardna(context) ? TagRules.Tag.DoNotActivate : TagRules.Tag.None,
+                ForcedSearchPick: (context, offered) =>
+                    offered.Any(id => Search.SearchHost.Is(id, NecroGardna)) && ReinforcementNeedsGardna(context) ? NecroGardna : null),
 
-            // Dark Grepher: activate only when a GoodDiscard card is available in our hand.
-            new(new[] { DarkGrepher }, TagRules.Tag.ActivateOnSummon,
-                TagsToDisableWhen: context => CardRuleRegistry.AnyCardWithTag(context.OwnHand, TagRules.Tag.GoodDiscard)
+            // Dark Grepher: activate only when a DARK GoodDiscard card is available in our hand.
+            // While it's on our field, its discard takes a GoodDiscard card when one is offered (only DARKs are offered).
+            new(new[] { DarkGrepher }, TagRules.Tag.ActivateOnSummon | TagRules.Tag.DoNotSet,
+                TagsToDisableWhen: context => context.OwnHand.Any(IsGoodDarkDiscard)
                     ? TagRules.Tag.None
-                    : TagRules.Tag.ActivateOnSummon),
+                    : TagRules.Tag.ActivateOnSummon,
+                DiscardPickTag: TagRules.Tag.GoodDiscard,
+                SendGoodDiscardFromDeck: true),
 
             // Machina Gearframe
-            new(new[] { MachinaCardId.MachinaGearframe }, TagRules.Tag.ActivateOnSummon),
+            new(new[] { CardId.MachinaGearframe }, TagRules.Tag.ActivateOnSummon | TagRules.Tag.NeverSet),
 
             // Elemental HERO Stratos
-            new(new[] { HeroFrogCardId.ElementalHeroStratos }, TagRules.Tag.ActivateOnSummon),
+            new(new[] { CardId.ElementalHEROStratos }, TagRules.Tag.ActivateOnSummon),
 
             // Blackwing - Blizzard the Far North
             new(new[] { BlackwingBlizzardTheFarNorth }, TagRules.Tag.ActivateOnSummon),
 
             // Lyla's optional effect is declined only in her summon window.
-            new(new[] { MachinaCardId.LylaLightswornSorceress }, TagRules.Tag.DeclineEffectOnSummon),
+            new(new[] { CardId.LylaLightswornSorceress }, TagRules.Tag.DeclineEffectOnSummon),
     
             // Skill Successor
-            new(new[] { GladCardId.SkillSuccessor }, TagRules.Tag.StatChangeEffect | TagRules.Tag.DoNotActivate,
+            new(new[] { CardId.SkillSuccessor }, TagRules.Tag.StatChangeEffect | TagRules.Tag.DoNotActivate,
                 TagsToDisableWhen: context =>  context.IsDoomed || context.InDamageStep
                     ? TagRules.Tag.DoNotActivate
                     : TagRules.Tag.None),
         
             // Honest
-            new(new[] { Honest }, TagRules.Tag.StatChangeEffect), 
+            new(new[] { CardId.Honest }, TagRules.Tag.StatChangeEffect), 
 
             // Blackwing - Kalut the Moon Shadow
             new(new[] { BlackwingKalutTheMoonShadow }, TagRules.Tag.StatChangeEffect), 
 
             // Shrink
-            new(new[] { Shrink }, TagRules.Tag.StatChangeEffect), 
+            new(new[] { CardId.Shrink }, TagRules.Tag.StatChangeEffect), 
 
             // Swap Frog: activate its summon effect while any listed Frog target remains in our deck.
-            new(new[] { HeroFrogCardId.SwapFrog }, TagRules.Tag.ActivateOnSummon,
+            new(new[] { CardId.SwapFrog }, TagRules.Tag.ActivateOnSummon,
                 TagsToDisableWhen: context => context.OwnDeck.Any(id =>
                     SwapFrogDeckTargets.Any(targetId => Search.SearchHost.Is(id, targetId)))
                     ? TagRules.Tag.None
                     : TagRules.Tag.ActivateOnSummon,
                 TargetPriority: (_, hint, card) => hint == DHint.TOGRAVE &&
                     card.CurrentCoordinates is { Controller: 0, Location: (byte)CardLocation.Deck }
-                    ? Search.SearchHost.Is(card.ID, HeroFrogCardId.TreebornFrog) ? 2 : Search.SearchHost.Is(card.ID, HeroFrogCardId.Substitoad) ? 1 : 0
+                    ? Search.SearchHost.Is(card.ID, CardId.TreebornFrog) ? 2 : Search.SearchHost.Is(card.ID, CardId.Substitoad) ? 1 : 0
                     : 0),
 
             // Battle Fader
-            new(new[] { HeroFrogCardId.BattleFader }, TagRules.Tag.DoNotSummon),
+            new(new[] { CardId.BattleFader }, TagRules.Tag.DoNotSummon),
 
             // D.D. Crow
-            new(new[] { MachinaCardId.DDCrow }, TagRules.Tag.DoNotSummon | TagRules.Tag.DoNotActivate,
+            new(new[] { CardId.DDCrow }, TagRules.Tag.DoNotSummon | TagRules.Tag.DoNotActivate,
                 TagsToDisableWhen: context => CrowMayActivate(context)
                     ? TagRules.Tag.None
                     : TagRules.Tag.DoNotActivate,
@@ -132,12 +136,26 @@ namespace BotTest.Game.AI.Brains
             // Gorz the Emissary of Darkness
             // Card-specific exceptions disable the complete DoNotSummon rule below 1500 of our LP,
             // or when no other available summon answers an opponent's threat.
+            // Correction: in hand it answers a direct attack with Gorz plus a token, far more than its text scores (user,
+            // 2026-11-13: "id have defo taken gorz" over Freed with Trap Dustshoot; "Gorz should be a hand-only bonus").
             new(new[] { GorzTheEmissaryOfDarkness }, TagRules.Tag.DoNotSummon,
                 TagsToDisableWhen: context => context.OwnLifePoints < 1500 || context.NoOtherAnswer
                     ? TagRules.Tag.DoNotSummon
-                    : TagRules.Tag.None),
+                    : TagRules.Tag.None,
+                Correction: new(Hand: 3)),
+
+            // Neo-Spacian Grand Mole
+            // Correction: returns what battles it (and itself), stalling attacks and bouncing synchros; replaces the old
+            // removal-only bouncer bonus (user, 2026-11-13: "mole should be a general bonus").
+            new(new[] { NeoSpacianGrandMole }, TagRules.Tag.None, Correction: new(General: 4)),
+
+            // Archlord Kristya
+            // Correction: stops every Special Summon (ours included) on top of a 2800 body (user, 2026-11-13: "increase the
+            // threat rating of archlord krystia by something huge - maybe 5"; Solemn should have stopped it on its summon).
+            new(new[] { ArchlordKristya }, TagRules.Tag.None, Correction: new(General: 5)),
 
             // Jar of Greed and Legacy of Yata-Garasu
+            // About to be removed anyway: DoNotActivate lifts, and the doomed-card logic uses it.
             new(new[] { JarOfGreed, LegacyOfYataGarasu }, TagRules.Tag.Bait | TagRules.Tag.DoNotActivate,
                 TagsToDisableWhen: context => context.IsDoomed || context.DrawTrapException
                     ? TagRules.Tag.DoNotActivate
@@ -147,7 +165,7 @@ namespace BotTest.Game.AI.Brains
             new(new[] { MysticalSpaceTyphoon }, TagRules.Tag.Bait),
 
             // Waboku
-            new(new[] { GladCardId.Waboku }, TagRules.Tag.ProtectsMonsters | TagRules.Tag.DoNotActivate,
+            new(new[] { CardId.Waboku }, TagRules.Tag.ProtectsMonsters | TagRules.Tag.DoNotActivate,
                 TagsToDisableWhen: context => context.IsDoomed || context.InDamageStep && context.GladiatorWouldBeDestroyed
                     ? TagRules.Tag.DoNotActivate
                     : TagRules.Tag.None),
@@ -170,8 +188,11 @@ namespace BotTest.Game.AI.Brains
             // Blackwing - Vayu the Emblem of Honor
             new(new[] { BlackwingVayuTheEmblemOfHonor }, TagRules.Tag.GoodDiscard),
 
+            // Blackwing - Elphin the Raven
+            new(new[] { BlackwingElphinTheRaven }, TagRules.Tag.GoodDiscard),
+
             // Machina Fortress
-            new(new[] { MachinaCardId.MachinaFortress }, TagRules.Tag.GoodDiscard | TagRules.Tag.AnswersAnyThreat,
+            new(new[] { CardId.MachinaFortress }, TagRules.Tag.GoodDiscard | TagRules.Tag.AnswersAnyThreat | TagRules.Tag.NeverSummonInDefence,
                 TagsToDisableWhen: context => !context.ThreatAttackPosition
                     ? TagRules.Tag.AnswersAnyThreat
                     : TagRules.Tag.None),
@@ -183,7 +204,7 @@ namespace BotTest.Game.AI.Brains
                     : TagRules.Tag.None),
 
             // The engine only offers Returner's graveyard trigger and legal Jinzo targets.
-            new(new[] { MachinaCardId.JinzoReturner }, TagRules.Tag.ActivateAtFirstOpportunity),
+            new(new[] { CardId.JinzoReturner }, TagRules.Tag.ActivateAtFirstOpportunity),
 
             // Plaguespreader Zombie: revive for a Synchro that answers a threat or goes for game,
             // or when the board can already leave the opponent below 400 LP.
@@ -200,7 +221,7 @@ namespace BotTest.Game.AI.Brains
                      (card.Position & ((byte)CardPosition.FaceUpAttack | (byte)CardPosition.FaceUpDefence)) != 0) ? 1 : 0),
 
             // Spiritual Water Art - Aoi
-            new(new[] { HeroFrogCardId.SpiritualWaterArtAoi }, TagRules.Tag.DoNotSet | TagRules.Tag.ActivateAtFirstOpportunity,
+            new(new[] { CardId.SpiritualWaterArtAoi }, TagRules.Tag.DoNotSet | TagRules.Tag.ActivateAtFirstOpportunity,
                 TagsToDisableWhen: context => context.OwnMonsterIds?.Any(id =>
                     (Search.SearchHost.Attribute(id) & 0x2) != 0) == true
                     ? TagRules.Tag.DoNotSet
@@ -212,7 +233,7 @@ namespace BotTest.Game.AI.Brains
             // Dimensional Prison
             // This tag does not apply to Thought Ruler Archfiend.
             new(new[] { DimensionalPrison }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ProtectsMonsters,
-                TagsToDisableWhen: context => Search.SearchHost.Is(context.ThreatCardId, ThoughtRulerArchfiend)
+                TagsToDisableWhen: context => Search.SearchHost.Is(context.ThreatCardId, CardId.ThoughtRulerArchfiend)
                     ? TagRules.Tag.AnswersAnyThreat
                     : TagRules.Tag.None),
 
@@ -239,7 +260,7 @@ namespace BotTest.Game.AI.Brains
 
             // Compulsory Evacuation Device
             // It does not answer a monster whose effect triggers on Normal Summon.
-            new(new[] { HeroFrogCardId.CompulsoryEvacuationDevice }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ProtectsMonsters,
+            new(new[] { CardId.CompulsoryEvacuationDevice }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ProtectsMonsters,
                 TagsToDisableWhen: context => context.ThreatTriggersWhenNormalSummoned
                     ? TagRules.Tag.AnswersAnyThreat
                     : TagRules.Tag.None),
@@ -261,6 +282,9 @@ namespace BotTest.Game.AI.Brains
                     ? TagRules.Tag.None
                     : TagRules.Tag.ActivateAtFirstOpportunity),
 
+            // Pot of Greed: activated at the first chance, always (a fixed rule, user 2026-11-12).
+            new(new[] { PotOfGreed }, TagRules.Tag.ActivateAtFirstOpportunity),
+
             // Upstart Goblin: leave it available when the existing board clock says lethal is possible this turn.
             new(new[] { UpstartGoblin }, TagRules.Tag.ActivateAtFirstOpportunity,
                 TagsToDisableWhen: context => context.CanWinThisTurn
@@ -274,6 +298,18 @@ namespace BotTest.Game.AI.Brains
             // Non-Quick-Play Spells cannot be set.
             new(id => (Search.SearchHost.Type(id) & 0x2) != 0 && (Search.SearchHost.Type(id) & 0x10000) == 0,
                 TagRules.Tag.NonQuickPlaySpell),
+
+            // Level 5+ monsters do not use Tribute Sets.
+            new(id => Search.SearchHost.Available && Search.SearchHost.Cards.Get(id) is { Level: >= 5 } card &&
+                (card.Type & (int)CardType.Monster) != 0, TagRules.Tag.NeverSet),
+
+            // Gladiator Beasts aren't set (they want to battle and tag out), except the one a routine sets, or with Waboku in
+            // hand to keep a set one alive.
+            new(IsGladiatorBeast, TagRules.Tag.DoNotSet,
+                TagsToDisableWhen: (id, context) =>
+                    context.PlannedSetCardId > 0 && Search.SearchHost.Is(id, context.PlannedSetCardId) ||
+                    context.OwnHand.Any(code => Search.SearchHost.Is(code, CardId.Waboku))
+                        ? TagRules.Tag.DoNotSet : TagRules.Tag.None),
         };
 
     }

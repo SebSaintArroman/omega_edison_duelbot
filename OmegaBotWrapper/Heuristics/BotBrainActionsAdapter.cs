@@ -190,6 +190,12 @@ namespace OmegaBotWrapper.Heuristics
             var keys = (state.Positions ?? Array.Empty<byte>()).Select(p => $"pos:{p}").ToList();
             if (keys.Count > 1 && _brain is IDecisionRefiner refiner)
             {
+                if (refiner.RequiredSummonPosition(state) is CardPosition required && state.Positions!.Contains((byte)required))
+                {
+                    CreateContext(BotState.SelectPosition, state).Bot.LogNote(
+                        $"mandatory action: summon {Logging.CardNames.Get(state.CardID)} in attack position");
+                    return required;
+                }
                 string? key = await refiner.SearchedChoiceAsync(BotState.SelectPosition, keys) ?? refiner.PlannedChoice(BotState.SelectPosition, keys);
                 if (key != null && byte.TryParse(key.AsSpan(4), out byte position))
                     return (CardPosition)position;

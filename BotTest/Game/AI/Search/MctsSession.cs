@@ -1,3 +1,4 @@
+using BotTest.Game.AI.Brains;
 using DuelSim.Engine;
 using OmegaBotWrapper.Enum;
 
@@ -22,7 +23,7 @@ namespace BotTest.Game.AI.Search
             public required MctsTree Tree;
             public required MctsNode Start;
             public required BotState RootState;
-            public required MctsEvaluator Evaluator;
+            public required BoardEvaluator Evaluator;
             public required SearchSettings Settings;
             public Func<SearchBrain>? Brains;
             public Func<int, MainAction, bool>? MayChoose;

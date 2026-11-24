@@ -1,0 +1,26 @@
+// Live 2026-11-24 10:38 Miracle Vayu #001 (turn 2, main1, our first turn): hand Armageddon Knight x2, Dark Grepher x2, Jar of Greed.
+// The search replaced the brain's summon Armageddon Knight (+1.14) with summon Dark Grepher (+2.31). User: Armageddon was right.
+// Their deck was X-Sabers (seen later); DuelSim has no such deck, MachinaControl stands in (Ryko in its list).
+// Their GY: Trap Dustshoot (turn 1). One unknown hand card.
+{
+  "deck": "Vayu",
+  "opponent": "MachinaControl",
+  "lp": [8000, 8000],
+  "turn": 2,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": false,
+  "ours": {
+    "monsters": [],
+    "spells": [],
+    "hand": [ 28985331, 14536035, 14536035, 83968380, 28985331 ],
+    "grave": []
+  },
+  "theirs": {
+    // The live deck read (log line 26): Ryko 10%, Vayu 6%, Plaguespreader 5%.
+    "monsters": [ { "zone": 2, "pos": "set", "likely": [ [21502796, 0.10], [72714392, 0.06], [33420078, 0.05] ] } ],
+    "spells": [ { "zone": 1, "set": true }, { "zone": 2, "set": true }, { "zone": 4, "set": true } ],
+    "handCount": 1,
+    "grave": [ 64697231 ]
+  }
+}

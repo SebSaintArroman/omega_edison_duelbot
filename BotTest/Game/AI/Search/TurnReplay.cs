@@ -62,6 +62,13 @@ namespace BotTest.Game.AI.Search
             SearchHost.Available && SearchHost.Cards.Get(code)?.Text is { } text &&
             System.Text.RegularExpressions.Regex.IsMatch(text, @"Special Summon this card", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+        /// <summary>The card's text Special Summons a monster from the graveyard (XX-Saber Faultroll: "target 1 ... in your Graveyard;
+        /// Special Summon it").</summary>
+        private static bool RevivesFromGrave(int code) =>
+            SearchHost.Available && SearchHost.Cards.Get(code)?.Text is { } text &&
+            System.Text.RegularExpressions.Regex.IsMatch(text, @"(Graveyard|GY)[^.]*Special Summon|Special Summon[^.]*from (your|either player's) (Graveyard|GY)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
         /// <summary>The unseen cards using this card adds to its owner's hand: a search from the Deck (Machina Gearframe) 1, a draw its count
         /// (Pot of Greed 2). 0 for anything else.</summary>
         private static int HandGain(int code)
@@ -636,6 +643,12 @@ namespace BotTest.Game.AI.Search
                                 // 2026-11-18: Blackwing Armed Wing).
                                 ?? (needs.UpMonsters.Keys.Any(ExtraDeckMonster) && options.FirstOrDefault(o => o.Key.StartsWith($"{(int)MainAction.Activate}:") && o.Key.Contains("@0.16.")) is { } fromGrave
                                     ? SearchActions.Packet(fromGrave.Response) : null)
+                                // A monster to appear that sits in their graveyard: a face-up monster's effect that revives from the graveyard
+                                // (seen 2026-11-24: XX-Saber Faultroll revived XX-Saber Emmersblade; the replay summoned Faultroll and went to battle).
+                                ?? (needs.UpMonsters.Keys.Any(c => enemy.GraveCodes.Any(g => Canon(g) == c)) &&
+                                    options.FirstOrDefault(o => o.Key.StartsWith($"{(int)MainAction.Activate}:") && o.Key.Contains("@0.4.") &&
+                                                                RevivesFromGrave(Canon(SearchActions.KeyCardId(o.Key)))) is { } revive
+                                    ? SearchActions.Packet(revive.Response) : null)
                                 ?? Pick(MainAction.Activate, c => needs.UpSpells.GetValueOrDefault(c) > 0 || needs.Grave.GetValueOrDefault(c) > 0)
                                 ?? (needs.SetMonsters > 0 ? Pick(MainAction.SetMonster, c => !needs.Any(c)) ?? Pick(MainAction.SetMonster, _ => true) : null)
                                 ?? (needs.SetSpells > 0 ? Pick(MainAction.SetSpell, c => c == SearchView.InertCard) ?? Pick(MainAction.SetSpell, c => !needs.Any(c)) : null)

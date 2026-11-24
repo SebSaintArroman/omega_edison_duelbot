@@ -256,6 +256,103 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>The bot packet for a main/battle choice ([u16 action][u16 index], as BotResponseWriter writes it).</summary>
         public static byte[] Packet(int action, int index) => BitConverter.GetBytes((action & 0xffff) | (index << 16));
+
+        /// <summary>
+        /// The idle / battle prompt's options without this answer (a bot packet), to ask our brain again when the search refused it
+        /// (user, 2026-11-24: "refused moves shouldn't go straight into fallback, they should just remove that option and try again").
+        /// Null when it isn't one of these prompts or the answer isn't among its options.
+        /// </summary>
+        public static object? WithoutAnswer(object? data, byte[] packet)
+        {
+            if (packet.Length < 4)
+                return null;
+            int value = BitConverter.ToInt32(packet, 0);
+            int action = value & 0xffff, index = value >> 16;
+            // Cards offering this action at this index left out; a card with several activations loses only that one.
+            static DynamicCard[]? Drop(DynamicCard[]? cards, int action, int index, out bool removed)
+            {
+                removed = false;
+                if (cards == null)
+                    return null;
+                var kept = new List<DynamicCard>();
+                foreach (var card in cards)
+                {
+                    if (card.ActionIndex != null && card.ActionIndex.Length > action && card.ActionIndex[action] == index)
+                    {
+                        removed = true;
+                        continue;
+                    }
+                    kept.Add(card);
+                }
+                return kept.ToArray();
+            }
+            static (DynamicCard[]? Cards, int[]? Descriptions) DropActivation(DynamicCard[]? cards, int[]? descriptions, int index, out bool removed)
+            {
+                removed = false;
+                if (cards == null)
+                    return (null, descriptions);
+                bool parallel = descriptions != null && descriptions.Length == cards.Length;
+                var kept = new List<DynamicCard>();
+                var keptDescriptions = new List<int>();
+                for (int i = 0; i < cards.Length; i++)
+                {
+                    var card = cards[i];
+                    var acts = card.ActionActivateIndex ?? Array.Empty<ActivationCardIndex>();
+                    var left = acts.Where(a => a.ActionIndex != index).ToArray();
+                    if (left.Length < acts.Length)
+                        removed = true;
+                    if (acts.Length > 0 && left.Length == 0)
+                        continue;
+                    card.ActionActivateIndex = left;
+                    kept.Add(card);
+                    if (parallel)
+                        keptDescriptions.Add(descriptions![i]);
+                }
+                return (kept.ToArray(), parallel ? keptDescriptions.ToArray() : descriptions);
+            }
+            bool removed;
+            switch (data)
+            {
+                case IdleCmdData idle:
+                    switch ((MainAction)action)
+                    {
+                        case MainAction.Summon: idle.SummonableCards = Drop(idle.SummonableCards, action, index, out removed)!; break;
+                        case MainAction.SpSummon: idle.SpecialSummonableCards = Drop(idle.SpecialSummonableCards, action, index, out removed)!; break;
+                        case MainAction.Repos: idle.ReposableCards = Drop(idle.ReposableCards, action, index, out removed)!; break;
+                        case MainAction.SetMonster: idle.MonsterSetableCards = Drop(idle.MonsterSetableCards, action, index, out removed)!; break;
+                        case MainAction.SetSpell: idle.SpellSetableCards = Drop(idle.SpellSetableCards, action, index, out removed)!; break;
+                        case MainAction.Activate:
+                        {
+                            var (cards, descriptions) = DropActivation(idle.ActivableCards, idle.ActivableDescriptions, index, out removed);
+                            idle.ActivableCards = cards!;
+                            idle.ActivableDescriptions = descriptions!;
+                            break;
+                        }
+                        case MainAction.ToBattlePhase: removed = idle.CanBattlePhase; idle.CanBattlePhase = false; break;
+                        case MainAction.ToEndPhase: removed = idle.CanEndPhase; idle.CanEndPhase = false; break;
+                        default: return null;
+                    }
+                    return removed ? idle : null;
+                case BattleCmdData battle:
+                    switch ((BattleAction)action)
+                    {
+                        case BattleAction.Attack: battle.AttackableCards = Drop(battle.AttackableCards, action, index, out removed)!; break;
+                        case BattleAction.Activate:
+                        {
+                            var (cards, descriptions) = DropActivation(battle.ActivableCards, battle.ActivableDescriptions, index, out removed);
+                            battle.ActivableCards = cards!;
+                            battle.ActivableDescriptions = descriptions!;
+                            break;
+                        }
+                        case BattleAction.ToMainPhaseTwo: removed = battle.CanMainPhaseTwo; battle.CanMainPhaseTwo = false; break;
+                        case BattleAction.ToEndPhase: removed = battle.CanEndPhase; battle.CanEndPhase = false; break;
+                        default: return null;
+                    }
+                    return removed ? battle : null;
+                default:
+                    return null;
+            }
+        }
         public static byte[] Packet(IdleCmdResponse response) => Packet((int)response.Action, response.Index);
         public static byte[] Packet(BattleCmdResponse response) => Packet((int)response.Action, response.Index);
 

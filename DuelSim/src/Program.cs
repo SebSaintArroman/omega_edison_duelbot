@@ -1,3 +1,4 @@
+using BotTest.Game.AI.Brains;
 using BotTest.Web;
 using DuelSim.Data;
 using DuelSim.Engine;
@@ -19,6 +20,8 @@ public static class Program
                          [--mutations 8] [--strength 0.3] [--accept 0.55] [--baseline-every 5] [--baseline-duels 100]
                          [--seed N] [--keep-duels]
                                        tune the base deck's parameters: <name>-1 = champion, <name>-2 = challenger
+          DuelSim run ... [--tuning-a FILE] [--tuning-b FILE]   (each side's own tuning values: bot-tuning.txt format, only the numbers it changes)
+          DuelSim tuning [--list [FILE.json]]   tidy bot-tuning*.txt; --list: every tunable with its range and step (default tuning/params.json)
           DuelSim params <variant>     what a tuned variant changes vs its base deck
           DuelSim list                 list the decks that have bots
           DuelSim check                load the engine, card database and scripts, and report versions
@@ -29,6 +32,17 @@ public static class Program
 
         Output goes to DuelSim/out/<run>/: summary.txt, and per duel a transcript plus both bots' duel logs.
         """;
+
+    /// <summary>Lists every tunable: the static ones, each deck brain's own (each brain tuned once), every rule's hold cost.</summary>
+    private static void RegisterAllTunables()
+    {
+        BotTest.Game.AI.Brains.Tuning.EnsureLoaded();
+        foreach (var d in DeckCatalog.Definitions.Where(d => d.FormatId == "MasterDuel"))
+            if (Tuning.BrainParams.FindBrain(d.Factory()) is { } brain)
+                if (brain is BotTest.Game.AI.Brains.DeckBotBrain deckBrain) deckBrain.ApplyTuning(); else BotTest.Game.AI.Brains.Tuning.ApplyTo(brain);
+        BotTest.Game.AI.Brains.RuleGates.DefaultCost("deck.heavy-storm"); // lists every rule's hold cost
+        _ = BotTest.Game.AI.Brains.DeckExplosiveness.ByType.Count; // and every deck type's explosiveness
+    }
 
     /// <summary>
     /// search-bench: the opponent's attacker odds from their real list (what the live deck read approximates): their unknown
@@ -43,7 +57,7 @@ public static class Program
                      .Concat(view.EnemyMonsters.Select(c => c.Code)).Concat(view.EnemySpells.Select(c => c.Code)))
             unseen.Remove(id);
         int pool = Math.Max(1, unseen.Count);
-        return BotTest.Game.AI.Search.MctsEvaluator.AttackerThresholds.Select(atk =>
+        return BoardEvaluator.AttackerThresholds.Select(atk =>
         {
             int r = unseen.Count(id => cards.Get(id) is { } c && !c.IsExtraDeckMonster && (c.Type & 0x1) != 0 && c.Level <= 4 && c.Attack >= atk);
             double none = 1;
@@ -319,7 +333,7 @@ public static class Program
                 }
                 var sc = BotTest.Game.AI.Search.SearchHost.Cards;
                 var ss = BotTest.Game.AI.Search.SearchHost.Scripts;
-                var values = new BotTest.Game.AI.Search.SearchCardValues(Array.Empty<int>(), Array.Empty<int>());
+                var values = new CardValues(Array.Empty<int>(), Array.Empty<int>());
                 foreach (var name in args.Skip(1).Where(a => !a.StartsWith("--")))
                 {
                     // A card id instead of a deck name: just that card.
@@ -334,9 +348,9 @@ public static class Program
                         var v = values.Get(id, 0);
                         var record = sc.Get(id);
                         var (_, why) = BotTest.Game.AI.Brains.EffectEvaluator.ScoreOnFieldAsync(id, Array.Empty<int>()).GetAwaiter().GetResult();
-                        double tapered = BotTest.Game.AI.Search.MctsEvaluator.Taper(v.Field);
+                        double tapered = BoardEvaluator.Taper(v.Field);
                         double adds = 0.25 * tapered;
-                        double corr = BotTest.Game.AI.Search.CardCorrections.Get(id);
+                        double corr = BotTest.Game.AI.Brains.CardRuleRegistry.CorrectionFor(id);
                         console.WriteLine($"{record?.Name ?? id.ToString(),-42} {record?.Attack,5} {v.Held,5:0.0} {v.Field,5:0.0} {v.Grave,5:0.0}  {tapered,7:0.00} {corr,4:0.#} {adds,13:0.00}  " +
                                           (v.Protects > 0 ? $"protects {v.Protects:0.0}; " : "") + why);
                         if (args.Contains("--grave") && v.Grave > 0)
@@ -411,17 +425,40 @@ public static class Program
                 // The deck brain's own goals and card values, as in a real search.
                 var deckBrain = Tuning.BrainParams.FindBrain(MatchRunner.FindDeck("MasterDuel", benchDeck).Factory()) as BotTest.Game.AI.Brains.DeckBotBrain;
                 var benchDef = MatchRunner.FindDeck("MasterDuel", benchDeck);
-                Func<BotTest.Game.AI.Search.SearchBrain>? brains = deckBrain == null || args.Contains("--no-brain") ? null
-                    : () => new BotTest.Game.AI.Search.SearchBrain(deckBrain, benchDef.DeckName, benchDef.Factory().DeckHash);
-                var evaluator = new BotTest.Game.AI.Search.MctsEvaluator(new BotTest.Game.AI.Search.SearchCardValues(view.OwnGrave, view.EnemyGrave),
-                    deckBrain?.SearchSetupFor(view), deckBrain == null ? null : deckBrain.SearchCardBonus,
+                Func<BotTest.Game.AI.Search.SearchBrain>? brains = deckBrain == null ? null
+                    : () => new BotTest.Game.AI.Search.SearchBrain(deckBrain, benchDef.DeckName, benchDef.Factory().DeckHash, !args.Contains("--no-brain"));
+                var evaluator = new BoardEvaluator(new CardValues(view.OwnGrave, view.EnemyGrave),
+                    deckBrain == null ? null : deckBrain.SearchCardBonus,
                     Math.Max(0, view.EnemyHandCount - view.EnemyKnownHand.Count) + view.EnemySpells.Count(c => c.Code <= 0), 0.5)
                     {
                         AttackerOdds = BenchAttackerOdds(benchOpponent, view, sc, ss),
+                        OwnDeck = view.OwnDeck, OwnHand = view.OwnHand, OwnGrave = view.OwnGrave, OwnBanished = view.OwnBanished, OwnMonsters = view.OwnMonsters.Select(c => c.Code).Where(c => c > 0).ToList(),
                         GraveSetup = deckBrain?.SearchGraveSetup,
                         RewardGladiatorBattles = deckBrain?.RewardGladiatorBattles == true,
-                        BackrowDoomRule = deckBrain?.SearchBackrowDoomRule
+                        BackrowDoomRule = deckBrain?.SearchBackrowDoomRule,
+                        NextTurnValue = deckBrain == null ? null : deckBrain.SearchNextTurnValue,
+                        // As live (DeadTimeSearch): damage dealt / taken counts from the life points at the decision.
+                        TheirStartLp = view.LifePoints[1],
+                        OurStartLp = view.LifePoints[0],
+                        UnknownSets = view.EnemySpells.Count(c => c.Code <= 0),
+                        // Their unknown set cards' trap odds (live: the deck read's): --mirror P --torrential P --other-stop P --icarus P.
+                        MirrorForceChance = double.Parse(Option2(args, "--mirror", "0"), System.Globalization.CultureInfo.InvariantCulture),
+                        TorrentialChance = double.Parse(Option2(args, "--torrential", "0"), System.Globalization.CultureInfo.InvariantCulture),
+                        OtherStopChance = double.Parse(Option2(args, "--other-stop", "0"), System.Globalization.CultureInfo.InvariantCulture),
+                        IcarusChance = double.Parse(Option2(args, "--icarus", "0"), System.Globalization.CultureInfo.InvariantCulture)
                     };
+                // --hand-values: each of our cards' hand value at this position (card units), with its target effects' part.
+                if (args.Contains("--hand-values"))
+                {
+                    console.WriteLine($"{"card",-42} {"hand",6} {"targets",8}");
+                    foreach (int id in view.OwnHand.Concat(view.OwnDeck).Distinct())
+                    {
+                        var rec = sc.Get(id);
+                        bool st = rec != null && (rec.Type & 0x1) == 0;
+                        console.WriteLine($"{rec?.Name ?? id.ToString(),-42} {evaluator.HandCardValue(id, 0),6:0.00} {evaluator.TargetEffectValue(id, st),8:0.00}");
+                    }
+                    return 0;
+                }
                 var tree = new BotTest.Game.AI.Search.MctsTree { Label = "bench" };
                 BotTest.Game.AI.Search.Mcts NewSearch() => new(view, tree, tree.Root, root, null, Array.Empty<int>(), settings, evaluator, brains)
                     { Suggestions = deckBrain == null ? null : deckBrain.PlanSuggestions, UsedEffects = usedEffects };
@@ -464,10 +501,37 @@ public static class Program
                 {
                     var plan = outcome.Plans?.GetValueOrDefault(stat.Key);
                     console.WriteLine($"  [{stat.Key}]");
-                    console.WriteLine($"  {stat.Label,-50} score {BotTest.Game.AI.Search.MctsEvaluator.CuPm(stat.Mean, stat.StdErr)} card units  ({stat.Visits} lines" +
-                                      (double.IsNaN(stat.Average) ? "" : $", lines average {BotTest.Game.AI.Search.MctsEvaluator.Cu(stat.Average)}") +
-                                      (double.IsNaN(stat.Unexplored) ? "" : $", best unexplored follow-up {BotTest.Game.AI.Search.MctsEvaluator.Cu(stat.Unexplored)}") + ")" +
+                    console.WriteLine($"  {stat.Label,-50} score {BoardEvaluator.CuPm(stat.Mean, stat.StdErr)} card units  ({stat.Visits} lines" +
+                                      (double.IsNaN(stat.Average) ? "" : $", lines average {BoardEvaluator.Cu(stat.Average)}") +
+                                      (double.IsNaN(stat.Unexplored) ? "" : $", best unexplored follow-up {BoardEvaluator.Cu(stat.Unexplored)}") + ")" +
                                       (plan is { Count: > 0 } ? $"  then: {string.Join(" -> ", plan.Select(p => p.Label))}" : ""));
+                }
+                // --dump-tree [MINLINES]: every tree node with at least MINLINES lines (default 30), to depth --dump-depth (default 8):
+                // its lines' average, its score (MctsNode.LineValue: the best explored follow-up at our decisions) and how often it was on offer.
+                if (args.Contains("--dump-tree"))
+                {
+                    int at = Array.IndexOf(args, "--dump-tree");
+                    int minLines = at + 1 < args.Length && int.TryParse(args[at + 1], out int ml) ? ml : 30;
+                    int maxDepth = int.Parse(Option2(args, "--dump-depth", "8"));
+                    int lvv = BotTest.Game.AI.Search.Mcts.LineValueVisits;
+                    void Dump(BotTest.Game.AI.Search.MctsNode node, int depth)
+                    {
+                        if (depth > maxDepth)
+                            return;
+                        List<(string Key, BotTest.Game.AI.Search.MctsNode Child, string Label)> kids;
+                        lock (node.Lock)
+                            kids = node.Children.Select(kv => (kv.Key, kv.Value, node.LabelOf(kv.Key, kv.Value))).ToList();
+                        foreach (var (key, child, label) in kids.Where(k => k.Child.Visits >= minLines).OrderByDescending(k => k.Child.Visits))
+                        {
+                            double share = child.Available / (double)Math.Max(1, node.Visits - child.ParentVisitsAtCreation);
+                            string who = node.ChildPlayer == 0 ? "us" : node.ChildPlayer == 1 ? "them" : "?";
+                            console.WriteLine($"{new string(' ', depth * 2)}- [{who}] {label}  n={child.Visits}  avg {BoardEvaluator.Cu(child.Mean)}  " +
+                                              $"score {BoardEvaluator.Cu(child.LineValue(lvv))}  on offer {share:0.00}");
+                            Dump(child, depth + 1);
+                        }
+                    }
+                    console.WriteLine("--- tree ---");
+                    Dump(tree.Root, 0);
                 }
                 return 0;
             }
@@ -476,14 +540,20 @@ public static class Program
             {
                 // DuelSim tuning: lists every tunable number in bot-tuning.txt (the static ones, each deck brain's own, every rule's
                 // hold cost); numbers already in the file keep their values. Run it after adding numbers to the code.
-                BotTest.Game.AI.Brains.Tuning.EnsureLoaded();
-                foreach (var d in DeckCatalog.Definitions.Where(d => d.FormatId == "MasterDuel"))
-                    if (Tuning.BrainParams.FindBrain(d.Factory()) is { } brain)
-                        if (brain is BotTest.Game.AI.Brains.DeckBotBrain deckBrain) deckBrain.ApplyTuning(); else BotTest.Game.AI.Brains.Tuning.ApplyTo(brain);
-                BotTest.Game.AI.Brains.RuleGates.DefaultCost("deck.heavy-storm"); // lists every rule's hold cost
-                _ = BotTest.Game.AI.Brains.DeckExplosiveness.ByType.Count; // and every deck type's explosiveness
+                RegisterAllTunables();
                 BotTest.Game.AI.Brains.Tuning.Tidy();
                 console.WriteLine($"tuning file: {BotTest.Game.AI.Brains.Tuning.FilePath}");
+                // --list FILE: every tunable number for self-play tuning (key, kind, value, range, step), as JSON.
+                if (args.Contains("--list"))
+                {
+                    int at = Array.IndexOf(args, "--list");
+                    string file = at + 1 < args.Length ? args[at + 1] : Path.Combine(paths.Tuning, "params.json");
+                    var entries = BotTest.Game.AI.Brains.Tuning.Entries();
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(file))!);
+                    File.WriteAllText(file, Newtonsoft.Json.JsonConvert.SerializeObject(entries, Newtonsoft.Json.Formatting.Indented,
+                        new Newtonsoft.Json.Converters.StringEnumConverter()));
+                    console.WriteLine($"{entries.Count} tunable numbers ({string.Join(", ", entries.GroupBy(e => e.Kind).Select(g => $"{g.Count()} {g.Key}"))}) -> {file}");
+                }
                 return 0;
             }
 
@@ -529,7 +599,21 @@ public static class Program
                     // --search-a / --search-b MS for one of them.
                     SearchMsA: int.TryParse(Option("--search-a", Option("--search", "")), out int sa) ? sa : null,
                     SearchMsB: int.TryParse(Option("--search-b", Option("--search", "")), out int sb) ? sb : null,
-                    ThinkMsB: int.Parse(Option("--think-b", "0")));
+                    ThinkMsB: int.Parse(Option("--think-b", "0")),
+                    TuningA: args.Contains("--tuning-a") ? BotTest.Game.AI.Brains.TuningProfile.Load(Option("--tuning-a", ""), console.WriteLine) : null,
+                    TuningB: args.Contains("--tuning-b") ? BotTest.Game.AI.Brains.TuningProfile.Load(Option("--tuning-b", ""), console.WriteLine) : null);
+                if (options.TuningA != null || options.TuningB != null)
+                {
+                    // Every brain's numbers and rule costs registered, so a misspelt key in a profile is caught before the duels.
+                    RegisterAllTunables();
+                    foreach (var (side, profile) in new[] { ("A", options.TuningA), ("B", options.TuningB) })
+                        if (profile != null)
+                        {
+                            console.WriteLine($"deck {side} plays with {profile.Name}: {profile.Values.Count} value(s) of its own");
+                            foreach (string unknown in profile.UnknownKeys())
+                                console.WriteLine($"  !! {profile.Name}: no tunable '{unknown}' (renamed or removed?) - ignored");
+                        }
+                }
                 if (args.Contains("--search-horizon"))
                     BotTest.Game.AI.Brains.DeckBotBrain.DefaultSearchHorizon = int.Parse(Option("--search-horizon", "2"));
 

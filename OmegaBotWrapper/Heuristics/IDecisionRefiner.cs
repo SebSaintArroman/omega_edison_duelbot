@@ -56,13 +56,13 @@ namespace OmegaBotWrapper.Heuristics
         /// <summary>A new turn seen (the first poll that shows it, before anything in it is answered): the brain's turn-start snapshot.</summary>
         Task TurnStartedAsync(DuelBotWrapper bot, BotStateHeader header) => Task.CompletedTask;
 
-        /// <summary>
-        /// A yes/no or option prompt no plan answers: the search's choice among these keys ("yes"/"no", "option:&lt;value&gt;"), or null to
-        /// let the brain answer.
-        /// </summary>
-        /// <summary>The plan's choice at a prompt answered by keys (a position: "pos:&lt;value&gt;"), or null when no plan covers it.</summary>
+        /// <summary>A position required by the brain's rules, before a plan or search can choose.</summary>
+        CardPosition? RequiredSummonPosition(SelectPositionData state) => null;
+
+        /// <summary>The plan's choice at a prompt answered by keys, or null when no plan covers it.</summary>
         string? PlannedChoice(BotState state, IReadOnlyList<string> options) => null;
 
+        /// <summary>The search's choice among the given keys, or null to let the brain answer.</summary>
         Task<string?> SearchedChoiceAsync(BotState state, IReadOnlyList<string> options, CancellationToken ct = default) => Task.FromResult<string?>(null);
 
         /// <summary>Any prompt, before it is answered (by the brain, a plan's step, or a replay): the brain's turn record.</summary>

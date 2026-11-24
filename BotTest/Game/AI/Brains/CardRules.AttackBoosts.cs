@@ -1,6 +1,7 @@
 using OmegaBotWrapper.Enum;
 using OmegaBotWrapper.Struct;
 using System.Text.RegularExpressions;
+using static BotTest.Game.AI.CardId;
 
 namespace BotTest.Game.AI.Brains
 {
@@ -14,25 +15,25 @@ namespace BotTest.Game.AI.Brains
 
         internal static bool IsAttackBoost(int id, int location) => AttackBoostId(id) switch
         {
-            73729209 or 37742478 or 85215458 or 70046172 or 17814387 or 78211862 or 22346472 => true,
-            55136228 => location != (int)CardLocation.Grave,
+            SkillSuccessor or Honest or BlackwingKalutTheMoonShadow or RushRecklessly or Reinforcements or RisingEnergy or BlusteringWinds => true,
+            IndomitableGladiatorBeast => location != (int)CardLocation.Grave,
             _ => PrintedAttackBoost(id) > 0
         };
 
-        internal static bool AttackBoostChoosesTarget(int id) => AttackBoostId(id) is not (37742478 or 85215458);
+        internal static bool AttackBoostChoosesTarget(int id) => AttackBoostId(id) is not (Honest or BlackwingKalutTheMoonShadow);
 
         internal static int AttackBoost(int id, int location, DynamicCard battler, DynamicCard? opponent) =>
             AttackBoostId(id) switch
             {
-                73729209 => location == (int)CardLocation.Grave ? 800 : 400, // Skill Successor
-                37742478 => (battler.Attribute & 0x10) != 0 ? Math.Max(0, opponent?.Attack ?? 0) : 0, // Honest
-                85215458 => Search.SearchHost.Available && Search.SearchHost.Cards.Get(battler.ID)?.SetCodes()
-                    .Any(code => (code & 0x0fff) == 0x33) == true ? 1400 : 0, // Kalut
-                70046172 => 700, // Rush Recklessly
-                17814387 => 500, // Reinforcements
-                78211862 => 1500, // Rising Energy
-                22346472 => 800, // Blustering Winds
-                55136228 when location != (int)CardLocation.Grave && IsGladiatorBeast(battler.ID) => 500,
+                SkillSuccessor => location == (int)CardLocation.Grave ? 800 : 400,
+                Honest => (battler.Attribute & (int)CardAttribute.Light) != 0 ? Math.Max(0, opponent?.Attack ?? 0) : 0,
+                BlackwingKalutTheMoonShadow => Search.SearchHost.Available && Search.SearchHost.Cards.Get(battler.ID)?.SetCodes()
+                    .Any(code => (code & 0x0fff) == 0x33) == true ? 1400 : 0, // 0x33: the "Blackwing" archetype
+                RushRecklessly => 700,
+                Reinforcements => 500,
+                RisingEnergy => 1500,
+                BlusteringWinds => 800,
+                IndomitableGladiatorBeast when location != (int)CardLocation.Grave && IsGladiatorBeast(battler.ID) => 500,
                 _ => PrintedAttackBoost(id)
             };
 

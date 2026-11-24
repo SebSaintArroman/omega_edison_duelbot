@@ -43,7 +43,7 @@ The heuristic brain classes form an object-oriented hierarchy:
 ```
 
 ### Key Shared Modules in `DeckBotBrain`:
-- `DeckBotBrain.Staples.cs`: Definition of staple cards, removal priorities, and threat scoring.
+- `Brains/Staples/Staples.cs`: Definition of staple cards, removal priorities, and threat scoring.
 - `DeckBotBrain.StapleIdle.cs`: Main Phase staple logic (Heavy Storm, Trunade, MST, Pot of Greed, Allure of Darkness, Future Fusion).
 - `DeckBotBrain.StapleChains.cs`: Chain response logic for spell-speed 2/3 traps (Solemn Judgment, Royal Oppression, Mirror Force, Torrential Tribute, Dimensional Prison, Compulsory, Bottomless).
 - `DeckBotBrain.MonsterStaples.cs`: Logic for staple removal spells (Smashing Ground, Brain Control).
@@ -74,7 +74,7 @@ if (Rule(DeckRules.HeavyStorm) && ...)
 
 ## 4. The `Hold` Mechanism: Rules as Search Penalties
 
-In [BotTest/Game/AI/Brains/DeckBotBrain.Search.cs](file:///c:/Users/Seb/Documents/GitHub/omega_edison_duelbot/BotTest/Game/AI/Brains/DeckBotBrain.Search.cs), when a rule decides to decline an action, it records a **Hold**:
+In [BotTest/Game/AI/Brains/Planning/SearchAtDecisions.cs](../BotTest/Game/AI/Brains/Planning/SearchAtDecisions.cs), when a rule decides to decline an action, it records a **Hold**:
 
 ```csharp
 Hold(cardId, action, ruleName);

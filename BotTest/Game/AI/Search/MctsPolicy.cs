@@ -26,7 +26,7 @@ namespace BotTest.Game.AI.Search
 
         /// <summary>A face-down monster's assumed strength (unknown: an average set monster).</summary>
         [Tunable("A face-down monster's assumed strength (unknown: an average set monster).", Section = "Search")]
-        private static int UnknownStrength = 1500;
+        private static readonly Tuned<int> UnknownStrength = new(1500);
 
         public static byte[] Answer(Prompt prompt, Random rng, LineState line, DuelHost host)
         {

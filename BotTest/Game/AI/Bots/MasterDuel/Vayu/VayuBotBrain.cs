@@ -5,6 +5,7 @@ using OmegaBotWrapper.Heuristics;
 using OmegaBotWrapper.Logging;
 using OmegaBotWrapper.States;
 using OmegaBotWrapper.Struct;
+using static BotTest.Game.AI.CardId;
 
 namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
 {
@@ -25,39 +26,39 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         // ------------------------------------------------------------------ tunable numbers (bot-tuning-<deck>.txt, user 2026-11-16)
 
         [Tunable("Dark Armed Dragon in hand that is live (or can be made live), in rough card points (discard / Allure choices).")]
-        public static double DadLiveHandValue = 7;
+        public static readonly Tuned<double> DadLiveHandValue = new(7);
         [Tunable("Dark Armed Dragon in hand that can't be made live, in rough card points.")]
-        public static double DadDeadHandValue = 0.5;
+        public static readonly Tuned<double> DadDeadHandValue = new(0.5);
         [Tunable("The search's setup value for a face-up Card Trooper of ours (a mill engine for Vayu and Dark Armed Dragon), card units.")]
-        public static double TrooperSetupValue = 1.0;
+        public static readonly Tuned<double> TrooperSetupValue = new(1.0);
         [Tunable("The search's setup value for Dark Armed Dragon in hand with exactly 3 DARKs in the graveyard (card units).")]
-        public static double DadLiveSetupValue = 1.2;
+        public static readonly Tuned<double> DadLiveSetupValue = new(1.2);
         [Tunable("The search's setup value for Dark Armed Dragon in hand with 2 DARKs in the graveyard (card units).")]
-        public static double DadNearSetupValue = 0.4;
+        public static readonly Tuned<double> DadNearSetupValue = new(0.4);
         [Tunable("Burial / Miracle Dig pick rank (high first): a Vayu while we have more partners than Vayus.")]
-        public static double BurialRankVayuShort = 10;
+        public static readonly Tuned<double> BurialRankVayuShort = new(10);
         [Tunable("Burial / Miracle Dig pick rank: a Vayu with as many partners as Vayus.")]
-        public static double BurialRankVayuEven = 7.5;
+        public static readonly Tuned<double> BurialRankVayuEven = new(7.5);
         [Tunable("Burial / Miracle Dig pick rank: a Vayu beyond the partners.")]
-        public static double BurialRankVayuSpare = 4;
+        public static readonly Tuned<double> BurialRankVayuSpare = new(4);
         [Tunable("Burial / Miracle Dig pick rank: a partner while we have more Vayus than partners.")]
-        public static double BurialRankPartnerShort = 10;
+        public static readonly Tuned<double> BurialRankPartnerShort = new(10);
         [Tunable("Burial / Miracle Dig pick rank: a partner with as many Vayus as partners.")]
-        public static double BurialRankPartnerEven = 1.5;
+        public static readonly Tuned<double> BurialRankPartnerEven = new(1.5);
         [Tunable("Burial / Miracle Dig pick rank: a partner beyond the Vayus (below Necro Gardna).")]
-        public static double BurialRankPartnerSpare = 0.3;
+        public static readonly Tuned<double> BurialRankPartnerSpare = new(0.3);
         [Tunable("Burial / Miracle Dig pick rank: Plaguespreader with none in the graveyard.")]
-        public static double BurialRankPlague = 6;
+        public static readonly Tuned<double> BurialRankPlague = new(6);
         [Tunable("Burial / Miracle Dig pick rank: a second Plaguespreader.")]
-        public static double BurialRankPlagueSecond = 1;
+        public static readonly Tuned<double> BurialRankPlagueSecond = new(1);
         [Tunable("Burial / Miracle Dig pick rank: Necro Gardna with none in the graveyard.")]
-        public static double BurialRankNecro = 2;
+        public static readonly Tuned<double> BurialRankNecro = new(2);
         [Tunable("Burial / Miracle Dig pick rank: a second Necro Gardna.")]
-        public static double BurialRankNecroSecond = 0.5;
+        public static readonly Tuned<double> BurialRankNecroSecond = new(0.5);
         [Tunable("The turn planner's cost for a recursion play (Return from the Different Dimension / Burial) that brings Vayus back.")]
-        public static double RecursionPlayCost = 2.5;
+        public static readonly Tuned<double> RecursionPlayCost = new(2.5);
         [Tunable("The turn planner's cost for using the Normal Summon in a play.")]
-        public static double NormalSummonPlayCost = 0.5;
+        public static readonly Tuned<double> NormalSummonPlayCost = new(0.5);
 
         // Non-Tuner Blackwings that can pair with Vayu in the graveyard (Vayu L1 + partner = Synchro level):
         // Sirocco L5 -> Armed Wing, Elphin L6 / Armed Wing L6 -> Armor Master, Armor Master L7 -> Silverwind.
@@ -76,7 +77,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             if ((DuelPhase)context.Header.CurrentPhase != DuelPhase.Main1 || NormalSummonUsed(context.Header) ||
                 botMonsters.Count > 0 || enemyMonsters.Count == 0)
                 return false;
-            var sirocco = (state.SummonableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault(card => card.IsCode(VayuCardId.BlackwingSiroccoTheDawn));
+            var sirocco = (state.SummonableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault(card => card.IsCode(CardId.BlackwingSiroccoTheDawn));
             if (sirocco.ID <= 0)
                 return false;
             Note(context, $"normal summon Blackwing - Sirocco the Dawn first: tribute-free only while our field is empty, " +
@@ -89,115 +90,115 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
 
         private static readonly int[] VayuPartners =
         {
-            VayuCardId.BlackwingSiroccoTheDawn,
-            VayuCardId.BlackwingElphinTheRaven,
-            VayuCardId.BlackwingArmedWing,
-            VayuCardId.BlackwingArmorMaster
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.BlackwingElphinTheRaven,
+            CardId.BlackwingArmedWing,
+            CardId.BlackwingArmorMaster
         };
 
         // Blackwing Synchros that make sending Sirocco unnecessary when already in (or headed for) the graveyard.
         private static readonly int[] SynchroVayuPartners =
         {
-            VayuCardId.BlackwingArmedWing,
-            VayuCardId.BlackwingArmorMaster
+            CardId.BlackwingArmedWing,
+            CardId.BlackwingArmorMaster
         };
 
         // Cheapest cards to discard first (Necro Gardna works from the graveyard; keep DAD/Gorz).
         private static readonly int[] PreferDiscard =
         {
-            VayuCardId.NecroGardna,
-            VayuCardId.PlaguespreaderZombie,
-            VayuCardId.BlackwingVayuTheEmblemOfHonor,
-            VayuCardId.BlackwingElphinTheRaven,
-            VayuCardId.BlackwingSiroccoTheDawn,
-            VayuCardId.ChaosSorcerer,
-            VayuCardId.GorzTheEmissaryOfDarkness,
-            VayuCardId.DarkArmedDragon
+            CardId.NecroGardna,
+            CardId.PlaguespreaderZombie,
+            CardId.BlackwingVayuTheEmblemOfHonor,
+            CardId.BlackwingElphinTheRaven,
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.ChaosSorcerer,
+            CardId.GorzTheEmissaryOfDarkness,
+            CardId.DarkArmedDragon
         };
 
         // Graveyard cards to banish first as costs (DAD / Chaos Sorcerer); graveyard engines last.
         private static readonly int[] PreferBanishFromGrave =
         {
-            VayuCardId.ArmageddonKnight,
-            VayuCardId.DarkGrepher,
-            VayuCardId.CardTrooper,
-            VayuCardId.RykoLightswornHunter,
-            VayuCardId.LylaLightswornSorceress,
-            VayuCardId.GorzTheEmissaryOfDarkness,
-            VayuCardId.ChaosSorcerer,
-            VayuCardId.DarkArmedDragon,
+            CardId.ArmageddonKnight,
+            CardId.DarkGrepher,
+            CardId.CardTrooper,
+            CardId.RykoLightswornHunterPreErrata,
+            CardId.LylaLightswornSorceressPreErrata,
+            CardId.GorzTheEmissaryOfDarkness,
+            CardId.ChaosSorcerer,
+            CardId.DarkArmedDragon,
             // Graveyard pieces last: partners (spare ones are easy to replace), then Necro Gardna's negate, then
             // Plaguespreader and Vayu, which make plays.
-            VayuCardId.BlackwingSiroccoTheDawn,
-            VayuCardId.BlackwingElphinTheRaven,
-            VayuCardId.NecroGardna,
-            VayuCardId.PlaguespreaderZombie,
-            VayuCardId.BlackwingVayuTheEmblemOfHonor
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.BlackwingElphinTheRaven,
+            CardId.NecroGardna,
+            CardId.PlaguespreaderZombie,
+            CardId.BlackwingVayuTheEmblemOfHonor
         };
 
         // Banished monsters to bring back with Burial from a Different Dimension: Vayu and its partners, then the rest.
         private static readonly int[] BurialPriority =
         {
-            VayuCardId.BlackwingVayuTheEmblemOfHonor,
-            VayuCardId.BlackwingArmorMaster,
-            VayuCardId.BlackwingArmedWing,
-            VayuCardId.BlackwingSiroccoTheDawn,
-            VayuCardId.BlackwingElphinTheRaven,
-            VayuCardId.PlaguespreaderZombie,
-            VayuCardId.NecroGardna,
-            VayuCardId.DarkArmedDragon,
-            VayuCardId.ChaosSorcerer,
-            VayuCardId.GorzTheEmissaryOfDarkness,
-            VayuCardId.DarkGrepher,
-            VayuCardId.ArmageddonKnight
+            CardId.BlackwingVayuTheEmblemOfHonor,
+            CardId.BlackwingArmorMaster,
+            CardId.BlackwingArmedWing,
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.BlackwingElphinTheRaven,
+            CardId.PlaguespreaderZombie,
+            CardId.NecroGardna,
+            CardId.DarkArmedDragon,
+            CardId.ChaosSorcerer,
+            CardId.GorzTheEmissaryOfDarkness,
+            CardId.DarkGrepher,
+            CardId.ArmageddonKnight
         };
 
         // Normal Summon priority when the summon is safe.
         private static readonly int[] SummonPriority =
         {
-            VayuCardId.ArmageddonKnight,
-            VayuCardId.DarkGrepher,
-            VayuCardId.BlackwingSiroccoTheDawn,
-            VayuCardId.LylaLightswornSorceress,
-            VayuCardId.CardTrooper,
-            VayuCardId.BlackwingVayuTheEmblemOfHonor,
-            VayuCardId.PlaguespreaderZombie
+            CardId.ArmageddonKnight,
+            CardId.DarkGrepher,
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.LylaLightswornSorceressPreErrata,
+            CardId.CardTrooper,
+            CardId.BlackwingVayuTheEmblemOfHonor,
+            CardId.PlaguespreaderZombie
         };
 
         // Face-down Set priority when summoning into a stronger monster would just lose it.
         private static readonly int[] SetPriority =
         {
-            VayuCardId.RykoLightswornHunter,
-            VayuCardId.NecroGardna,
-            VayuCardId.DarkGrepher,
-            VayuCardId.ArmageddonKnight
+            CardId.RykoLightswornHunterPreErrata,
+            CardId.NecroGardna,
+            CardId.DarkGrepher,
+            CardId.ArmageddonKnight
         };
 
         // Extra Deck Synchro preference.
         private static readonly int[] SynchroPriority =
         {
-            VayuCardId.GoyoGuardian,
-            VayuCardId.ColossalFighter,
-            VayuCardId.StardustDragon,
-            VayuCardId.BlackwingSilverwindTheAscendant,
-            VayuCardId.DarkEndDragon,
-            VayuCardId.BlackwingArmorMaster,
-            VayuCardId.BrionacDragonOfTheIceBarrier,
-            VayuCardId.BlackwingArmedWing,
+            CardId.GoyoGuardianPreErrata,
+            CardId.ColossalFighter,
+            CardId.StardustDragon,
+            CardId.BlackwingSilverwindTheAscendant,
+            CardId.DarkEndDragon,
+            CardId.BlackwingArmorMaster,
+            CardId.BrionacDragonOfTheIceBarrierPreErrata,
+            CardId.BlackwingArmedWing,
             // Catastor is mostly summoned for its effect (checked before this list, in the shared synchro helpers).
-            VayuCardId.AllyOfJusticeCatastor
+            CardId.AllyOfJusticeCatastor
         };
 
         // Cards this brain may choose to chain; any other optional chain prompt is passed without querying the field.
         private static readonly int[] ChainCandidates =
         {
-            VayuCardId.GorzTheEmissaryOfDarkness,
-            VayuCardId.MirrorForce,
-            VayuCardId.DimensionalPrison,
-            VayuCardId.NecroGardna,
-            VayuCardId.BottomlessTrapHole,
-            VayuCardId.TorrentialTribute,
-            VayuCardId.TrapDustshoot
+            CardId.GorzTheEmissaryOfDarkness,
+            CardId.MirrorForce,
+            CardId.DimensionalPrison,
+            CardId.NecroGardna,
+            CardId.BottomlessTrapHole,
+            CardId.TorrentialTribute,
+            CardId.TrapDustshoot
         };
 
         private int? _ownTurnParity;
@@ -255,7 +256,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             // Heavy Storm pushes big plays through (or wins on card count); Lyla; MST for a big play (otherwise it is set as
             // bait for the opponent's removal, step 8). Shared staple rules.
             if (await TryBackrowRemovalAsync(context, state, enemySpells.Count,
-                    botSpells.Count(card => card.ID > 0 && !card.IsCode(VayuCardId.HeavyStorm))) is IdleCmdResponse backrow)
+                    botSpells.Count(card => card.ID > 0 && !card.IsCode(CardId.HeavyStorm))) is IdleCmdResponse backrow)
                 return backrow;
             // Shared monster staples (Smashing Ground, Brain Control; round-robin 36, 47).
             if (await TryMonsterStaplesAsync(context) is IdleCmdResponse monsterStaple)
@@ -273,11 +274,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             // 3. Big special summons from hand: resources, so only when they buy something.
             // Dark Armed Dragon live right now while something this turn will move the DARK count off 3 (a synchro
             // whose materials go to the graveyard, Plaguespreader out for one): summon it first, the window closes.
-            if (TryGetSpecialSummon(state, VayuCardId.DarkArmedDragon, out _) &&
+            if (TryGetSpecialSummon(state, CardId.DarkArmedDragon, out _) &&
                 (PlagueForDadTurn == context.Header.CurrentTurn ||
                  PlagueTargetTurn == context.Header.CurrentTurn && PlagueTargetSynchro > 0 ||
-                 botMonsters.Any(card => card.IsCode(VayuCardId.PlaguespreaderZombie))) &&
-                TrySpecialSummon(context, state, VayuCardId.DarkArmedDragon,
+                 botMonsters.Any(card => card.IsCode(CardId.PlaguespreaderZombie))) &&
+                TrySpecialSummon(context, state, CardId.DarkArmedDragon,
                     "Dark Armed Dragon is live now (exactly 3 DARKs in the graveyard); a synchro this turn would move the count off 3, so it goes first", out response))
                 return response;
             // A special summon decided before Sirocco went down first (see TrySiroccoFirst): follow through.
@@ -288,43 +289,45 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 if (TrySpecialSummon(context, state, id, $"{why} (after Sirocco)", out response))
                     return response;
             }
-            if (TryGetSpecialSummon(state, VayuCardId.DarkArmedDragon, out _) &&
-                await JustifySpendAsync(context, "Dark Armed Dragon", newAtk: 2800, fieldMaterials: null, removal: true, cardId: VayuCardId.DarkArmedDragon) is string dadWhy && Rule(VayuRules.DadSummon) &&
-                (TrySiroccoFirst(context, state, botMonsters, enemyMonsters, VayuCardId.DarkArmedDragon, dadWhy, out response) ||
-                 TrySpecialSummon(context, state, VayuCardId.DarkArmedDragon, dadWhy, out response)))
+            if (TryGetSpecialSummon(state, CardId.DarkArmedDragon, out _) &&
+                await JustifySpendAsync(context, "Dark Armed Dragon", newAtk: 2800, fieldMaterials: null, removal: true, cardId: CardId.DarkArmedDragon) is string dadWhy && Rule(VayuRules.DadSummon) &&
+                (TrySiroccoFirst(context, state, botMonsters, enemyMonsters, CardId.DarkArmedDragon, dadWhy, out response) ||
+                 TrySpecialSummon(context, state, CardId.DarkArmedDragon, dadWhy, out response)))
                 return response;
-            if (TryGetSpecialSummon(state, VayuCardId.ChaosSorcerer, out _) &&
+            if (TryGetSpecialSummon(state, CardId.ChaosSorcerer, out _) &&
                 await ChaosSorcererNeededAsync(context) is string chaosNeed &&
-                await JustifySpendAsync(context, $"Chaos Sorcerer ({chaosNeed})", newAtk: 2300, fieldMaterials: null, removal: true, cardId: VayuCardId.ChaosSorcerer) is string chaosWhy && Rule(VayuRules.ChaosSummon) &&
-                (TrySiroccoFirst(context, state, botMonsters, enemyMonsters, VayuCardId.ChaosSorcerer, chaosWhy, out response) ||
-                 TrySpecialSummon(context, state, VayuCardId.ChaosSorcerer, chaosWhy, out response)))
+                await JustifySpendAsync(context, $"Chaos Sorcerer ({chaosNeed})", newAtk: 2300, fieldMaterials: null, removal: true, cardId: CardId.ChaosSorcerer) is string chaosWhy && Rule(VayuRules.ChaosSummon) &&
+                (TrySiroccoFirst(context, state, botMonsters, enemyMonsters, CardId.ChaosSorcerer, chaosWhy, out response) ||
+                 TrySpecialSummon(context, state, CardId.ChaosSorcerer, chaosWhy, out response)))
                 return response;
-            if (TryGetSpecialSummon(state, VayuCardId.DarkGrepher, out _) &&
+            if (TryGetSpecialSummon(state, CardId.DarkGrepher, out _) &&
                 ShouldSpecialSummonGrepher(state, hand, botMonsters, out string grepherReason) &&
                 await GrepherSummonWinsAsync(context, enemyMonsters, botMonsters) is string grepherLethal &&
-                TrySpecialSummon(context, state, VayuCardId.DarkGrepher, $"{grepherLethal}; {grepherReason}", out response, rule: VayuRules.GrepherSpecialForLethal))
+                TrySpecialSummon(context, state, CardId.DarkGrepher, $"{grepherLethal}; {grepherReason}", out response, rule: VayuRules.GrepherSpecialForLethal))
                 return response;
 
             // 4. Removal effects on the field: only on cards the board can't already handle (or for lethal).
-            if (TryGetActivable(state, VayuCardId.DarkArmedDragon, out _) &&
+            if (TryGetActivable(state, CardId.DarkArmedDragon, out _) &&
                 await DadEffectWhyAsync(context) is string dadEffectWhy &&
-                await DestructionNegatedAsync(context, VayuCardId.DarkArmedDragon) == null &&
-                TryActivate(context, state, VayuCardId.DarkArmedDragon, dadEffectWhy, out response, rule: VayuRules.DadEffect))
+                await DestructionNegatedAsync(context, CardId.DarkArmedDragon) == null &&
+                TryActivate(context, state, CardId.DarkArmedDragon, dadEffectWhy, out response, rule: VayuRules.DadEffect))
                 return response;
-            if (enemyMonsters.Any(card => card.IsFaceup()) && TryGetActivable(state, VayuCardId.ChaosSorcerer, out _) &&
+            if (enemyMonsters.Any(card => card.IsFaceup()) && TryGetActivable(state, CardId.ChaosSorcerer, out _) &&
                 await ChaosEffectWhyAsync(context, enemyMonsters, botMonsters) is string chaosEffectWhy &&
-                TryActivate(context, state, VayuCardId.ChaosSorcerer, chaosEffectWhy, out response, rule: VayuRules.ChaosEffect))
+                TryActivate(context, state, CardId.ChaosSorcerer, chaosEffectWhy, out response, rule: VayuRules.ChaosEffect))
                 return response;
 
             // 5. Graveyard setup (free) and synchro enablers (resources).
             // (Grepher's effect adds 2 DARKs to the graveyard: not past the 3 Dark Armed Dragon needs.)
-            string? grepherDad = TryGetActivable(state, VayuCardId.DarkGrepher, out _) ? await DadBlocksAddingDarksAsync(2) : null;
+            string? grepherDad = TryGetActivable(state, CardId.DarkGrepher, out _) ? await DadBlocksAddingDarksAsync(2) : null;
             if (grepherDad != null && !Rule(VayuRules.HoldGrepherForDad))
                 grepherDad = null;
             if (grepherDad != null)
                 Note(context, $"hold Dark Grepher's effect: {grepherDad}");
-            if (grepherDad == null && hand.Any(card => card.IsCode(GoodDarkDiscards)) &&
-                TryActivate(context, state, VayuCardId.DarkGrepher, "discard a spare DARK to send a DARK from deck", out response, rule: VayuRules.GrepherEffect))
+            if (grepherDad == null && TryGetActivable(state, CardId.DarkGrepher, out _) &&
+                hand.Any(card => CardRules.IsGoodDarkDiscard(card.ID)) &&
+                await GoodDiscardDeckSendAllowedAsync(CardId.DarkGrepher, context.Header, context.Bot) &&
+                TryActivate(context, state, CardId.DarkGrepher, "discard a spare DARK to send a DARK from deck", out response, rule: VayuRules.GrepherEffect))
                 return response;
             // Card Trooper: mill, or defence when the deck is too thin (shared staple rule).
             if (await TryCardTrooperAsync(context, state) is IdleCmdResponse trooperPlay)
@@ -332,11 +335,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             // Look one step ahead: Vayu's cost banishes 2 monsters, which can switch on Miracle Dig (it needs
             // 5+ of our monsters banished, returns 3), or Burial in hand can return them. Either way Vayu, its partner
             // and Plaguespreader come back for the next play, so this Vayu is nearly free.
-            string? vayuRefund = TryGetActivable(state, VayuCardId.BlackwingVayuTheEmblemOfHonor, out _)
+            string? vayuRefund = TryGetActivable(state, CardId.BlackwingVayuTheEmblemOfHonor, out _)
                 ? await RecursionAfterVayuAsync(state, hand)
                 : null;
             // Judge Vayu on the synchro it will actually make (the same partner choice its cost prompt uses).
-            var vayuPlan = TryGetActivable(state, VayuCardId.BlackwingVayuTheEmblemOfHonor, out _)
+            var vayuPlan = TryGetActivable(state, CardId.BlackwingVayuTheEmblemOfHonor, out _)
                 ? await PlannedVayuSynchroAsync()
                 : (Level: 0, Atk: 0, Why: "");
             // No Vayu play now, but Miracle Dig / Burial would make one: fire it only if that synchro passes the same spend
@@ -345,12 +348,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             // gives a smaller synchro instead, keeping Armor Master as a partner.)
             bool onlyUnneededAscendant = vayuPlan.Level == 8 && await AscendantNeededAsync(context) is not string &&
                                          (await RecursionVayuPlaysAsync()).After.Any(atk => atk < 2800);
-            foreach (int recursion in new[] { VayuCardId.MiracleDig, VayuCardId.BurialFromADifferentDimension })
+            foreach (int recursion in new[] { CardId.MiracleDig, CardId.BurialFromADifferentDimension })
             {
                 if ((vayuPlan.Atk <= 0 || onlyUnneededAscendant) && TryGetActivable(state, recursion, out _) &&
                     await MiracleDigVayuPlayAsync() is (int digAtk, int digSpares, string digWhat) &&
                     await JustifySpendAsync(context, $"{CardNames.Get(recursion)} for a Vayu play ({digWhat})", newAtk: digAtk, fieldMaterials: null, removal: false,
-                        cardId: VayuCardId.BlackwingVayuTheEmblemOfHonor, extraDeck: true, allowPush: digSpares > 0, spares: digSpares) is string digWhy &&
+                        cardId: CardId.BlackwingVayuTheEmblemOfHonor, extraDeck: true, allowPush: digSpares > 0, spares: digSpares) is string digWhy &&
                     TryActivate(context, state, recursion, digWhy, out response, rule: VayuRules.RecursionForVayu))
                     return response;
             }
@@ -364,16 +367,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                               "which ends the Vayu chain and strands the other Vayus; it's not needed now (not lethal, no big threat only 2800 answers, " +
                               "holding back doesn't lose), so keep Armor Master for when it is");
                 ascendantHeld = true;
-                Hold(VayuCardId.BlackwingVayuTheEmblemOfHonor, MainAction.Activate, VayuRules.HoldAscendant);
+                Hold(CardId.BlackwingVayuTheEmblemOfHonor, MainAction.Activate, VayuRules.HoldAscendant);
             }
 
             // The more Vayus in the graveyard, the less each one needs saving: spare ones loosen what we hold for.
             int spareVayus = vayuPlan.Atk > 0 ? await SpareVayusAsync() : 0;
             if (vayuPlan.Atk > 0 && !ascendantHeld &&
                 await JustifySpendAsync(context, $"Vayu's graveyard synchro ({vayuPlan.Why})", newAtk: vayuPlan.Atk, fieldMaterials: null, removal: false,
-                    cardId: VayuCardId.BlackwingVayuTheEmblemOfHonor, extraDeck: true, allowPush: spareVayus > 0, refundedBy: vayuRefund,
+                    cardId: CardId.BlackwingVayuTheEmblemOfHonor, extraDeck: true, allowPush: spareVayus > 0, refundedBy: vayuRefund,
                     spares: spareVayus) is string vayuWhy &&
-                TryActivate(context, state, VayuCardId.BlackwingVayuTheEmblemOfHonor, vayuWhy, out response, rule: VayuRules.VayuSynchro))
+                TryActivate(context, state, CardId.BlackwingVayuTheEmblemOfHonor, vayuWhy, out response, rule: VayuRules.VayuSynchro))
             {
                 _vayuPlannedLevel = vayuPlan.Level;
                 _vayuPlannedTurn = context.Header.CurrentTurn;
@@ -389,22 +392,22 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 await BestSynchroForLevelAsync(8, enemyMonsters, botMonsters.Where(card => card.IsFaceup()).Select(EffectiveAttack).ToList())
                     is { } level8 &&
                 await JustifySpendAsync(context, $"Vayu -> Armed Wing, then Plaguespreader + Armed Wing into {CardNames.Get(level8.Synchro.Id)}",
-                    newAtk: level8.Synchro.Attack, fieldMaterials: null, removal: false, cardId: VayuCardId.BlackwingVayuTheEmblemOfHonor,
+                    newAtk: level8.Synchro.Attack, fieldMaterials: null, removal: false, cardId: CardId.BlackwingVayuTheEmblemOfHonor,
                     extraDeck: true, allowPush: spareVayus > 0, refundedBy: vayuRefund, effectAnswer: level8.Answer, spares: spareVayus) is string comboWhy &&
                 await JustifySpendAsync(context, $"Plaguespreader (one-shot) for {CardNames.Get(level8.Synchro.Id)} after Vayu's Armed Wing",
-                    newAtk: level8.Synchro.Attack, fieldMaterials: null, removal: false, cardId: VayuCardId.PlaguespreaderZombie,
+                    newAtk: level8.Synchro.Attack, fieldMaterials: null, removal: false, cardId: CardId.PlaguespreaderZombie,
                     extraDeck: true, effectAnswer: level8.Answer) is string &&
                 // The whole combo as a routine (Vayu, then Plaguespreader, then the Level 8): checked and scored on the engine, and
                 // followed step by step (no Plaguespreader without its synchro).
                 await ContinueRoutineAsync(context, "Vayu + Plaguespreader Level 8", comboWhy,
-                    new RoutineStep(MainAction.Activate, VayuCardId.BlackwingVayuTheEmblemOfHonor, "Vayu's synchro (Blackwing Armed Wing)"),
+                    new RoutineStep(MainAction.Activate, CardId.BlackwingVayuTheEmblemOfHonor, "Vayu's synchro (Blackwing Armed Wing)"),
                     new[]
                     {
-                        new RoutineStep(MainAction.Activate, VayuCardId.PlaguespreaderZombie, "Plaguespreader from the graveyard",
+                        new RoutineStep(MainAction.Activate, CardId.PlaguespreaderZombie, "Plaguespreader from the graveyard",
                             OnTake: () => { PlagueTargetSynchro = level8.Synchro.Id; PlagueTargetTurn = context.Header.CurrentTurn; }),
                         new RoutineStep(MainAction.SpSummon, level8.Synchro.Id, $"synchro summon {CardNames.Get(level8.Synchro.Id)}"),
                     }) &&
-                TryActivate(context, state, VayuCardId.BlackwingVayuTheEmblemOfHonor, comboWhy, out response, rule: VayuRules.VayuPlagueLevel8))
+                TryActivate(context, state, CardId.BlackwingVayuTheEmblemOfHonor, comboWhy, out response, rule: VayuRules.VayuPlagueLevel8))
             {
                 _vayuPlannedLevel = 6;
                 _vayuPlannedTurn = context.Header.CurrentTurn;
@@ -414,8 +417,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             }
             // Its follow-up: Armed Wing is out, now Plaguespreader into the planned Level 8.
             if (_vayuPlagueComboTurn == context.Header.CurrentTurn &&
-                botMonsters.Any(card => card.IsFaceup() && card.IsCode(VayuCardId.BlackwingArmedWing)) &&
-                TryActivate(context, state, VayuCardId.PlaguespreaderZombie,
+                botMonsters.Any(card => card.IsFaceup() && card.IsCode(CardId.BlackwingArmedWing)) &&
+                TryActivate(context, state, CardId.PlaguespreaderZombie,
                     $"Plaguespreader + Blackwing Armed Wing into {CardNames.Get(_vayuPlagueComboSynchro)} (the plan when Vayu was used)", out response))
             {
                 _vayuPlagueComboTurn = -1;
@@ -428,9 +431,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             // traded) a second Vayu makes Armor Master (2500), which can. Not a strong play, so only when it's our only
             // way to answer that monster: a big threat at 2301-2500, no partner for Armor Master yet, another Vayu
             // waiting, and nothing else that beats it (DAD, Chaos Sorcerer, a Plaguespreader Level 8).
-            if (vayuPlan.Level == 6 && !ascendantHeld && TryGetActivable(state, VayuCardId.BlackwingVayuTheEmblemOfHonor, out _) &&
+            if (vayuPlan.Level == 6 && !ascendantHeld && TryGetActivable(state, CardId.BlackwingVayuTheEmblemOfHonor, out _) &&
                 await ArmedWingSteppingStoneAsync(state, enemyMonsters, botMonsters) is string stoneWhy &&
-                TryActivate(context, state, VayuCardId.BlackwingVayuTheEmblemOfHonor, stoneWhy, out response, rule: VayuRules.ArmedWingSteppingStone))
+                TryActivate(context, state, CardId.BlackwingVayuTheEmblemOfHonor, stoneWhy, out response, rule: VayuRules.ArmedWingSteppingStone))
             {
                 _vayuPlannedLevel = 6;
                 _vayuPlannedTurn = context.Header.CurrentTurn;
@@ -439,7 +442,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             // Plaguespreader + a non-Tuner on the field into the best synchro (shared rule).
             if (await TryPlaguespreaderSynchroAsync(context, state, enemyMonsters, botMonsters, VayuRules.PlagueSynchro) is IdleCmdResponse plagueSynchroPlay)
             {
-                _lastActivatedCard = VayuCardId.PlaguespreaderZombie;
+                _lastActivatedCard = CardId.PlaguespreaderZombie;
                 return plagueSynchroPlay;
             }
             // A Tuner of ours already on the field + a non-Tuner: their synchro (shared).
@@ -486,14 +489,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             }
             // Black Rose wipes the whole field (itself included). Count what we'd actually lose: Black Rose plus our
             // cards that aren't its synchro materials, against everything the opponent has.
-            if (TryGetSpecialSummon(state, VayuCardId.BlackRoseDragon, out var blackRose))
+            if (TryGetSpecialSummon(state, CardId.BlackRoseDragon, out var blackRose))
             {
                 int materials = GuessSynchroMaterials(blackRose, botMonsters).Count;
                 int ourLoss = 1 + botMonsters.Count - materials + botSpells.Count;
                 int theirLoss = enemyMonsters.Count + enemySpells.Count;
                 if (theirLoss > ourLoss &&
-                    await DestructionNegatedAsync(context, VayuCardId.BlackRoseDragon) == null &&
-                    TrySpecialSummon(context, state, VayuCardId.BlackRoseDragon,
+                    await DestructionNegatedAsync(context, CardId.BlackRoseDragon) == null &&
+                    TrySpecialSummon(context, state, CardId.BlackRoseDragon,
                         $"board wipe: opponent loses {theirLoss} cards, we lose {ourLoss} (Black Rose itself + {ourLoss - 1} other)", out response, rule: VayuRules.BlackRoseWipe))
                     return response;
             }
@@ -541,7 +544,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             seen.AddRange(await CurrentField.GetCardsInLocation(CardLocation.Removed));
 
             var (order, _) = await DarkSendPriorityAsync();
-            foreach (int id in order)
+            foreach (int id in order.Where(CardRules.IsGoodDarkDiscard))
             {
                 int copies = MainDeckCopies.TryGetValue(id, out int c) ? c : 0;
                 if (seen.Count(card => card.IsCode(id)) < copies)
@@ -553,13 +556,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         // Main deck copies of the DARKs Armageddon Knight / Dark Grepher can send (Elphin is side deck only).
         private static readonly Dictionary<int, int> MainDeckCopies = new()
         {
-            [VayuCardId.BlackwingVayuTheEmblemOfHonor] = 3,
-            [VayuCardId.BlackwingSiroccoTheDawn] = 3,
-            [VayuCardId.NecroGardna] = 1,
-            [VayuCardId.PlaguespreaderZombie] = 1,
-            [VayuCardId.DarkGrepher] = 3,
-            [VayuCardId.ArmageddonKnight] = 3,
-            [VayuCardId.BlackwingElphinTheRaven] = 0
+            [CardId.BlackwingVayuTheEmblemOfHonor] = 3,
+            [CardId.BlackwingSiroccoTheDawn] = 3,
+            [CardId.NecroGardna] = 1,
+            [CardId.PlaguespreaderZombie] = 1,
+            [CardId.DarkGrepher] = 3,
+            [CardId.ArmageddonKnight] = 3,
+            [CardId.BlackwingElphinTheRaven] = 0
         };
 
         /// <summary>
@@ -593,11 +596,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             var enemyMonsters = await GetEnemyMonsterCardsAsync();
             int botLp = await CurrentField.GetBotLifePoints();
 
-            bool vayuInGrave = grave.Any(card => card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor));
+            bool vayuInGrave = grave.Any(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
             bool partnerInGrave = grave.Any(card => card.IsCode(VayuPartners));
             bool synchroPartnerExpected = grave.Any(card => card.IsCode(SynchroVayuPartners)) || field.Any(card => card.IsCode(SynchroVayuPartners));
-            bool necroInGrave = grave.Any(card => card.IsCode(VayuCardId.NecroGardna));
-            bool plagueInGrave = grave.Any(card => card.IsCode(VayuCardId.PlaguespreaderZombie));
+            bool necroInGrave = grave.Any(card => card.IsCode(CardId.NecroGardna));
+            bool plagueInGrave = grave.Any(card => card.IsCode(CardId.PlaguespreaderZombie));
             var plagueTarget = enemyMonsters.FirstOrDefault(card => card.IsFaceup() && card.Attack is >= 2300 and <= 2800);
 
             // The metric is expected LIVE pairs (Vayu + partner both in the graveyard). Only graveyard cards are sure;
@@ -606,20 +609,20 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             //  - on the field (a synchro partner, or Vayu/Sirocco themselves): run over in battle, Mirror Force,
             //    Torrential (banishing answers like Dimensional Prison keep it out, so they don't count).
             var hand = await GetBotHandCardsAsync();
-            bool discardOutlet = hand.Concat(field).Any(card => card.IsCode(VayuCardId.DarkGrepher));
+            bool discardOutlet = hand.Concat(field).Any(card => card.IsCode(CardId.DarkGrepher));
             double handChance = discardOutlet ? HandToGraveWithOutletChance : HandToGraveChance;
-            int vayusSure = grave.Count(card => card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor));
+            int vayusSure = grave.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
             int partnersSure = grave.Count(card => card.IsCode(VayuPartners));
             var vayuOdds = new List<double>();
             var partnerOdds = new List<double>();
             foreach (var card in hand)
             {
-                if (card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)) vayuOdds.Add(handChance);
+                if (card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) vayuOdds.Add(handChance);
                 else if (card.IsCode(VayuPartners)) partnerOdds.Add(handChance);
             }
             foreach (var card in field.Where(card => card.ID > 0))
             {
-                if (card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)) vayuOdds.Add(ReachesGraveChance(card, enemyMonsters));
+                if (card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) vayuOdds.Add(ReachesGraveChance(card, enemyMonsters));
                 else if (card.IsCode(VayuPartners) || card.IsCode(SynchroVayuPartners)) partnerOdds.Add(ReachesGraveChance(card, enemyMonsters));
             }
             double vayusHad = vayusSure + vayuOdds.Sum();
@@ -653,43 +656,43 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             // No defensive exception at low LP: the best defence is a good offence.
             var order = new List<int>();
             if (plagueTarget.ID > 0 && !plagueInGrave)
-                order.Add(VayuCardId.PlaguespreaderZombie);
+                order.Add(CardId.PlaguespreaderZombie);
             if (vayusSure == 0 && vayuOdds.Count == 0)
             {
                 // No Vayu anywhere (graveyard, hand, field): get one, it's the scarce half (partners are easy to get:
                 // Armageddon Knight, Grepher, a synchro dying).
-                order.Add(VayuCardId.BlackwingVayuTheEmblemOfHonor);
-                order.Add(VayuCardId.BlackwingSiroccoTheDawn);
+                order.Add(CardId.BlackwingVayuTheEmblemOfHonor);
+                order.Add(CardId.BlackwingSiroccoTheDawn);
             }
             else if (partnerGain > vayuGain)
             {
-                order.Add(VayuCardId.BlackwingSiroccoTheDawn); // a Vayu without a (likely) partner: complete the pair
-                order.Add(VayuCardId.BlackwingVayuTheEmblemOfHonor);
+                order.Add(CardId.BlackwingSiroccoTheDawn); // a Vayu without a (likely) partner: complete the pair
+                order.Add(CardId.BlackwingVayuTheEmblemOfHonor);
             }
             else if (vayuGain >= UnpairedSendGain)
             {
-                order.Add(VayuCardId.BlackwingVayuTheEmblemOfHonor);
+                order.Add(CardId.BlackwingVayuTheEmblemOfHonor);
             }
             else
             {
                 // Neither half is likely to make a play: Plaguespreader (a play on its own) first, then Vayu (the hard
                 // half of the next pair). Necro Gardna is a last resort, never ahead of these.
                 if (!plagueInGrave)
-                    order.Add(VayuCardId.PlaguespreaderZombie);
-                order.Add(VayuCardId.BlackwingVayuTheEmblemOfHonor);
+                    order.Add(CardId.PlaguespreaderZombie);
+                order.Add(CardId.BlackwingVayuTheEmblemOfHonor);
             }
-            order.Add(VayuCardId.BlackwingVayuTheEmblemOfHonor);
+            order.Add(CardId.BlackwingVayuTheEmblemOfHonor);
             // Necro Gardna is a last resort: after everything that makes or completes a play.
             if (!plagueInGrave)
-                order.Add(VayuCardId.PlaguespreaderZombie);
+                order.Add(CardId.PlaguespreaderZombie);
             order.AddRange(new[]
             {
-                VayuCardId.PlaguespreaderZombie,
-                VayuCardId.BlackwingSiroccoTheDawn,
-                VayuCardId.BlackwingElphinTheRaven,
-                VayuCardId.DarkGrepher,
-                VayuCardId.ArmageddonKnight,
-                VayuCardId.NecroGardna
+                CardId.PlaguespreaderZombie,
+                CardId.BlackwingSiroccoTheDawn,
+                CardId.BlackwingElphinTheRaven,
+                CardId.DarkGrepher,
+                CardId.ArmageddonKnight,
+                CardId.NecroGardna
             });
 
             string why = $"expected Vayus {vayusHad:0.##} ({vayusSure} in GY), partners {partnersHad:0.##} ({partnersSure} in GY) " +
@@ -708,10 +711,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         // (Card Trooper is deliberately not here: its effect needs it face-up, so it's summoned instead.)
         private static readonly int[] ValueSets =
         {
-            VayuCardId.RykoLightswornHunter,
-            VayuCardId.BlackwingVayuTheEmblemOfHonor,
-            VayuCardId.PlaguespreaderZombie,
-            VayuCardId.NecroGardna
+            CardId.RykoLightswornHunterPreErrata,
+            CardId.BlackwingVayuTheEmblemOfHonor,
+            CardId.PlaguespreaderZombie,
+            CardId.NecroGardna
         };
 
         protected override int[] ValueSetIds => ValueSets;
@@ -719,24 +722,24 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         // Burial is set as bait too, but only with 2+ banished monsters we care about to return when it is chained.
         private int _banishedForBait;
         protected override bool IsSetCandidate(DynamicCard card) =>
-            base.IsSetCandidate(card) || card.IsCode(VayuCardId.BurialFromADifferentDimension) && _banishedForBait >= BurialBaitAt;
+            base.IsSetCandidate(card) || card.IsCode(CardId.BurialFromADifferentDimension) && _banishedForBait >= BurialBaitAt;
 
         // Safe Normal Summon order. Dark Grepher's effect needs a DARK to discard; without one it's just a 1700 body, and
         // Lyla (same ATK) at least mills, so Grepher with nothing to pitch goes after the others.
         protected override int SafeSummonPriority(DynamicCard card, List<DynamicCard> hand) =>
-            card.IsCode(VayuCardId.DarkGrepher) && !hand.Any(c => c.IsCode(GoodDarkDiscards))
+            card.IsCode(CardId.DarkGrepher) && !hand.Any(c => CardRules.IsGoodDarkDiscard(c.ID))
                 ? SummonPriority.Length
                 : PriorityIndex(SummonPriority, card);
 
         // Armageddon Knight's summon effect does nothing with no useful DARK left to send.
         protected override async Task<bool> OnSummonEffectUselessAsync(DynamicCard card, List<DynamicCard> hand) =>
-            card.IsCode(VayuCardId.ArmageddonKnight) && await BestArmageddonTargetAsync(hand) == 0;
+            card.IsCode(CardId.ArmageddonKnight) && await BestArmageddonTargetAsync(hand) == 0;
 
         /// <summary>This deck's Normal Summons, between the shared staple ones: Armageddon Knight (graveyard setup, any LP), then Dark Grepher with a spare DARK to discard.</summary>
         protected override async Task<IdleCmdResponse?> DeckSummonAsync(DecisionContext<IdleCmdData> context, IdleCmdData state,
             List<DynamicCard> developers, List<DynamicCard> hand, bool danger, int botLp)
         {
-            if (developers.TryGetByID(VayuCardId.ArmageddonKnight, out var armageddon))
+            if (developers.TryGetByID(CardId.ArmageddonKnight, out var armageddon))
             {
                 var target = await BestArmageddonTargetAsync(hand);
                 // Graveyard setup is development, so do it at any life points.
@@ -746,8 +749,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                     return armageddon.NormalSummon();
                 }
             }
-            if (!danger && hand.Count(card => card.IsCode(GoodDarkDiscards)) > 0 &&
-                developers.TryGetByID(VayuCardId.DarkGrepher, out var grepher) && Rule(VayuRules.SummonGrepher))
+            if (!danger && hand.Count(card => CardRules.IsGoodDarkDiscard(card.ID)) > 0 &&
+                developers.TryGetByID(CardId.DarkGrepher, out var grepher) && Rule(VayuRules.SummonGrepher))
             {
                 Note(context, $"normal summon Dark Grepher, then discard a spare DARK to its effect (LP {botLp})");
                 return grepher.NormalSummon();
@@ -785,28 +788,30 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 await PrepareContextAsync(context, ct);
                 var hand = await GetBotHandCardsAsync();
                 const string window = "use the effect in the priority window, before it can be removed";
-                string? grepherDad = options.Any(card => card.IsCode(VayuCardId.DarkGrepher)) ? await DadBlocksAddingDarksAsync(2) : null;
+                string? grepherDad = options.Any(card => card.IsCode(CardId.DarkGrepher)) ? await DadBlocksAddingDarksAsync(2) : null;
                 if (grepherDad != null && !Rule(VayuRules.HoldGrepherForDad))
                     grepherDad = null;
                 if (grepherDad != null)
                     Note(context, $"hold Dark Grepher's effect: {grepherDad}");
-                if (grepherDad == null && hand.Any(card => card.IsCode(GoodDarkDiscards)) &&
-                    TryChain(context, options, VayuCardId.DarkGrepher, window, out int priorityIndex, rule: VayuRules.GrepherEffect))
+                if (grepherDad == null && options.Any(card => card.IsCode(CardId.DarkGrepher)) &&
+                    hand.Any(card => CardRules.IsGoodDarkDiscard(card.ID)) &&
+                    await GoodDiscardDeckSendAllowedAsync(CardId.DarkGrepher, context.Header, context.Bot) &&
+                    TryChain(context, options, CardId.DarkGrepher, window, out int priorityIndex, rule: VayuRules.GrepherEffect))
                     return priorityIndex;
-                if (options.Any(card => card.IsCode(VayuCardId.CardTrooper)) && await TrooperCanMillAsync(context) &&
-                    TryChainStaple(context, options, VayuCardId.CardTrooper, window, out priorityIndex, rule: DeckRules.TrooperMill))
+                if (options.Any(card => card.IsCode(CardId.CardTrooper)) && await TrooperCanMillAsync(context) &&
+                    TryChainStaple(context, options, CardId.CardTrooper, window, out priorityIndex, rule: DeckRules.TrooperMill))
                 {
-                    MarkStapleActivated(VayuCardId.CardTrooper); // so the "how many" prompt sends the maximum
+                    MarkStapleActivated(CardId.CardTrooper); // so the "how many" prompt sends the maximum
                     return priorityIndex;
                 }
-                if (options.Any(card => card.IsCode(VayuCardId.DarkArmedDragon)) &&
+                if (options.Any(card => card.IsCode(CardId.DarkArmedDragon)) &&
                     await DadEffectWhyAsync(context) is string dadWhy &&
-                    await DestructionNegatedAsync(context, VayuCardId.DarkArmedDragon) == null &&
-                    TryChain(context, options, VayuCardId.DarkArmedDragon, $"{dadWhy}; {window}", out priorityIndex, rule: VayuRules.DadEffect))
+                    await DestructionNegatedAsync(context, CardId.DarkArmedDragon) == null &&
+                    TryChain(context, options, CardId.DarkArmedDragon, $"{dadWhy}; {window}", out priorityIndex, rule: VayuRules.DadEffect))
                     return priorityIndex;
-                if (options.Any(card => card.IsCode(VayuCardId.ChaosSorcerer)) &&
+                if (options.Any(card => card.IsCode(CardId.ChaosSorcerer)) &&
                     await ChaosEffectWhyAsync(context, await GetEnemyMonsterCardsAsync(), await GetBotMonsterCardsAsync()) is string chaosWhy &&
-                    TryChain(context, options, VayuCardId.ChaosSorcerer, $"{chaosWhy}; {window}", out priorityIndex, rule: VayuRules.ChaosEffect))
+                    TryChain(context, options, CardId.ChaosSorcerer, $"{chaosWhy}; {window}", out priorityIndex, rule: VayuRules.ChaosEffect))
                     return priorityIndex;
             }
 
@@ -827,7 +832,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
 
             // MST in response to the opponent's continuous card (Ultimate Offering, Call of the Haunted): destroying it
             // in the chain stops its effect too. Shared staple rule.
-            if (options.Any(card => card.IsCode(VayuCardId.MysticalSpaceTyphoon)) && context.Header.LastChainPlayer == 1)
+            if (options.Any(card => card.IsCode(CardId.MysticalSpaceTyphoon)) && context.Header.LastChainPlayer == 1)
             {
                 await PrepareContextAsync(context, ct);
                 var mstChain = await TryChainMstIntoContinuousAsync(context);
@@ -851,7 +856,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             return await base.OnSelectChainAsync(context, ct);
         }
 
-        private static readonly int[] AttackNegates = { VayuCardId.NecroGardna };
+        private static readonly int[] AttackNegates = { CardId.NecroGardna };
 
         // Necro Gardna counts as an attack answer for the shared "one answer per attack" rule.
         protected override int[] AttackNegateIds => AttackNegates;
@@ -864,11 +869,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             List<DynamicCard> enemyMonsters,
             IncomingAttack? incoming)
         {
-            if (!options.Any(card => card.IsCode(VayuCardId.NecroGardna)) ||
+            if (!options.Any(card => card.IsCode(CardId.NecroGardna)) ||
                 !await WorthProtectingAsync(context, botMonsters, enemyMonsters, incoming))
                 return null;
             string why = incoming?.Why ?? "attacker unknown";
-            return TryChainStaple(context, options, VayuCardId.NecroGardna, $"negate the attack from the graveyard: {why}", out int index,
+            return TryChainStaple(context, options, CardId.NecroGardna, $"negate the attack from the graveyard: {why}", out int index,
                 rule: VayuRules.NecroGardna) ? index : null;
         }
 
@@ -948,14 +953,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         /// </summary>
         protected override async Task<(double Value, string Why)> HandCardValueAsync(DynamicCard card, List<DynamicCard> botMonsters)
         {
-            if (card.IsCode(VayuCardId.DarkArmedDragon))
+            if (card.IsCode(CardId.DarkArmedDragon))
             {
                 var grave = await GetBotGraveyardCardsAsync();
                 bool IsDark(DynamicCard c) => c.HasType(CardType.Monster) && (c.Attribute & (int)CardAttribute.Dark) != 0;
                 int darks = grave.Count(IsDark);
                 // Down: each Vayu + partner pair banished by Vayu's synchro takes 2. Up: our DARK monsters on the field
                 // that can still die (this battle or later).
-                int pairs = Math.Min(grave.Count(c => c.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)), grave.Count(c => c.IsCode(VayuPartners)));
+                int pairs = Math.Min(grave.Count(c => c.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)), grave.Count(c => c.IsCode(VayuPartners)));
                 int lowest = darks - 2 * pairs;
                 int highest = darks + botMonsters.Count(c => c.ID > 0 && IsDark(c));
                 // Under 3: our DARKs dying can bring it up. Over 3: Vayu trims 2 at a time (an odd gap needs a DARK of
@@ -983,14 +988,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 return true;
             var monsters = await GetBotMonsterCardsAsync();
             var hand = await GetBotHandCardsAsync();
-            if (monsters.Concat(hand).Any(card => card.IsCode(VayuCardId.DarkArmedDragon, VayuCardId.ChaosSorcerer)))
+            if (monsters.Concat(hand).Any(card => card.IsCode(CardId.DarkArmedDragon, CardId.ChaosSorcerer)))
                 return true;
             // Vayu in the graveyard (Silverwind 2800 with Armor Master there) or Plaguespreader with a Level 4 (Goyo 2800).
             if (await BestVayuSynchroAtkAsync() > GorzAttack &&
-                (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)))
+                (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)))
                 return true;
             return monsters.Any(card => card.Level == 4 && !card.HasType(CardType.Tuner)) &&
-                   (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(VayuCardId.PlaguespreaderZombie)) &&
+                   (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(CardId.PlaguespreaderZombie)) &&
                    hand.Count > 0;
         }
 
@@ -1025,9 +1030,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
 
         private static string VayuSynchroName(int level) => level switch
         {
-            6 => CardNames.Get(VayuCardId.BlackwingArmedWing),
-            7 => CardNames.Get(VayuCardId.BlackwingArmorMaster),
-            8 => CardNames.Get(VayuCardId.BlackwingSilverwindTheAscendant),
+            6 => CardNames.Get(CardId.BlackwingArmedWing),
+            7 => CardNames.Get(CardId.BlackwingArmorMaster),
+            8 => CardNames.Get(CardId.BlackwingSilverwindTheAscendant),
             _ => $"a Level {level} synchro"
         };
 
@@ -1092,7 +1097,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         /// hand on top of the deck, so we need at least one card in hand (an empty hand means no Plaguespreader route).
         /// </summary>
         private async Task<bool> PlaguespreaderUsableAsync() =>
-            (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(VayuCardId.PlaguespreaderZombie)) &&
+            (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(CardId.PlaguespreaderZombie)) &&
             (await GetBotHandCardsAsync()).Count > 0;
 
         /// <summary>
@@ -1108,13 +1113,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             int banishedMonsters = (await CurrentField.GetCardsInLocation(CardLocation.Removed))
                 .Count(card => card.ID > 0 && card.HasType(CardType.Monster));
             bool plagueBanished = (await CurrentField.GetCardsInLocation(CardLocation.Removed))
-                .Any(card => card.IsCode(VayuCardId.PlaguespreaderZombie));
+                .Any(card => card.IsCode(CardId.PlaguespreaderZombie));
             string extra = plagueBanished ? ", and Plaguespreader for another synchro" : "";
-            if (hand.Any(card => card.IsCode(VayuCardId.MiracleDig)) && !TryGetActivable(state, VayuCardId.MiracleDig, out _) &&
+            if (hand.Any(card => card.IsCode(CardId.MiracleDig)) && !TryGetActivable(state, CardId.MiracleDig, out _) &&
                 banishedMonsters < 5 && banishedMonsters + 2 >= 5)
                 return $"its cost banishes 2 more, switching on Miracle Dig ({banishedMonsters} -> {banishedMonsters + 2} of 5 needed), " +
                        $"which brings Vayu and its partner back{extra}";
-            if (hand.Any(card => card.IsCode(VayuCardId.BurialFromADifferentDimension)))
+            if (hand.Any(card => card.IsCode(CardId.BurialFromADifferentDimension)))
                 return $"Burial from a Different Dimension in hand brings Vayu and its partner back afterwards{extra}";
             return null;
         }
@@ -1123,13 +1128,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         // work from the graveyard). Other monsters there don't really matter.
         private static readonly int[] BurialWorthy =
         {
-            VayuCardId.BlackwingVayuTheEmblemOfHonor,
-            VayuCardId.BlackwingSiroccoTheDawn,
-            VayuCardId.BlackwingElphinTheRaven,
-            VayuCardId.BlackwingArmedWing,
-            VayuCardId.BlackwingArmorMaster,
-            VayuCardId.NecroGardna,
-            VayuCardId.PlaguespreaderZombie
+            CardId.BlackwingVayuTheEmblemOfHonor,
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.BlackwingElphinTheRaven,
+            CardId.BlackwingArmedWing,
+            CardId.BlackwingArmorMaster,
+            CardId.NecroGardna,
+            CardId.PlaguespreaderZombie
         };
 
         /// <summary>Burial-worthy banished monsters needed to set it as bait (chained when they try to remove it).</summary>
@@ -1148,21 +1153,21 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
 
         // A set Burial is bait too, but only with enough worth bringing back when it's chained.
         protected override IReadOnlyCollection<int> BaitCardIds =>
-            _ourBanishedMonsters >= BurialBaitAt ? DefaultBaitCards.Append(VayuCardId.BurialFromADifferentDimension).ToArray() : DefaultBaitCards;
+            _ourBanishedMonsters >= BurialBaitAt ? DefaultBaitCards.Append(CardId.BurialFromADifferentDimension).ToArray() : DefaultBaitCards;
 
         /// <summary>Gorz hold roll: hand plays plus graveyard plays (each live Vayu pair, Plaguespreader).</summary>
         protected override async Task<int> AlternativePlaysAsync()
         {
             var grave = await GetBotGraveyardCardsAsync();
-            int pairs = Math.Min(grave.Count(c => c.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)), grave.Count(c => c.IsCode(VayuPartners)));
-            int plague = grave.Any(c => c.IsCode(VayuCardId.PlaguespreaderZombie)) ? 1 : 0;
+            int pairs = Math.Min(grave.Count(c => c.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)), grave.Count(c => c.IsCode(VayuPartners)));
+            int plague = grave.Any(c => c.IsCode(CardId.PlaguespreaderZombie)) ? 1 : 0;
             return await base.AlternativePlaysAsync() + pairs + plague;
         }
 
         // A Heavy Storm doesn't cost us a set Burial (Quick-Play: chained in response).
         protected override IReadOnlyCollection<int> StormProofSets { get; } = new[]
         {
-            JarOfGreedId, LegacyOfYataGarasuId, TrapDustshootId, VayuCardId.BurialFromADifferentDimension
+            JarOfGreed, LegacyOfYataGarasu, TrapDustshoot, CardId.BurialFromADifferentDimension
         };
 
         /// <summary>
@@ -1173,7 +1178,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         /// </summary>
         protected override bool IsExpendable(DynamicCard card) =>
             base.IsExpendable(card) ||
-            card.IsCode(VayuCardId.BlackwingArmedWing, VayuCardId.BlackwingArmorMaster, VayuCardId.CardTrooper) && _haveVayuPieces;
+            card.IsCode(CardId.BlackwingArmedWing, CardId.BlackwingArmorMaster, CardId.CardTrooper) && _haveVayuPieces;
 
         // Whether we have a Vayu to work with: one in the graveyard, Armageddon Knight in hand (sends one), or Dark
         // Grepher in hand / on the field with another DARK in hand to discard (sends one). Refreshed every decision.
@@ -1183,17 +1188,17 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         {
             var extra = field.OwnSide.Extra ?? Array.Empty<int>();
             if (extra.Any(code => code > 0))
-                _extraVayuLevels = new[] { (6, VayuCardId.BlackwingArmedWing), (7, VayuCardId.BlackwingArmorMaster), (8, VayuCardId.BlackwingSilverwindTheAscendant) }
+                _extraVayuLevels = new[] { (6, CardId.BlackwingArmedWing), (7, CardId.BlackwingArmorMaster), (8, CardId.BlackwingSilverwindTheAscendant) }
                     .Where(x => extra.Any(code => Search.SearchHost.Is(code, x.Item2))).Select(x => x.Item1).ToHashSet();
             var own = field.OwnSide;
             var grave = own.Grave ?? Array.Empty<int>();
             var hand = own.Hand ?? Array.Empty<int>();
             var monsters = (own.MonsterZones ?? Array.Empty<CardArray>())
                 .Select(zone => zone.Cards is { Length: > 0 } cards ? cards[0] : 0).ToList();
-            bool grepher = hand.Contains(VayuCardId.DarkGrepher) || monsters.Contains(VayuCardId.DarkGrepher);
-            _haveVayuPieces = grave.Contains(VayuCardId.BlackwingVayuTheEmblemOfHonor) ||
-                              hand.Contains(VayuCardId.ArmageddonKnight) ||
-                              grepher && hand.Any(id => GoodDarkDiscards.Contains(id));
+            bool grepher = hand.Contains(CardId.DarkGrepher) || monsters.Contains(CardId.DarkGrepher);
+            _haveVayuPieces = grave.Contains(CardId.BlackwingVayuTheEmblemOfHonor) ||
+                              hand.Contains(CardId.ArmageddonKnight) ||
+                              grepher && hand.Any(id => CardRules.IsGoodDarkDiscard(id));
         }
 
         // This brain has its own Gorz / Mirror Force / Torrential chain rules (see OnSelectChainAsync).
@@ -1215,9 +1220,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             double value = 0;
             // A face-up Card Trooper of ours is a mill engine: every turn it fills the graveyard for Vayu's synchros and Dark
             // Armed Dragon (user, 2026-11-10: Goyo should take their Trooper rather than kill a Stardust it can't take).
-            if (own.Monsters.Any(m => m.FaceUp && Search.SearchHost.Is(m.Code, VayuCardId.CardTrooper)))
+            if (own.Monsters.Any(m => m.FaceUp && Search.SearchHost.Is(m.Code, CardId.CardTrooper)))
                 value += TrooperSetupValue;
-            if (own.HandCodes.Any(code => Search.SearchHost.Is(code, VayuCardId.DarkArmedDragon)))
+            if (own.HandCodes.Any(code => Search.SearchHost.Is(code, CardId.DarkArmedDragon)))
             {
                 int darks = own.GraveCodes.Count(code => (Search.SearchHost.Type(code) & 0x1) != 0 && Search.SearchHost.Attribute(code) == 0x20);
                 value += darks == 3 ? DadLiveSetupValue : darks == 2 ? DadNearSetupValue : 0;
@@ -1231,14 +1236,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         protected override bool HandlesStapleIdle => true;
 
         // Into an empty field the generic brain attacks smallest first; Chaos Sorcerer always goes last.
-        protected override IReadOnlyCollection<int> AttackLast { get; } = new[] { VayuCardId.ChaosSorcerer };
+        protected override IReadOnlyCollection<int> AttackLast { get; } = new[] { CardId.ChaosSorcerer };
 
         // Chaos Sorcerer's banish works from defence: with a reasonable Mirror Force chance it sits in defence.
-        protected override IReadOnlyCollection<int> DefenceUnderMirrorForce { get; } = new[] { VayuCardId.ChaosSorcerer };
+        protected override IReadOnlyCollection<int> DefenceUnderMirrorForce { get; } = new[] { CardId.ChaosSorcerer };
 
         private static readonly int[] PriorityWindowEffects =
         {
-            VayuCardId.DarkGrepher, VayuCardId.CardTrooper, VayuCardId.DarkArmedDragon, VayuCardId.ChaosSorcerer
+            CardId.DarkGrepher, CardId.CardTrooper, CardId.DarkArmedDragon, CardId.ChaosSorcerer
         };
 
 
@@ -1248,24 +1253,26 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         {
             await PrepareContextAsync(context, ct);
             var card = context.StateData.EffectCard;
+            if (!await GoodDiscardDeckSendAllowedAsync(card.ID, context.Header, context.Bot))
+                return false;
 
             // Armageddon Knight sends a DARK: not while that would take Dark Armed Dragon's graveyard past exactly 3.
-            if (card.IsCode(VayuCardId.ArmageddonKnight) && await DadBlocksAddingDarksAsync(1) is string dadWhy && Rule(VayuRules.HoldKnightForDad))
+            if (card.IsCode(CardId.ArmageddonKnight) && await DadBlocksAddingDarksAsync(1) is string dadWhy && Rule(VayuRules.HoldKnightForDad))
             {
                 Note(context, $"don't use Armageddon Knight's effect: {dadWhy}");
                 return false;
             }
 
-            if (card.IsCode(VayuCardId.BlackRoseDragon))
+            if (card.IsCode(CardId.BlackRoseDragon))
             {
                 int enemyCards = (await GetEnemyMonsterCardsAsync()).Count + (await GetEnemySpellCardsAsync()).Count;
                 int botCards = (await GetBotMonsterCardsAsync()).Count + (await CurrentField.GetCardsInSpellZone()).Count();
-                bool wipe = enemyCards > botCards && await DestructionNegatedAsync(context, VayuCardId.BlackRoseDragon) == null && Rule(VayuRules.BlackRoseWipe);
+                bool wipe = enemyCards > botCards && await DestructionNegatedAsync(context, CardId.BlackRoseDragon) == null && Rule(VayuRules.BlackRoseWipe);
                 Note(context, $"Black Rose wipe? opponent {enemyCards} vs our {botCards} -> {(wipe ? "yes" : "no")}");
                 return wipe;
             }
 
-            if (card.IsCode(VayuCardId.GorzTheEmissaryOfDarkness))
+            if (card.IsCode(CardId.GorzTheEmissaryOfDarkness))
                 return await GorzNowAsync(context, await GetEnemyMonsterCardsAsync()) != null;
 
             // Every other optional effect in this deck is worth using (Armageddon Knight, Ryko, Goyo, Colossal Fighter...).
@@ -1301,22 +1308,22 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             {
                 var mine = indexed.Where(x => x.Card.CurrentCoordinates.Controller == 0).ToList();
                 var grave = await GetBotGraveyardCardsAsync();
-                int vayus = grave.Count(card => card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor));
+                int vayus = grave.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
                 int partners = grave.Count(card => card.IsCode(VayuPartners));
-                bool plague = grave.Any(card => card.IsCode(VayuCardId.PlaguespreaderZombie));
-                bool necro = grave.Any(card => card.IsCode(VayuCardId.NecroGardna));
+                bool plague = grave.Any(card => card.IsCode(CardId.PlaguespreaderZombie));
+                bool necro = grave.Any(card => card.IsCode(CardId.NecroGardna));
 
                 double Value((DynamicCard Card, int Index) x)
                 {
-                    if (x.Card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor))
+                    if (x.Card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor))
                         return vayus < partners ? BurialRankVayuShort : vayus == partners ? BurialRankVayuEven : BurialRankVayuSpare;
                     if (x.Card.IsCode(VayuPartners))
                         // A partner beyond the Vayus makes no play: below Necro Gardna (user, 2026-11-11: Miracle Dig returned a third
                         // Armed Wing for two Vayus, when Necro Gardna was the better pick).
                         return (partners < vayus ? BurialRankPartnerShort : partners == vayus ? BurialRankPartnerEven : BurialRankPartnerSpare) + x.Card.Level * 0.01; // higher Level first
-                    if (x.Card.IsCode(VayuCardId.PlaguespreaderZombie))
+                    if (x.Card.IsCode(CardId.PlaguespreaderZombie))
                         return plague ? BurialRankPlagueSecond : BurialRankPlague;
-                    if (x.Card.IsCode(VayuCardId.NecroGardna))
+                    if (x.Card.IsCode(CardId.NecroGardna))
                         return necro ? BurialRankNecroSecond : BurialRankNecro;
                     return -PriorityIndex(BurialPriority, x.Card) * 0.01;
                 }
@@ -1328,7 +1335,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 // Vayus first: they're the scarce half of every play (partners are much easier to get back: Armageddon
                 // Knight, Grepher, a synchro dying). Keep one slot for a partner only if the graveyard would otherwise
                 // have none, so at least one play is ready now.
-                var banishedVayus = left.Where(x => x.Card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)).ToList();
+                var banishedVayus = left.Where(x => x.Card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)).ToList();
                 bool needPartner = partners == 0 && left.Any(x => x.Card.IsCode(VayuPartners));
                 foreach (var vayu in banishedVayus.Take(Math.Max(needPartner ? Math.Min(1, slots) : 0, slots - (needPartner ? 1 : 0))))
                 {
@@ -1349,10 +1356,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                     var best = left.OrderByDescending(Value).First();
                     picks.Add(best);
                     left.Remove(best);
-                    if (best.Card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)) vayus++;
+                    if (best.Card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) vayus++;
                     else if (best.Card.IsCode(VayuPartners)) partners++;
-                    else if (best.Card.IsCode(VayuCardId.PlaguespreaderZombie)) plague = true;
-                    else if (best.Card.IsCode(VayuCardId.NecroGardna)) necro = true;
+                    else if (best.Card.IsCode(CardId.PlaguespreaderZombie)) plague = true;
+                    else if (best.Card.IsCode(CardId.NecroGardna)) necro = true;
                 }
                 if (picks.Count < state.Minimum)
                     picks.AddRange(indexed.Where(x => !picks.Contains(x)).Take(state.Minimum - picks.Count));
@@ -1375,6 +1382,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             if (hint == DHint.TOGRAVE)
             {
                 bool fromDeck = indexed.All(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck);
+                if (fromDeck)
+                {
+                    var tagged = indexed.Where(x => CardRules.IsGoodDarkDiscard(x.Card.ID)).ToList();
+                    if (tagged.Count >= count)
+                        indexed = tagged;
+                }
                 return fromDeck
                     ? Ordered(context, hint, indexed, count, await BuildSendFromDeckPriorityAsync(context), preferLowValue: false)
                     : Ordered(context, hint, indexed, count, PreferDiscard, preferLowValue: true);
@@ -1386,8 +1399,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 // Vayu's cost: banish Vayu + a non-Tuner Blackwing partner; the partner's Level decides the synchro
                 // (Sirocco L5 -> Armed Wing 2300, Armed Wing / Elphin L6 -> Armor Master 2500, Armor Master L7 ->
                 // Silverwind the Ascendant 2800). Use the lowest partner that does the job, keeping the bigger ones.
-                if (count == 1 && _lastActivatedCard == VayuCardId.BlackwingVayuTheEmblemOfHonor && VayuWasTheMove(context.Header) &&
-                    indexed.Any(x => x.Card.IsCode(VayuPartners)) && !indexed.All(x => x.Card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)))
+                if (count == 1 && _lastActivatedCard == CardId.BlackwingVayuTheEmblemOfHonor && VayuWasTheMove(context.Header) &&
+                    indexed.Any(x => x.Card.IsCode(VayuPartners)) && !indexed.All(x => x.Card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)))
                 {
                     var candidates = indexed.Where(x => x.Card.IsCode(VayuPartners)).ToList();
                     // Make the synchro the decision to use Vayu was based on, if that partner is still there.
@@ -1416,12 +1429,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 // (Plaguespreader leaving the graveyard takes it 1 DARK closer to 3; Vayu trims 2 at a time.)
                 var tdGrave = await GetBotGraveyardCardsAsync();
                 int tdDarks = tdGrave.Count(c => c.HasType(CardType.Monster) && (c.Attribute & (int)CardAttribute.Dark) != 0)
-                              - (tdGrave.Any(c => c.IsCode(VayuCardId.PlaguespreaderZombie)) ? 1 : 0);
-                int tdPairs = Math.Min(tdGrave.Count(c => c.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)), tdGrave.Count(c => c.IsCode(VayuPartners)));
+                              - (tdGrave.Any(c => c.IsCode(CardId.PlaguespreaderZombie)) ? 1 : 0);
+                int tdPairs = Math.Min(tdGrave.Count(c => c.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)), tdGrave.Count(c => c.IsCode(VayuPartners)));
                 bool dadLiveThisTurn = tdDarks == 3 || tdDarks > 3 && (tdDarks - 3) % 2 == 0 && (tdDarks - 3) / 2 <= tdPairs;
                 int Rank(DynamicCard card) =>
-                    card.IsCode(VayuCardId.DarkArmedDragon) && dadLiveThisTurn ? 5
-                    : card.IsCode(VayuCardId.GorzTheEmissaryOfDarkness) ? 3
+                    card.IsCode(CardId.DarkArmedDragon) && dadLiveThisTurn ? 5
+                    : card.IsCode(CardId.GorzTheEmissaryOfDarkness) ? 3
                     : card.HasType(CardType.Trap) || card.HasType(CardType.QuickPlay) ? 2
                     : card.HasType(CardType.Spell) ? 1
                     : 0;
@@ -1456,7 +1469,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         /// Armor Master -> Silverwind), so over a game the Vayus in the graveyard are the limiting resource.
         /// </summary>
         private async Task<int> SpareVayusAsync() =>
-            Math.Max(0, (await GetBotGraveyardCardsAsync()).Count(card => card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)) - 1);
+            Math.Max(0, (await GetBotGraveyardCardsAsync()).Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) - 1);
 
 
         // Blackwing synchro Vayu would make from the graveyard, by partner (Vayu L1 + partner level).
@@ -1465,9 +1478,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         private async Task<int> BestVayuSynchroAtkAsync()
         {
             var grave = await GetBotGraveyardCardsAsync();
-            if (grave.Any(card => card.IsCode(VayuCardId.BlackwingArmorMaster)))
+            if (grave.Any(card => card.IsCode(CardId.BlackwingArmorMaster)))
                 return 2800; // Silverwind
-            if (grave.Any(card => card.IsCode(VayuCardId.BlackwingElphinTheRaven, VayuCardId.BlackwingArmedWing)))
+            if (grave.Any(card => card.IsCode(CardId.BlackwingElphinTheRaven, CardId.BlackwingArmedWing)))
                 return 2500; // Armor Master
             return 2300;     // Armed Wing (with Sirocco)
         }
@@ -1487,8 +1500,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         private async Task<string?> ArmedWingSteppingStoneAsync(IdleCmdData state, List<DynamicCard> enemyMonsters, List<DynamicCard> botMonsters)
         {
             var grave = await GetBotGraveyardCardsAsync();
-            if (grave.Count(c => c.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor)) < 2 ||
-                grave.Any(c => c.IsCode(VayuCardId.BlackwingArmedWing, VayuCardId.BlackwingElphinTheRaven)))
+            if (grave.Count(c => c.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) < 2 ||
+                grave.Any(c => c.IsCode(CardId.BlackwingArmedWing, CardId.BlackwingElphinTheRaven)))
                 return null;
             DynamicCard target = default;
             foreach (var enemy in enemyMonsters.Where(card => card.IsFaceup() && card.GetRealPower() is > 2300 and <= 2500))
@@ -1500,7 +1513,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             // Any other way to answer it?
             if (botMonsters.Any(card => card.IsFaceup() && EffectiveAttack(card) > power))
                 return null;
-            if (TryGetSpecialSummon(state, VayuCardId.DarkArmedDragon, out _) || TryGetSpecialSummon(state, VayuCardId.ChaosSorcerer, out _))
+            if (TryGetSpecialSummon(state, CardId.DarkArmedDragon, out _) || TryGetSpecialSummon(state, CardId.ChaosSorcerer, out _))
                 return null;
             if (await PlaguespreaderUsableAsync() &&
                 await BestSynchroForLevelAsync(8, enemyMonsters, botMonsters.Select(EffectiveAttack).ToList()) is { } l8 && l8.Synchro.Attack > power)
@@ -1635,7 +1648,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             IdleCmdResponse? Summon(int id, string step) => TrySpecialSummon(context, state, id, Why(step), out var r) ? r : null;
 
             // Vayu first, so DAD's effect knows which DARKs in the graveyard Vayu needs.
-            bool vayu = TryGetActivable(state, VayuCardId.BlackwingVayuTheEmblemOfHonor, out _);
+            bool vayu = TryGetActivable(state, CardId.BlackwingVayuTheEmblemOfHonor, out _);
             int vayuPlaysNow = 0;
             if (vayu)
             {
@@ -1644,7 +1657,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 // play counts on, so the cost prompt makes that one (by then other plays are out and the partner choice
                 // alone might go smaller); the next decision re-plans from the new board.
                 var graveNow = await GetBotGraveyardCardsAsync();
-                int graveVayus = graveNow.Count(card => card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor));
+                int graveVayus = graveNow.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
                 var levels = graveNow.Where(card => card.IsCode(VayuPartners)).Select(card => card.Level + 1)
                     .OrderByDescending(level => level).Take(graveVayus).Where(level => VayuSynchroAtk(level) > 0).ToList();
                 Extension? previous = null;
@@ -1653,13 +1666,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                     int level = vayuLevel;
                     var play = new Extension
                     {
-                        Name = $"Vayu's synchro ({VayuSynchroName(level)})", Order = 5, Cost = 2, DarkCost = 2, CardId = VayuCardId.BlackwingVayuTheEmblemOfHonor,
+                        Name = $"Vayu's synchro ({VayuSynchroName(level)})", Order = 5, Cost = 2, DarkCost = 2, CardId = CardId.BlackwingVayuTheEmblemOfHonor,
                         Requires = previous,
                         Execute = () =>
                         {
                             _vayuPlannedLevel = level;
                             _vayuPlannedTurn = context.Header.CurrentTurn;
-                            return Activate(VayuCardId.BlackwingVayuTheEmblemOfHonor, "Vayu's graveyard synchro");
+                            return Activate(CardId.BlackwingVayuTheEmblemOfHonor, "Vayu's graveyard synchro");
                         }
                     };
                     play.AddedAtk.Add(VayuSynchroAtk(level));
@@ -1671,7 +1684,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
 
             // Miracle Dig / Burial, then Vayu: the extra Vayu plays the recursion creates beyond those available now (with
             // no Vayu play now, all of them). Fired first; the next decision re-plans with Vayu live.
-            int recursion = new[] { VayuCardId.MiracleDig, VayuCardId.BurialFromADifferentDimension }
+            int recursion = new[] { CardId.MiracleDig, CardId.BurialFromADifferentDimension }
                 .FirstOrDefault(id => TryGetActivable(state, id, out _));
             if (recursion != 0)
             {
@@ -1693,25 +1706,25 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             }
 
             Extension? dad = null;
-            bool dadOnField = botMonsters.Any(card => card.IsCode(VayuCardId.DarkArmedDragon) && card.IsFaceup());
-            if (!dadOnField && TryGetSpecialSummon(state, VayuCardId.DarkArmedDragon, out _))
+            bool dadOnField = botMonsters.Any(card => card.IsCode(CardId.DarkArmedDragon) && card.IsFaceup());
+            if (!dadOnField && TryGetSpecialSummon(state, CardId.DarkArmedDragon, out _))
             {
                 dad = new Extension
                 {
-                    Name = "Dark Armed Dragon", Order = 1, Cost = 3, HandCost = 1, Act = MainAction.SpSummon, CardId = VayuCardId.DarkArmedDragon,
-                    Execute = () => Summon(VayuCardId.DarkArmedDragon, "special summon Dark Armed Dragon")
+                    Name = "Dark Armed Dragon", Order = 1, Cost = 3, HandCost = 1, Act = MainAction.SpSummon, CardId = CardId.DarkArmedDragon,
+                    Execute = () => Summon(CardId.DarkArmedDragon, "special summon Dark Armed Dragon")
                 };
                 dad.AddedAtk.Add(2800);
                 plays.Add(dad);
             }
 
-            bool chaos = TryGetSpecialSummon(state, VayuCardId.ChaosSorcerer, out _);
+            bool chaos = TryGetSpecialSummon(state, CardId.ChaosSorcerer, out _);
             if (chaos)
             {
                 var play = new Extension
                 {
-                    Name = "Chaos Sorcerer", Order = 2, Cost = 3, HandCost = 1, DarkCost = 1, Act = MainAction.SpSummon, CardId = VayuCardId.ChaosSorcerer,
-                    Execute = () => Summon(VayuCardId.ChaosSorcerer, "special summon Chaos Sorcerer")
+                    Name = "Chaos Sorcerer", Order = 2, Cost = 3, HandCost = 1, DarkCost = 1, Act = MainAction.SpSummon, CardId = CardId.ChaosSorcerer,
+                    Execute = () => Summon(CardId.ChaosSorcerer, "special summon Chaos Sorcerer")
                 };
                 play.AddedAtk.Add(2300);
                 plays.Add(play);
@@ -1728,8 +1741,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 {
                     plays.Add(new Extension
                     {
-                        Name = "DAD's effect", Order = 4, Cost = 1, DarkCost = 1, RemovesDefenders = 1, Requires = dad, CardId = VayuCardId.DarkArmedDragon,
-                        Execute = () => Activate(VayuCardId.DarkArmedDragon, "destroy a blocker or a set card")
+                        Name = "DAD's effect", Order = 4, Cost = 1, DarkCost = 1, RemovesDefenders = 1, Requires = dad, CardId = CardId.DarkArmedDragon,
+                        Execute = () => Activate(CardId.DarkArmedDragon, "destroy a blocker or a set card")
                     });
                 }
             }
@@ -1756,7 +1769,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 freeMaterials.Add(card);
             }
 
-            if (TryGetActivable(state, VayuCardId.PlaguespreaderZombie, out _))
+            if (TryGetActivable(state, CardId.PlaguespreaderZombie, out _))
             {
                 // Biggest synchro per Level left in our actual Extra Deck.
                 var atkByLevel = (await ExtraDeckSynchrosAsync())
@@ -1770,9 +1783,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 {
                     var play = new Extension
                     {
-                        Name = $"Plaguespreader + {CardNames.Get(material.ID)} synchro", Order = 6, Cost = 4, HandCost = 1, CardId = VayuCardId.PlaguespreaderZombie,
+                        Name = $"Plaguespreader + {CardNames.Get(material.ID)} synchro", Order = 6, Cost = 4, HandCost = 1, CardId = CardId.PlaguespreaderZombie,
                         Requires = normalSummon != null && material.Equals(summonable) ? normalSummon : null,
-                        Execute = () => Activate(VayuCardId.PlaguespreaderZombie, "Plaguespreader for a synchro")
+                        Execute = () => Activate(CardId.PlaguespreaderZombie, "Plaguespreader for a synchro")
                     };
                     play.AddedAtk.Add(SynchroAtkForLevel(material.Level + 2));
                     play.RemovedAtk.Add(EffectiveAttack(material));
@@ -2010,8 +2023,6 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             return index < 0 ? priority.Length : index;
         }
 
-        // DARK monsters that are fine to discard to Dark Grepher's effect (or its summon cost, for the level 5+ ones).
-        private static readonly int[] GoodDarkDiscards = CardRules.GrepherDiscards;
 
         /// <summary>
         /// Special Summoning Dark Grepher from hand costs a level 5+ DARK, so it's rarely right. Only do it when:
@@ -2044,7 +2055,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             int oppLp = await CurrentField.GetBotLifePoints(isOwnSide: false);
             var grave = await GetBotGraveyardCardsAsync();
             var hand = await GetBotHandCardsAsync();
-            int graveVayus = grave.Count(card => card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor));
+            int graveVayus = grave.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
             var gravePartnerLevels = grave.Where(card => card.IsCode(VayuPartners)).Select(card => (int)card.Level).ToList();
 
             // Without Grepher: the board plus the Vayu plays we already have.
@@ -2056,12 +2067,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             }
 
             // With Grepher: the cost card, then the best discard from hand and the best send from deck.
-            var cost = hand.Where(card => card.IsCode(VayuCardId.BlackwingSiroccoTheDawn, VayuCardId.BlackwingElphinTheRaven))
+            var cost = hand.Where(card => card.IsCode(CardId.BlackwingSiroccoTheDawn, CardId.BlackwingElphinTheRaven))
                 .OrderBy(card => card.Level).FirstOrDefault();
             if (cost.ID <= 0)
                 return null;
             var handLeft = hand.Where(card => !SameCard(card, cost)).ToList();
-            var discards = handLeft.Where(card => card.IsCode(GoodDarkDiscards)).Select(card => (Id: card.ID, Level: (int)card.Level)).Distinct().ToList();
+            var discards = handLeft.Where(card => CardRules.IsGoodDarkDiscard(card.ID)).Select(card => (Id: card.ID, Level: (int)card.Level)).Distinct().ToList();
             var deckDarks = await DeckDarksForGrepherAsync();
 
             int bestTotal = 0;
@@ -2074,7 +2085,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                     var partners = new List<int>(gravePartnerLevels) { (int)cost.Level };
                     foreach (var (id, level) in new[] { discard, send })
                     {
-                        if (id == VayuCardId.BlackwingVayuTheEmblemOfHonor) vayus++;
+                        if (id == CardId.BlackwingVayuTheEmblemOfHonor) vayus++;
                         else if (VayuPartners.Contains(id)) partners.Add(level);
                     }
                     var plays = VayuPlayAtks(vayus, partners);
@@ -2132,7 +2143,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             {
                 _chaosHoldNotedTurn = context.Header.CurrentTurn;
                 Note(context, "hold Chaos Sorcerer: no face-up big threat to banish, not lethal, and holding doesn't lose (it's removal, not a clock starter)");
-                Hold(VayuCardId.ChaosSorcerer, null, VayuRules.ChaosSummon);
+                Hold(CardId.ChaosSorcerer, null, VayuRules.ChaosSummon);
             }
             return null;
         }
@@ -2162,7 +2173,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 var board = botMonsters.Where(card => card.IsFaceup() && card.IsAttack()).ToList();
                 var defenders = BoardAssessment.Defenders(enemyMonsters, OpponentMemory);
                 bool lethalWithAttack = BoardAssessment.TurnsToWin(board.Select(EffectiveAttack).ToList(), defenders, oppLp) == 1;
-                var withoutChaos = board.Where(card => !card.IsCode(VayuCardId.ChaosSorcerer)).Select(EffectiveAttack).ToList();
+                var withoutChaos = board.Where(card => !card.IsCode(CardId.ChaosSorcerer)).Select(EffectiveAttack).ToList();
                 bool lethalWithBanish = targets.Any(target => BoardAssessment.TurnsToWin(withoutChaos,
                     BoardAssessment.Defenders(enemyMonsters.Where(card => card.CurrentCoordinates.Sequence != target.CurrentCoordinates.Sequence).ToList(), OpponentMemory),
                     oppLp) == 1);
@@ -2224,9 +2235,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         {
             var grave = await GetBotGraveyardCardsAsync();
             var banished = (await CurrentField.GetCardsInLocation(CardLocation.Removed)).Where(card => card.ID > 0).ToList();
-            int vayus = grave.Count(card => card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor));
+            int vayus = grave.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
             var partners = grave.Where(card => card.IsCode(VayuPartners)).Select(card => (int)card.Level).ToList();
-            var banishedVayus = banished.Count(card => card.IsCode(VayuCardId.BlackwingVayuTheEmblemOfHonor));
+            var banishedVayus = banished.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
             var banishedPartners = banished.Where(card => card.IsCode(VayuPartners)).Select(card => (int)card.Level)
                 .OrderByDescending(level => level).ToList();
             var now = VayuPlayAtks(vayus, partners);
@@ -2262,7 +2273,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         /// </summary>
         private async Task<List<(int Id, int Level)>> DeckDarksForGrepherAsync()
         {
-            var wanted = new[] { (VayuCardId.BlackwingVayuTheEmblemOfHonor, 1), (VayuCardId.BlackwingSiroccoTheDawn, 5), (VayuCardId.BlackwingElphinTheRaven, 6) };
+            var wanted = new[] { (CardId.BlackwingVayuTheEmblemOfHonor, 1), (CardId.BlackwingSiroccoTheDawn, 5), (CardId.BlackwingElphinTheRaven, 6) };
             var deckIds = ((await CurrentField.GetBotField()).OwnSide.Main ?? Array.Empty<int>()).Where(id => id > 0).ToList();
             if (deckIds.Count > 0)
                 return wanted.Where(w => deckIds.Contains(w.Item1)).Select(w => (w.Item1, w.Item2)).ToList();
@@ -2272,19 +2283,19 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
                 .Concat(await CurrentField.GetCardsInLocation(CardLocation.Removed))
                 .Concat(await GetBotMonsterCardsAsync())
                 .Select(card => card.ID).ToList();
-            return wanted.Where(w => w.Item1 != VayuCardId.BlackwingElphinTheRaven && seen.Count(id => id == w.Item1) < 3)
+            return wanted.Where(w => w.Item1 != CardId.BlackwingElphinTheRaven && seen.Count(id => id == w.Item1) < 3)
                 .Select(w => (w.Item1, w.Item2)).ToList();
         }
 
         private static bool ShouldSpecialSummonGrepher(IdleCmdData state, List<DynamicCard> hand, List<DynamicCard> botMonsters, out string reason)
         {
             reason = "";
-            var costCards = hand.Where(card => card.IsCode(VayuCardId.BlackwingSiroccoTheDawn, VayuCardId.BlackwingElphinTheRaven)).ToList();
+            var costCards = hand.Where(card => card.IsCode(CardId.BlackwingSiroccoTheDawn, CardId.BlackwingElphinTheRaven)).ToList();
             if (costCards.Count == 0)
                 return false;
 
             // The cost uses one of them; something must remain for the effect.
-            int goodDiscards = hand.Count(card => card.IsCode(GoodDarkDiscards));
+            int goodDiscards = hand.Count(card => CardRules.IsGoodDarkDiscard(card.ID));
             if (goodDiscards < 2)
                 return false;
 
@@ -2298,7 +2309,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             // If only one card can pay the cost, it's gone after the summon, so it can't be what the Normal Summon is saved for.
             int? consumedByCost = costCards.Count == 1 ? costCards[0].ID : null;
             var otherNormalSummon = summonable.FirstOrDefault(card =>
-                !card.IsCode(VayuCardId.DarkGrepher) &&
+                !card.IsCode(CardId.DarkGrepher) &&
                 card.ID != consumedByCost &&
                 !card.HasType(CardType.Flip) &&
                 card.IsCode(SummonPriority) &&
@@ -2335,7 +2346,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         // Bouncing Dark Grepher is a plus if we have a DARK to discard: re-summon it and use its effect again.
         protected override bool GainsFromBounce(DynamicCard attacker) =>
             base.GainsFromBounce(attacker) ||
-            attacker.IsCode(VayuCardId.DarkGrepher) && _battleHand.Any(card => card.IsCode(GoodDarkDiscards));
+            attacker.IsCode(CardId.DarkGrepher) && _battleHand.Any(card => CardRules.IsGoodDarkDiscard(card.ID));
 
         // Dark Armed Dragon (field or summonable from hand) and Chaos Sorcerer remove Grand Mole outright.
         protected override async Task<string?> BetterAnswerToBouncerAsync()
@@ -2343,14 +2354,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
             if (await base.BetterAnswerToBouncerAsync() is string shared)
                 return shared;
             var field = await GetBotMonsterCardsAsync();
-            if (field.Any(card => card.IsFaceup() && card.IsCode(VayuCardId.DarkArmedDragon, VayuCardId.ChaosSorcerer)))
+            if (field.Any(card => card.IsFaceup() && card.IsCode(CardId.DarkArmedDragon, CardId.ChaosSorcerer)))
                 return "our Dark Armed Dragon / Chaos Sorcerer on the field";
             var grave = await GetBotGraveyardCardsAsync();
             int darks = grave.Count(card => card.HasType(CardType.Monster) && (card.Attribute & (int)CardAttribute.Dark) != 0);
-            if (_battleHand.Any(card => card.IsCode(VayuCardId.DarkArmedDragon)) && darks == 3)
+            if (_battleHand.Any(card => card.IsCode(CardId.DarkArmedDragon)) && darks == 3)
                 return "Dark Armed Dragon, summonable from our hand next main phase";
             bool light = grave.Any(card => card.HasType(CardType.Monster) && (card.Attribute & (int)CardAttribute.Light) != 0);
-            if (_battleHand.Any(card => card.IsCode(VayuCardId.ChaosSorcerer)) && darks > 0 && light)
+            if (_battleHand.Any(card => card.IsCode(CardId.ChaosSorcerer)) && darks > 0 && light)
                 return "Chaos Sorcerer, summonable from our hand next main phase";
             return null;
         }

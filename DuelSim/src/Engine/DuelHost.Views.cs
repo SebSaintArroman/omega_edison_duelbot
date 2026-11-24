@@ -12,19 +12,16 @@ internal sealed partial class DuelHost
 {
     private const int ActionSlots = 16;
 
-    // What a card query asks the engine for: everything for the bots, the basics in search duels (see DuelHost.Search).
-    private uint _queryFlags = Ocg.QueryAll;
-
     internal CardQuery? QueryCard(int controller, uint location, uint sequence, uint overlaySequence = 0)
     {
         lock (_core)
         {
             if (_ownsDuel)
-                return _duel.Query(controller, location, sequence, _queryFlags, overlaySequence);
+                return _duel.Query(controller, location, sequence, Ocg.QueryAll, overlaySequence);
             var cache = _searchCardQueries ??= new();
             var key = (controller, location, sequence, overlaySequence);
             if (!cache.TryGetValue(key, out var card))
-                cache[key] = card = _duel.Query(controller, location, sequence, _queryFlags, overlaySequence);
+                cache[key] = card = _duel.Query(controller, location, sequence, Ocg.QueryAll, overlaySequence);
             return card;
         }
     }

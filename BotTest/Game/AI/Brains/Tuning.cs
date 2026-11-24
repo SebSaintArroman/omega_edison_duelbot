@@ -17,7 +17,23 @@ namespace BotTest.Game.AI.Brains
         /// <summary>The file section it's listed under, instead of its class: "Search" for how the bot thinks (line counts, timings,
         /// tree limits), as opposed to rules of play (user, 2026-11-17).</summary>
         public string? Section { get; init; }
+
+        /// <summary>The lowest value self-play tuning may try (NaN: derived from the value, see Tuning.Range).</summary>
+        public double Min { get; init; } = double.NaN;
+
+        /// <summary>The highest value self-play tuning may try (NaN: derived from the value).</summary>
+        public double Max { get; init; } = double.NaN;
+
+        /// <summary>The size of one tuning step, about the smallest change worth testing (NaN: derived from the value).</summary>
+        public double Step { get; init; } = double.NaN;
     }
+
+    /// <summary>What a tunable is, for self-play tuning: a static number (one per process, each DuelSim side may override it through a
+    /// TuningProfile), a brain's own (per brain), or a rule's hold cost (per brain).</summary>
+    public enum TunableKind { Static, Brain, HoldCost }
+
+    /// <summary>One tunable number as self-play tuning sees it: its tuning-file key, its value now, and the range and step to try.</summary>
+    public sealed record TuningEntry(string Key, TunableKind Kind, string Type, double Value, double Min, double Max, double Step, string Description);
 
     /// <summary>
     /// Every tunable number in one file the user edits by hand (user, 2026-11-16: "I want ALL of these moved to one location that I can
@@ -61,11 +77,25 @@ namespace BotTest.Game.AI.Brains
                 {
                     const BindingFlags flags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
                     foreach (var field in type.GetFields(flags))
-                        if (field.GetCustomAttribute<TunableAttribute>() is { } tunable && !field.IsLiteral && !field.IsInitOnly)
-                            Apply(type, field.Name, field.FieldType, () => field.GetValue(null), v => field.SetValue(null, v), tunable, values, missing);
+                    {
+                        if (field.GetCustomAttribute<TunableAttribute>() is not { } tunable || field.IsLiteral)
+                            continue;
+                        // A Tuned<T> holder: the file sets its Base; each DuelSim side may see its own value (TuningProfile).
+                        if (field.GetValue(null) is ITuned tuned)
+                        {
+                            if (tuned.Slot < 0)
+                            {
+                                tuned.Slot = StaticTuned.Count;
+                                StaticTuned[$"{tunable.Section ?? type.Name}.{field.Name}"] = tuned;
+                            }
+                            Apply(type, field.Name, tuned.ValueType, () => tuned.BaseValue, v => tuned.BaseValue = v, tunable, values, missing, TunableKind.Static);
+                        }
+                        else if (!field.IsInitOnly)
+                            Apply(type, field.Name, field.FieldType, () => field.GetValue(null), v => field.SetValue(null, v), tunable, values, missing, TunableKind.Static);
+                    }
                     foreach (var prop in type.GetProperties(flags))
                         if (prop.GetCustomAttribute<TunableAttribute>() is { } tunable && prop.CanWrite)
-                            Apply(type, prop.Name, prop.PropertyType, () => prop.GetValue(null), v => prop.SetValue(null, v), tunable, values, missing);
+                            Apply(type, prop.Name, prop.PropertyType, () => prop.GetValue(null), v => prop.SetValue(null, v), tunable, values, missing, TunableKind.Static);
                 }
                 Append(missing);
                 _values = values;
@@ -82,6 +112,8 @@ namespace BotTest.Game.AI.Brains
             EnsureLoaded();
             lock (Gate)
             {
+                if (key.Contains(".HoldCost.") && HoldCosts.Resolve((_values ?? _loading!).TryGetValue(key, out string? held) ? held : fallback) is double cost)
+                    Record(key, TunableKind.HoldCost, typeof(double), cost, description, null);
                 if ((_values ?? _loading!).TryGetValue(key, out string? text))
                     return text;
                 if (Listed.Add(key))
@@ -181,11 +213,89 @@ namespace BotTest.Game.AI.Brains
                                        (_values!.ContainsKey($"{own.Name}.{prop.Name}") ||
                                         sharedDefaults != null && sharedDefaults.TryGetValue(prop.Name, out var shared) && !Equals(shared, prop.GetValue(instance)));
                         Apply(deckOwn ? own : type, prop.Name, prop.PropertyType, () => prop.GetValue(instance), v => prop.SetValue(instance, v), tunable,
-                            _values!, (deckOwn ? firstOwn : first) ? missing : null);
+                            _values!, (deckOwn ? firstOwn : first) ? missing : null, TunableKind.Brain);
+                        // This side's own value (DuelSim self-play): under the key the file uses, or the deck's own name for a shared number.
+                        if (TuningProfile.Current is { } profile &&
+                            (profile.Values.TryGetValue($"{tunable.Section ?? (deckOwn ? own : type).Name}.{prop.Name}", out double mine) ||
+                             profile.Values.TryGetValue($"{own.Name}.{prop.Name}", out mine)) && ProfileValue(mine, prop.PropertyType) is { } set)
+                            prop.SetValue(instance, set);
                     }
                 }
+                // This side's rule hold costs (keys <Brain>.HoldCost.<rule>, for this brain or the shared DeckBotBrain).
+                if (TuningProfile.Current is { } side && instance is DeckBotBrain brain)
+                    foreach (var (key, cost) in side.Values)
+                    {
+                        int at = key.IndexOf(".HoldCost.", StringComparison.Ordinal);
+                        if (at <= 0)
+                            continue;
+                        string owner = key[..at];
+                        bool ours = false;
+                        for (var type = own; type != null && type != typeof(object) && !ours; type = type.BaseType)
+                            ours = type.Name == owner;
+                        if (ours)
+                            brain.Rules.SetCost(key[(at + ".HoldCost.".Length)..], cost);
+                    }
                 Append(missing);
             }
+        }
+
+        private static object? ProfileValue(double value, Type type) =>
+            type == typeof(double) ? value : type == typeof(int) ? (int)Math.Round(value) : type == typeof(bool) ? value != 0 : null;
+
+        // The static Tuned<T> holders by key (their Slot indexes a TuningProfile's overrides), and every tunable seen so far.
+        private static readonly Dictionary<string, ITuned> StaticTuned = new(StringComparer.Ordinal);
+        private static readonly Dictionary<string, TuningEntry> EntriesByKey = new(StringComparer.Ordinal);
+
+        internal static IReadOnlyDictionary<string, ITuned> Statics()
+        {
+            EnsureLoaded();
+            lock (Gate)
+                return new Dictionary<string, ITuned>(StaticTuned, StringComparer.Ordinal);
+        }
+
+        /// <summary>Every tunable seen so far: all static ones once loaded, a brain's once that brain was tuned (DuelSim tuning tunes them all),
+        /// the hold costs once a rule's cost was read.</summary>
+        public static IReadOnlyList<TuningEntry> Entries()
+        {
+            EnsureLoaded();
+            lock (Gate)
+                return EntriesByKey.Values.OrderBy(e => e.Key, StringComparer.Ordinal).ToList();
+        }
+
+        public static bool IsKnownKey(string key)
+        {
+            lock (Gate)
+                return EntriesByKey.ContainsKey(key);
+        }
+
+        private static void Record(string key, TunableKind kind, Type type, double value, string description, TunableAttribute? tunable)
+        {
+            var (min, max, step) = Range(key, type, value, tunable);
+            EntriesByKey[key] = new TuningEntry(key, kind, type == typeof(int) ? "int" : type == typeof(bool) ? "bool" : "double", value, min, max, step,
+                description.Replace("\r", " ").Replace("\n", " ").Trim());
+        }
+
+        /// <summary>
+        /// The range and step self-play tuning tries for a number: the [Tunable] attribute's Min / Max / Step where given, else derived from the
+        /// value: a step of 10% of it (at least 1 for whole numbers, 0.05 for a zero), from 0 to twice the value (a negative value: twice it up
+        /// to 0), a chance or share in 0-1 kept there.
+        /// </summary>
+        public static (double Min, double Max, double Step) Range(string key, Type type, double value, TunableAttribute? tunable)
+        {
+            bool whole = type == typeof(int), flag = type == typeof(bool);
+            string name = key[(key.LastIndexOf('.') + 1)..];
+            bool share = !whole && value is >= 0 and <= 1 &&
+                         new[] { "Chance", "Share", "Odds", "Probability", "Residual", "Floor" }.Any(w => name.Contains(w, StringComparison.Ordinal));
+            double step = flag ? 1 : whole ? Math.Max(1, Math.Round(Math.Abs(value) * 0.1)) : value == 0 ? 0.05 : Math.Round(Math.Abs(value) * 0.1, 4);
+            double min = flag ? 0 : value >= 0 ? 0 : 2 * value;
+            double max = flag ? 1 : share ? 1 : value > 0 ? Math.Max(2 * value, value + step) : value < 0 ? 0 : whole ? 10 : 1;
+            if (tunable != null)
+            {
+                if (!double.IsNaN(tunable.Min)) min = tunable.Min;
+                if (!double.IsNaN(tunable.Max)) max = tunable.Max;
+                if (!double.IsNaN(tunable.Step)) step = tunable.Step;
+            }
+            return (min, max, step);
         }
 
         /// <summary>An object's tunable instance properties declared on <paramref name="declaredOn"/> and its bases, by name: their values now.</summary>
@@ -200,9 +310,25 @@ namespace BotTest.Game.AI.Brains
         }
 
         private static void Apply(Type type, string name, Type valueType, Func<object?> get, Action<object> set, TunableAttribute tunable,
-            Dictionary<string, string> values, List<string>? missing)
+            Dictionary<string, string> values, List<string>? missing, TunableKind kind)
         {
             string key = $"{tunable.Section ?? type.Name}.{name}";
+            try
+            {
+                ApplyValue(key, type, name, valueType, get, set, tunable, values, missing);
+            }
+            finally
+            {
+                // Numbers only (the arrays stay shared and untuned).
+                bool number = get() is double or int or bool;
+                if (number && (kind == TunableKind.Static || !EntriesByKey.ContainsKey(key)))
+                    Record(key, kind, valueType, Convert.ToDouble(get(), CultureInfo.InvariantCulture), tunable.Description, tunable);
+            }
+        }
+
+        private static void ApplyValue(string key, Type type, string name, Type valueType, Func<object?> get, Action<object> set, TunableAttribute tunable,
+            Dictionary<string, string> values, List<string>? missing)
+        {
             // Moved to a section: a value set under its old key (Class.Name) carries over, and Tidy drops the old line.
             if (tunable.Section != null)
             {

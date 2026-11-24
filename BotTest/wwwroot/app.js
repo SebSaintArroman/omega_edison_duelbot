@@ -376,13 +376,20 @@ function parseBreakdown(payload) {
   const parts = fields[5].split(";").filter(Boolean).map((row) => {
     const at = row.lastIndexOf("=");
     return { name: row.slice(0, at), value: Number(row.slice(at + 1)) };
-  }).filter((part) => part.name && Number.isFinite(part.value) && part.value !== 0);
-  // "part :: category" names split a part (how the two sides' cards are worked out): sub-rows, not counted in the totals.
+  }).filter((part) => part.name && Number.isFinite(part.value));
+  // "part :: category" names split a score into its rule contributions: sub-rows, not counted in the totals.
   const subRows = {};
+  const cardChanges = {};
   for (const part of parts.filter((p) => p.name.includes(SUB_PART))) {
     const at = part.name.indexOf(SUB_PART);
     const parent = part.name.slice(0, at);
-    (subRows[parent] = subRows[parent] || []).push({ name: part.name.slice(at + SUB_PART.length), value: part.value });
+    const name = part.name.slice(at + SUB_PART.length);
+    const cardPrefix = "Cards changed" + SUB_PART;
+    if (name.startsWith(cardPrefix)) {
+      (cardChanges[parent] = cardChanges[parent] || []).push({ name: name.slice(cardPrefix.length), value: part.value });
+    } else {
+      (subRows[parent] = subRows[parent] || []).push({ name, value: part.value });
+    }
   }
   const line = (fields[8] || "").split("^").filter(Boolean).map((step) => {
     const f = step.split("~");
@@ -393,7 +400,7 @@ function parseBreakdown(payload) {
   }).filter(Boolean);
   return {
     move: fields[0], score: num(fields[1]), lines: num(fields[2]), lossRate: num(fields[3]), lethal: num(fields[4]),
-    parts: parts.filter((p) => !p.name.includes(SUB_PART)), subRows,
+    parts: parts.filter((p) => !p.name.includes(SUB_PART)), subRows, cardChanges,
     played: fields.length < 7 || fields[6] === "played", interval: num(fields[7]), line
   };
 }
@@ -420,6 +427,10 @@ function renderBreakdownCard(b) {
   const positive = b.parts.filter((p) => p.value > 0).sort((x, y) => y.value - x.value);
   const negative = b.parts.filter((p) => p.value < 0).sort((x, y) => x.value - y.value);
   const sum = (list) => list.reduce((total, p) => total + p.value, 0);
+  const neutral = b.parts.filter((p) => p.value === 0);
+  for (const name of Object.keys(b.subRows)) {
+    if (!b.parts.some((part) => part.name === name)) neutral.push({ name, value: 0 });
+  }
   const largest = Math.max(0.01, ...b.parts.map((p) => Math.abs(p.value)));
 
   const sectionHead = (label, tone, total, extra) => {
@@ -448,17 +459,18 @@ function renderBreakdownCard(b) {
       const barCell = element("td", "breakdown-bar-cell");
       const bar = element("span", "breakdown-bar");
       bar.dataset.tone = tone;
-      bar.style.width = `${Math.max(2, (Math.abs(part.value) / largest) * 100)}%`;
+      bar.style.width = `${part.value === 0 ? 0 : Math.max(2, (Math.abs(part.value) / largest) * 100)}%`;
       barCell.append(bar);
       const value = element("td", "breakdown-value", signed(part.value));
       value.dataset.tone = tone;
       tr.append(rule, barCell, value);
       table.append(tr);
-      // How the part is made up (our cards / their cards: life points, monsters, sets, hand, graveyard...): folded rows under it,
-      // a click on the part opens them. Each is that category's change from the position now (their side counted against us).
+      // Rule contributions appear as folded rows under a score,
+      // a click on the part opens them. Each shows the rule's contribution relative to the decision position.
       const subs = (b.subRows[part.name] || []).filter((s) => Math.abs(s.value) >= 0.005)
         .sort((x, y) => Math.abs(y.value) - Math.abs(x.value));
-      if (subs.length) {
+      const changes = b.cardChanges[part.name] || [];
+      if (subs.length || changes.length) {
         tr.classList.add("breakdown-has-subs");
         rule.prepend(element("span", "breakdown-sub-caret", "›"));
         const subRows = subs.map((sub) => {
@@ -477,6 +489,27 @@ function renderBreakdownCard(b) {
           table.append(subTr);
           return subTr;
         });
+        if (changes.length) {
+          const changesRow = element("tr", "breakdown-sub");
+          changesRow.hidden = true;
+          const cell = element("td", "breakdown-sub-name");
+          cell.colSpan = 3;
+          const details = element("details");
+          details.append(element("summary", "", "Cards changed"));
+          details.append(element("div", "", "Average copies per scored line"));
+          const list = element("ul");
+          for (const change of changes.sort((a, b) => a.name.localeCompare(b.name))) {
+            const item = element("li");
+            renderWithCardCodes(item, change.name);
+            item.append(document.createTextNode(change.value < 0.001 ? " (<0.001)" : ` (${Number(change.value.toFixed(3))})`));
+            list.append(item);
+          }
+          details.append(list);
+          cell.append(details);
+          changesRow.append(cell);
+          table.append(changesRow);
+          subRows.push(changesRow);
+        }
         tr.addEventListener("click", () => {
           const open = tr.dataset.open !== "true";
           tr.dataset.open = String(open);
@@ -486,9 +519,10 @@ function renderBreakdownCard(b) {
     }
     card.append(table);
   };
-  if (b.parts.length) {
+  if (b.parts.length || neutral.length) {
     section("Positive contributions", "positive", positive);
     section("Negative contributions", "negative", negative);
+    if (neutral.length) section("No net contribution", "neutral", neutral);
     const net = sum(b.parts);
     card.append(sectionHead("Net contribution", net >= 0 ? "positive" : "negative", net, "breakdown-net"));
   } else {
@@ -572,7 +606,9 @@ function addBreakdown(payload) {
     // A header row as tall as the dropdown's, so the two cards line up.
     const leftHead = element("div", "breakdown-picker breakdown-picker-static");
     leftHead.append(element("span", "", "Played move"));
-    left.append(leftHead, element("div", "breakdown-slot"));
+    const playedSlot = element("div", "breakdown-slot");
+    playedSlot.append(element("div", "breakdown-foot", "No search score for the played move."));
+    left.append(leftHead, playedSlot);
     const right = element("div", "breakdown-column breakdown-right");
     const picker = element("label", "breakdown-picker");
     picker.append(element("span", "", "Compare with"));

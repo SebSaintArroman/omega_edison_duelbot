@@ -29,97 +29,97 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         // ------------------------------------------------------------------ tunable numbers (bot-tuning-HeroFrog.txt, user 2026-11-16)
 
         [Tunable("The search's setup value for Treeborn Frog in our graveyard with no spell/trap of ours out (it comes back).")]
-        public static double TreebornLiveValue = 0.6; // an exception to "no deck graveyard values", like Jinzo (user, 2026-11-18: "what happened to this deck getting a bonus for setting treeborn frog up?")
+        public static readonly Tuned<double> TreebornLiveValue = new(0.6); // an exception to "no deck graveyard values", like Jinzo (user, 2026-11-18: "what happened to this deck getting a bonus for setting treeborn frog up?")
         [Tunable("The search's setup value for Treeborn Frog in our graveyard while a spell/trap of ours blocks it (negative: a cost).")]
-        public static double TreebornBlockedValue = -2; // blocked by our spell/trap it can't come back: cancels its GY reading (1.0) and costs 1.0 more, above the set-card bonuses (user, 2026-11-18)
+        public static readonly Tuned<double> TreebornBlockedValue = new(-2); // blocked by our spell/trap it can't come back: cancels its GY reading (1.0) and costs 1.0 more, above the set-card bonuses (user, 2026-11-18)
         [Tunable("The search's setup value for the Dupe Frog lock (two face-up Dupe Frogs).")]
-        public static double DupeLockValue = 2.0;
+        public static readonly Tuned<double> DupeLockValue = new(2.0);
         [Tunable("The search's setup value for one face-up Dupe Frog.")]
-        public static double DupeOneValue = 0.3;
+        public static readonly Tuned<double> DupeOneValue = new(0.3);
         [Tunable("A Monarch is held when our cheapest tribute costs at least this (a boss-level monster of ours).")]
-        public static double MonarchHoldTributeCost = 4.5;
+        public static readonly Tuned<double> MonarchHoldTributeCost = new(4.5);
         [Tunable("Caius targets their DARK monster (+1000 damage) when it's at least this share of their biggest threat.")]
-        public static double CaiusDarkTargetShare = 0.8;
+        public static readonly Tuned<double> CaiusDarkTargetShare = new(0.8);
         [Tunable("Raiza's value on an Extra Deck monster or token (gone for good): its threat x this.")]
-        public static double RaizaGoneForGoodFactor = 1.5;
+        public static readonly Tuned<double> RaizaGoneForGoodFactor = new(1.5);
         [Tunable("Raiza's value on a face-up Level 5+ main-deck monster (comes straight back): its threat x this.")]
-        public static double RaizaComesBackFactor = 0.5;
+        public static readonly Tuned<double> RaizaComesBackFactor = new(0.5);
         [Tunable("Tribute order: Absolute Zero while they have 2+ monsters (its wipe is live).")]
-        public static double TributeAbsoluteZeroLive = 0.5;
+        public static readonly Tuned<double> TributeAbsoluteZeroLive = new(0.5);
         [Tunable("Tribute order: Absolute Zero otherwise.")]
-        public static double TributeAbsoluteZero = 5;
+        public static readonly Tuned<double> TributeAbsoluteZero = new(5);
         [Tunable("Tribute order: a Dupe Frog while the lock (2 Dupes) is up.")]
-        public static double TributeDupeLock = 4;
+        public static readonly Tuned<double> TributeDupeLock = new(4);
         [Tunable("Tribute order: a Dupe Frog otherwise.")]
-        public static double TributeDupe = 2.4;
+        public static readonly Tuned<double> TributeDupe = new(2.4);
         [Tunable("Tribute order: a token.")]
-        public static double TributeToken = 1.5;
+        public static readonly Tuned<double> TributeToken = new(1.5);
         [Tunable("Tribute order: Infernal Prodigy.")]
-        public static double TributeInfernalProdigy = 1.6;
+        public static readonly Tuned<double> TributeInfernalProdigy = new(1.6);
         [Tunable("Tribute order: Battle Fader.")]
-        public static double TributeBattleFader = 1.7;
+        public static readonly Tuned<double> TributeBattleFader = new(1.7);
         [Tunable("Tribute order: Swap Frog.")]
-        public static double TributeSwapFrog = 2;
+        public static readonly Tuned<double> TributeSwapFrog = new(2);
         [Tunable("Tribute order: Junk Synchron.")]
-        public static double TributeJunkSynchron = 2.5;
+        public static readonly Tuned<double> TributeJunkSynchron = new(2.5);
         [Tunable("Tribute order: Substitoad.")]
-        public static double TributeSubstitoad = 3.2;
+        public static readonly Tuned<double> TributeSubstitoad = new(3.2);
         [Tunable("Tribute order: Elemental HERO Ocean / Stratos.")]
-        public static double TributeOceanStratos = 3.3;
+        public static readonly Tuned<double> TributeOceanStratos = new(3.3);
         [Tunable("Tribute order: Des Frog (expendable once it has attacked).")]
-        public static double TributeDesFrog = 1.8;
+        public static readonly Tuned<double> TributeDesFrog = new(1.8);
 
         private static readonly int[] Monarchs =
         {
-            HeroFrogCardId.CaiusTheShadowMonarch, HeroFrogCardId.RaizaTheStormMonarch, HeroFrogCardId.ThestalosTheFirestormMonarch
+            CardId.CaiusTheShadowMonarch, CardId.RaizaTheStormMonarch, CardId.ThestalosTheFirestormMonarch
         };
 
         private static readonly int[] TributeSummons =
         {
-            HeroFrogCardId.CaiusTheShadowMonarch, HeroFrogCardId.RaizaTheStormMonarch, HeroFrogCardId.ThestalosTheFirestormMonarch,
-            HeroFrogCardId.DesFrog
+            CardId.CaiusTheShadowMonarch, CardId.RaizaTheStormMonarch, CardId.ThestalosTheFirestormMonarch,
+            CardId.DesFrog
         };
 
         private static readonly int[] Heroes =
         {
-            HeroFrogCardId.EvilHeroInfernalProdigy, HeroFrogCardId.ElementalHeroStratos, HeroFrogCardId.ElementalHeroOcean,
-            HeroFrogCardId.ElementalHeroAbsoluteZero
+            CardId.EvilHEROInfernalProdigy, CardId.ElementalHEROStratos, CardId.ElementalHEROOcean,
+            CardId.ElementalHEROAbsoluteZero
         };
 
         // Miracle Fusion's WATER material, cheapest first (Treeborn never: it comes back every turn).
         private static readonly int[] WaterMaterials =
         {
-            HeroFrogCardId.SwapFrog, HeroFrogCardId.DupeFrog, HeroFrogCardId.Substitoad, HeroFrogCardId.DesFrog,
-            HeroFrogCardId.ElementalHeroOcean
+            CardId.SwapFrog, CardId.DupeFrog, CardId.Substitoad, CardId.DesFrog,
+            CardId.ElementalHEROOcean
         };
 
         // Swap Frog's trigger: the Level 2- WATER Aqua sent from the deck to the graveyard, best first (user, 2026-11-18): Treeborn (it comes
         // back), then Substitoad, then another Swap Frog; Dupe Frog last (its search only fires from the field).
         private static readonly int[] SwapFrogSends =
         {
-            HeroFrogCardId.TreebornFrog, HeroFrogCardId.Substitoad, HeroFrogCardId.SwapFrog, HeroFrogCardId.DupeFrog
+            CardId.TreebornFrog, CardId.Substitoad, CardId.SwapFrog, CardId.DupeFrog
         };
 
         private static readonly int[] OwnTriggers =
         {
-            HeroFrogCardId.SwapFrog, HeroFrogCardId.DupeFrog, HeroFrogCardId.TreebornFrog, HeroFrogCardId.ElementalHeroStratos,
-            HeroFrogCardId.JunkSynchron
+            CardId.SwapFrog, CardId.DupeFrog, CardId.TreebornFrog, CardId.ElementalHEROStratos,
+            CardId.JunkSynchron
         };
 
         private static readonly int[] ChainCandidates =
         {
-            HeroFrogCardId.GorzTheEmissaryOfDarkness, HeroFrogCardId.TrapDustshoot, HeroFrogCardId.HeavyStorm,
-            HeroFrogCardId.CompulsoryEvacuationDevice, HeroFrogCardId.JarOfGreed
+            CardId.GorzTheEmissaryOfDarkness, CardId.TrapDustshoot, CardId.HeavyStorm,
+            CardId.CompulsoryEvacuationDevice, CardId.JarOfGreed
         };
 
         private static readonly Dictionary<int, int> Copies = new()
         {
-            [HeroFrogCardId.TreebornFrog] = 2,
-            [HeroFrogCardId.DupeFrog] = 2,
-            [HeroFrogCardId.SwapFrog] = 3,
-            [HeroFrogCardId.Substitoad] = 3,
-            [HeroFrogCardId.DesFrog] = 0,
-            [HeroFrogCardId.BattleFader] = 1,
+            [CardId.TreebornFrog] = 2,
+            [CardId.DupeFrog] = 2,
+            [CardId.SwapFrog] = 3,
+            [CardId.Substitoad] = 3,
+            [CardId.DesFrog] = 0,
+            [CardId.BattleFader] = 1,
         };
 
         private int _activationTurn = -1;
@@ -168,7 +168,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         {
             if (view.OwnSpells.Count > 0)
                 return;
-            foreach (int id in new[] { HeroFrogCardId.TreebornFrog, HeroFrogCardId.TreebornFrog + 20 })
+            foreach (int id in new[] { CardId.TreebornFrog, CardId.TreebornFrog + 20 })
                 while (view.ReviveFromGrave(id, 0x4))
                 {
                 }
@@ -176,26 +176,45 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
 
         internal override Func<DuelSim.Engine.SideSummary, double> SearchSetupFor(Search.SearchView view)
         {
-            static bool IsTreeborn(int code) => Search.SearchHost.Is(code, HeroFrogCardId.TreebornFrog);
+            static bool IsTreeborn(int code) => Search.SearchHost.Is(code, CardId.TreebornFrog);
             if (view.OwnGrave.Any(IsTreeborn) || view.OwnMonsters.Any(monster => IsTreeborn(monster.Code)))
                 return SearchSetupValue;
 
             return own => SearchSetupValue(own) + (own.GraveCodes.Any(IsTreeborn) ? 5 : 0);
         }
 
+        /// <summary>
+        /// A Monarch back in hand at the end of our turn after using its effect this turn (Swap Frog returning it in Main Phase 2), with no
+        /// other Monarch in hand: worth MonarchReturnValue. Next turn it's summoned again and removes the best card they bring out then
+        /// (user, 2026-11-24: "you want to bounce it back so that you can remove the best card they bring out next turn, not this turn ...
+        /// a bonus for returning a monarch to hand in mp2 if the deck has no other monarchs in hand").
+        /// </summary>
+        internal override double SearchNextTurnValue(DuelSim.Engine.SideSummary own, IReadOnlyCollection<int> activatedThisTurn)
+        {
+            // Only with Treeborn Frog set up (in the GY or on the field): next turn's tribute for the Monarch (user, 2026-11-24).
+            if (!own.GraveCodes.Any(code => Search.SearchHost.Is(code, CardId.TreebornFrog)) && !own.Monsters.Any(monster => Search.SearchHost.Is(monster.Code, CardId.TreebornFrog)))
+                return 0;
+            var monarchsInHand = own.HandCodes.Where(code => Monarchs.Any(m => Search.SearchHost.Is(code, m))).ToList();
+            return monarchsInHand.Count == 1 && activatedThisTurn.Any(code => Search.SearchHost.Is(code, monarchsInHand[0]))
+                ? MonarchReturnValue : 0;
+        }
+
+        [Tunable("A Monarch returned to hand after using its effect this turn, with no other Monarch in hand, is worth this at the end of a line (card units): it removes their best card next turn. Caius on the field (2400 ATK) is ~4.1 against ~1.1 in hand, so this has to cover ~3 for the bounce to win. User, 2026-11-24.")]
+        public double MonarchReturnValue { get; set; } = 3.5;
+
         internal override double SearchSetupValue(DuelSim.Engine.SideSummary own)
         {
             double value = 0;
             // Treeborn in the graveyard comes back every Standby Phase, but only while we control no spells/traps.
-            if (own.GraveCodes.Any(code => Search.SearchHost.Is(code, HeroFrogCardId.TreebornFrog)))
+            if (own.GraveCodes.Any(code => Search.SearchHost.Is(code, CardId.TreebornFrog)))
                 value += own.SpellCodes.Count == 0 ? TreebornLiveValue : TreebornBlockedValue;
             // The Dupe lock: with two face-up Dupe Frogs they can't attack at all (each one can't be attacked while the other
             // is there). One is worth a little (it soaks attacks); two, the lock, a lot (user, 2026-11-10: the search ended the
             // turn rather than make the second Dupe Frog).
             // On the field Dupe Frog is treated as "Des Frog", and the engine reports that code: tell it by Level 2 (Des Frog
             // is 5), as IsDupe does (seen 2026-11-10: the lock counted nothing, so the turn planner never went for it).
-            int dupes = own.Monsters.Count(m => m.FaceUp && (Search.SearchHost.Is(m.Code, HeroFrogCardId.DupeFrog) ||
-                                                              m.Code == HeroFrogCardId.DesFrog && m.Level == 2));
+            int dupes = own.Monsters.Count(m => m.FaceUp && (Search.SearchHost.Is(m.Code, CardId.DupeFrog) ||
+                                                              m.Code == CardId.DesFrog && m.Level == 2));
             value += dupes >= 2 ? DupeLockValue : dupes == 1 ? DupeOneValue : 0;
             return value;
         }
@@ -208,7 +227,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         protected override bool HandlesStapleIdle => true;
         protected override int[] ValueSetIds => ValueSets;
 
-        private static readonly int[] ValueSets = { HeroFrogCardId.TreebornFrog, HeroFrogCardId.DupeFrog, HeroFrogCardId.SwapFrog };
+        private static readonly int[] ValueSets = { CardId.TreebornFrog, CardId.DupeFrog, CardId.SwapFrog };
 
         /// <summary>Omega's pre-errata copies are the official id + 20 (Stratos, Swap Frog, Brain Control, Absolute Zero).</summary>
         public static bool IsId(DynamicCard card, int id) => card.IsCode(id) || card.IsCode(id + 20);
@@ -217,8 +236,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
 
         /// <summary>Dupe Frog is named "Des Frog" while on the field: tell it apart by its stats (100 / 2000, Level 2).</summary>
         private static bool IsDupe(DynamicCard card) =>
-            IsId(card, HeroFrogCardId.DupeFrog) ||
-            card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && card.IsCode(HeroFrogCardId.DesFrog) && card.Level == 2;
+            IsId(card, CardId.DupeFrog) ||
+            card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && card.IsCode(CardId.DesFrog) && card.Level == 2;
 
         private static bool IsWater(DynamicCard card) => (card.Attribute & (int)CardAttribute.Water) != 0;
 
@@ -250,15 +269,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
 
             // 1. Free card advantage (Upstart Goblin, Reinforcement of the Army: shared), E - Emergency Call.
             if (await TryFreeCardAdvantageAsync(context, state) is IdleCmdResponse free) return free;
-            if (TryGetActivable(state, HeroFrogCardId.EEmergencyCall, out var call) && Rule(HeroFrogRules.EmergencyCall))
+            if (TryGetActivable(state, CardId.EEmergencyCall, out var call) && Rule(HeroFrogRules.EmergencyCall))
             {
                 Note(context, "activate E - Emergency Call: search an Elemental HERO");
-                MarkActivated(context, HeroFrogCardId.EEmergencyCall);
+                MarkActivated(context, CardId.EEmergencyCall);
                 return call.MainActivateFromIndex();
             }
 
             // 2. Backrow removal (Heavy Storm: shared; it also clears our own zone for Treeborn).
-            if (await TryBackrowRemovalAsync(context, state, enemySpells.Count, botSpells.Count(card => card.ID > 0 && !card.IsCode(HeroFrogCardId.HeavyStorm))) is IdleCmdResponse backrow)
+            if (await TryBackrowRemovalAsync(context, state, enemySpells.Count, botSpells.Count(card => card.ID > 0 && !card.IsCode(CardId.HeavyStorm))) is IdleCmdResponse backrow)
                 return backrow;
 
             // 4. Miracle Fusion: Absolute Zero from graveyard materials.
@@ -340,20 +359,20 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             //    pinch a HERO on the field for Miracle Fusion, TryHeroForFusionAsync above).
             var nsState = state;
             foreach (var prodigy in (state.SummonableCards ?? Array.Empty<DynamicCard>()).Concat(state.MonsterSetableCards ?? Array.Empty<DynamicCard>())
-                         .Where(card => IsId(card, HeroFrogCardId.EvilHeroInfernalProdigy)))
+                         .Where(card => IsId(card, CardId.EvilHEROInfernalProdigy)))
                 Hold(prodigy.ID, null, HeroFrogRules.ProdigyFodder);
             nsState.SummonableCards = (state.SummonableCards ?? Array.Empty<DynamicCard>())
-                .Where(card => !IsId(card, TributeSummons) && !IsId(card, HeroFrogCardId.EvilHeroInfernalProdigy)).ToArray();
+                .Where(card => !IsId(card, TributeSummons) && !IsId(card, CardId.EvilHEROInfernalProdigy)).ToArray();
             // Never Swap Frog face-down: its effects are its summon trigger (a Frog to the graveyard) and its bounce, both lost
             // when set; set it is a 500 DEF wall (seen 2026-11-11: set as a "value set", and Gearframe ran it over). Summoned,
             // it dumps a Frog and goes back to the hand in Main Phase 2 to do it again.
-            foreach (var swapSet in (state.MonsterSetableCards ?? Array.Empty<DynamicCard>()).Where(card => IsId(card, HeroFrogCardId.SwapFrog)))
+            foreach (var swapSet in (state.MonsterSetableCards ?? Array.Empty<DynamicCard>()).Where(card => IsId(card, CardId.SwapFrog)))
                 Hold(swapSet.ID, MainAction.SetMonster, HeroFrogRules.SwapNeverSet);
             nsState.MonsterSetableCards = (state.MonsterSetableCards ?? Array.Empty<DynamicCard>())
-                .Where(card => !IsId(card, HeroFrogCardId.EvilHeroInfernalProdigy) && !(IsId(card, HeroFrogCardId.SwapFrog) && Rule(HeroFrogRules.SwapNeverSet))).ToArray();
+                .Where(card => !IsId(card, CardId.EvilHEROInfernalProdigy) && !(IsId(card, CardId.SwapFrog) && Rule(HeroFrogRules.SwapNeverSet))).ToArray();
             var summonOrSet = await ChooseNormalSummonOrSetAsync(context, nsState, enemyMonsters, enemySpells, botMonsters, hand);
-            if (!summonOrSet.HasValue && !NormalSummonUsed(context.Header) && TryGetSummonable(state, HeroFrogCardId.SwapFrog, out var swapBody) &&
-                await InDeckAsync(HeroFrogCardId.TreebornFrog) + await InDeckAsync(HeroFrogCardId.SwapFrog) + await InDeckAsync(HeroFrogCardId.DupeFrog) > 0)
+            if (!summonOrSet.HasValue && !NormalSummonUsed(context.Header) && TryGetSummonable(state, CardId.SwapFrog, out var swapBody) &&
+                await InDeckAsync(CardId.TreebornFrog) + await InDeckAsync(CardId.SwapFrog) + await InDeckAsync(CardId.DupeFrog) > 0)
             {
                 Note(context, "normal summon Swap Frog rather than leave the summon unused: its trigger sends a Frog to the graveyard, and it can return to the hand in Main Phase 2");
                 summonOrSet = swapBody.NormalSummon();
@@ -375,9 +394,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             fallbackState.SpecialSummonableCards = Array.Empty<DynamicCard>();
             // Our own plays are decided above: the generic fallback only moves on (battle / end), or sets what passed.
             fallbackState.ActivableCards = (state.ActivableCards ?? Array.Empty<DynamicCard>())
-                .Where(card => !IsId(card, new[] { HeroFrogCardId.Substitoad, HeroFrogCardId.SwapFrog, HeroFrogCardId.EnemyController,
-                    HeroFrogCardId.BrainControl, HeroFrogCardId.MiracleFusion, HeroFrogCardId.OneForOne, HeroFrogCardId.RaigekiBreak,
-                    HeroFrogCardId.SpiritualWaterArtAoi, HeroFrogCardId.ElementalHeroOcean })).ToArray();
+                .Where(card => !IsId(card, new[] { CardId.Substitoad, CardId.SwapFrog, CardId.EnemyController,
+                    CardId.BrainControl, CardId.MiracleFusion, CardId.OneForOne, CardId.RaigekiBreak,
+                    CardId.SpiritualWaterArtAoi, CardId.ElementalHEROOcean })).ToArray();
             if (trapBattleAhead || gorzLive)
                 fallbackState.SpellSetableCards = Array.Empty<DynamicCard>();
             return await base.OnIdleCmdAsync(context with { StateData = fallbackState }, ct);
@@ -403,7 +422,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             // field / in the deck: each extra set card is one more that must be used (suboptimally) before Treeborn can come
             // back, and a Monarch drawn then has nothing to tribute (seen 2026-11-10 and 2026-11-11: Raigeki Break and
             // Compulsory both set; one had to be fired just to clear the zone).
-            int[] monsterAnswers = { HeroFrogCardId.SpiritualWaterArtAoi, HeroFrogCardId.RaigekiBreak, HeroFrogCardId.CompulsoryEvacuationDevice };
+            int[] monsterAnswers = { CardId.SpiritualWaterArtAoi, CardId.RaigekiBreak, CardId.CompulsoryEvacuationDevice };
             bool answerSet = (await CurrentField.GetCardsInSpellZone()).Any(card => card.ID > 0 && monsterAnswers.Any(id => IsId(card, id)));
             foreach (var card in sets)
             {
@@ -416,15 +435,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 }
                 // Aoi needs cards in their hand to look at: set into an empty hand it only sits there holding Treeborn back
                 // (seen 2026-11-11: set with their hand at 0; Treeborn died and couldn't return while Aoi waited).
-                if (IsId(card, HeroFrogCardId.SpiritualWaterArtAoi) && water && oppHand + 1 >= 2)
+                if (IsId(card, CardId.SpiritualWaterArtAoi) && water && oppHand + 1 >= 2)
                     why = "Aoi: we have a WATER monster to tribute on their turn";
-                else if (IsId(card, HeroFrogCardId.RaigekiBreak) && hand.Count >= 2)
+                else if (IsId(card, CardId.RaigekiBreak) && hand.Count >= 2)
                     why = "Raigeki Break: we have a card to discard on their turn";
-                else if (IsId(card, HeroFrogCardId.TrapDustshoot) && oppHand + 1 >= 4)
+                else if (IsId(card, CardId.TrapDustshoot) && oppHand + 1 >= 4)
                     why = $"Trap Dustshoot: they'll have {oppHand + 1} cards after their draw";
-                else if (IsId(card, HeroFrogCardId.JarOfGreed))
+                else if (IsId(card, CardId.JarOfGreed))
                     why = "Jar of Greed: drawn on their turn at the latest";
-                else if (IsId(card, HeroFrogCardId.CompulsoryEvacuationDevice))
+                else if (IsId(card, CardId.CompulsoryEvacuationDevice))
                     why = "Compulsory: on their attack, or their best monster at their End Phase";
                 if (why != null)
                     kept.Add(card);
@@ -448,18 +467,18 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         /// </summary>
         private async Task<IdleCmdResponse?> TryNormalSwapAsync(DecisionContext<IdleCmdData> context, IdleCmdData state)
         {
-            if (_treebornInGrave || _treebornOnField || await InDeckAsync(HeroFrogCardId.TreebornFrog) == 0 || !Rule(HeroFrogRules.SwapFrogSummon))
+            if (_treebornInGrave || _treebornOnField || await InDeckAsync(CardId.TreebornFrog) == 0 || !Rule(HeroFrogRules.SwapFrogSummon))
                 return null;
             // Ocean in hand: Swap Frog comes out by discarding it instead (user, 2026-11-10: "most of the time you'll discard it
             // for swap frog"), keeping the Normal Summon.
-            var ocean = (await GetBotHandCardsAsync()).FirstOrDefault(card => IsId(card, HeroFrogCardId.ElementalHeroOcean));
-            if (ocean.ID > 0 && TryGetSpecialSummon(state, HeroFrogCardId.SwapFrog, out var swapSpecial))
+            var ocean = (await GetBotHandCardsAsync()).FirstOrDefault(card => IsId(card, CardId.ElementalHEROOcean));
+            if (ocean.ID > 0 && TryGetSpecialSummon(state, CardId.SwapFrog, out var swapSpecial))
             {
                 _discardPick = ocean.ID;
                 Note(context, "special summon Swap Frog discarding Elemental HERO Ocean: its trigger sends Treeborn Frog to the graveyard, and the Normal Summon stays free");
                 return swapSpecial.SpecialSummon();
             }
-            if (NormalSummonUsed(context.Header) || !TryGetSummonable(state, HeroFrogCardId.SwapFrog, out var swap))
+            if (NormalSummonUsed(context.Header) || !TryGetSummonable(state, CardId.SwapFrog, out var swap))
                 return null;
             Note(context, "normal summon Swap Frog: its trigger sends Treeborn Frog to the graveyard (Treeborn live first)");
             return swap.NormalSummon();
@@ -482,12 +501,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             if (battleAhead || summonLeft)
                 return null;
             var swap = (state.ActivableCards ?? Array.Empty<DynamicCard>())
-                .FirstOrDefault(card => IsId(card, HeroFrogCardId.SwapFrog) && card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone);
+                .FirstOrDefault(card => IsId(card, CardId.SwapFrog) && card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone);
             if (swap.ID <= 0 || !Rule(HeroFrogRules.SwapBounce))
                 return null;
             PlanTarget(context.Header.CurrentTurn, swap, theirs: false);
             Note(context, "Swap Frog returns itself to the hand: safe for next turn instead of being destroyed");
-            MarkActivated(context, HeroFrogCardId.SwapFrog);
+            MarkActivated(context, CardId.SwapFrog);
             return swap.MainActivateFromIndex();
         }
 
@@ -495,7 +514,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
 
         private async Task<IdleCmdResponse?> TryMiracleFusionAsync(DecisionContext<IdleCmdData> context, IdleCmdData state)
         {
-            if (!TryGetActivable(state, HeroFrogCardId.MiracleFusion, out var fusion))
+            if (!TryGetActivable(state, CardId.MiracleFusion, out var fusion))
                 return null;
             // Absolute Zero is for a turn it attacks (or wipes their board): not in Main Phase 2, where it only banishes the
             // materials for nothing (user, 2026-11-11: "why miracle fusion on mp2? ... just set up the dupe lock and pass"),
@@ -511,24 +530,24 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             if (!fusionBattleAhead && !wipeTargets && !losing && Rule(HeroFrogRules.FusionWaitsForBattle))
             {
                 Note(context, "hold Miracle Fusion: no battle ahead this turn (Absolute Zero would only sit there); next turn it attacks");
-                Hold(HeroFrogCardId.MiracleFusion, MainAction.Activate, HeroFrogRules.FusionWaitsForBattle);
+                Hold(CardId.MiracleFusion, MainAction.Activate, HeroFrogRules.FusionWaitsForBattle);
                 return null;
             }
             var grave = (await GetBotGraveyardCardsAsync()).Where(card => card.ID > 0 && card.HasType(CardType.Monster)).ToList();
             // Graveyard materials first, always (an Absolute Zero there is a HERO too; seen 2026-11-09 banishing Ocean
             // from the field with a Zero in the graveyard).
             var hero = grave.Where(IsHero)
-                .OrderBy(card => IsId(card, HeroFrogCardId.EvilHeroInfernalProdigy) ? 0 : IsId(card, HeroFrogCardId.ElementalHeroAbsoluteZero) ? 1
-                    : IsId(card, HeroFrogCardId.ElementalHeroOcean) ? 2 : 3)
+                .OrderBy(card => IsId(card, CardId.EvilHEROInfernalProdigy) ? 0 : IsId(card, CardId.ElementalHEROAbsoluteZero) ? 1
+                    : IsId(card, CardId.ElementalHEROOcean) ? 2 : 3)
                 .FirstOrDefault();
             // No HERO in the graveyard: one of ours on the field (its summon effect already used) is banished instead.
             if (hero.ID <= 0)
                 hero = (await GetBotMonsterCardsAsync()).Where(card => card.IsFaceup() && IsHero(card) && !card.HasType(CardType.Fusion))
-                    .OrderBy(card => IsId(card, HeroFrogCardId.EvilHeroInfernalProdigy) ? 0 : IsId(card, HeroFrogCardId.ElementalHeroStratos) ? 1 : 2)
+                    .OrderBy(card => IsId(card, CardId.EvilHEROInfernalProdigy) ? 0 : IsId(card, CardId.ElementalHEROStratos) ? 1 : 2)
                     .FirstOrDefault();
             if (hero.ID <= 0)
                 return null;
-            var water = grave.Where(card => IsWater(card) && !IsId(card, HeroFrogCardId.TreebornFrog) &&
+            var water = grave.Where(card => IsWater(card) && !IsId(card, CardId.TreebornFrog) &&
                                             !(card.CurrentCoordinates.Location == hero.CurrentCoordinates.Location &&
                                               card.CurrentCoordinates.Sequence == hero.CurrentCoordinates.Sequence && card.IsCode(hero.ID)))
                 .OrderBy(card => StaplePriorityIndex(WaterMaterials, card)).FirstOrDefault();
@@ -536,12 +555,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             {
                 // The only WATER left is Treeborn Frog: never banish the engine for it (seen 2026-11-11: the search fused
                 // Treeborn from the field with Absolute Zero from the graveyard, and the deck had no plays after).
-                Hold(HeroFrogCardId.MiracleFusion, MainAction.Activate, HeroFrogRules.FusionSparesTreeborn);
+                Hold(CardId.MiracleFusion, MainAction.Activate, HeroFrogRules.FusionSparesTreeborn);
                 // A WATER for it through Swap Frog: its Normal Summon trigger sends a Frog from the deck (not Treeborn) to the
                 // graveyard, and Miracle Fusion follows (seen 2026-11-11: Miracle Fusion sat in hand for five turns against a
                 // lone Goyo Guardian; Absolute Zero there was 4000 ATK with two Dupes and Substitoad beside it). Room for Swap
                 // Frog and Absolute Zero both.
-                if ((wipeTargets || losing) && !NormalSummonUsed(context.Header) && TryGetSummonable(state, HeroFrogCardId.SwapFrog, out var swapForWater) &&
+                if ((wipeTargets || losing) && !NormalSummonUsed(context.Header) && TryGetSummonable(state, CardId.SwapFrog, out var swapForWater) &&
                     (await GetBotMonsterCardsAsync()).Count <= 3 && Rule(HeroFrogRules.FusionWaterViaSwap))
                 {
                     _swapSendForFusionTurn = context.Header.CurrentTurn;
@@ -572,13 +591,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             {
                 Note(context, "hold Miracle Fusion: it's removal (Absolute Zero wipes their monsters when it leaves) and they have no monster; " +
                               "into their set cards it would only eat a trap");
-                Hold(HeroFrogCardId.MiracleFusion, MainAction.Activate, HeroFrogRules.FusionIsRemoval);
+                Hold(CardId.MiracleFusion, MainAction.Activate, HeroFrogRules.FusionIsRemoval);
                 return null;
             }
             if (ourBest >= 1800 && ourBest > theirBest && !zeroLethal && theirs.Count < 2 && Rule(HeroFrogRules.HoldMiracleFusion))
             {
                 Note(context, $"hold Miracle Fusion: our {ourBest} already beats their board ({theirBest}); keep it for when we need it");
-                Hold(HeroFrogCardId.MiracleFusion, MainAction.Activate, HeroFrogRules.HoldMiracleFusion);
+                Hold(CardId.MiracleFusion, MainAction.Activate, HeroFrogRules.HoldMiracleFusion);
                 return null;
             }
             if (!Rule(HeroFrogRules.MiracleFusion))
@@ -586,7 +605,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             PlanFusionMaterials(context.Header.CurrentTurn, new[] { hero, water }, "Miracle Fusion");
             Note(context, $"activate Miracle Fusion: Absolute Zero from the graveyard ({CardNames.Get(hero.ID)} + {CardNames.Get(water.ID)}), {zeroAtk} ATK; " +
                           "when it leaves the field it destroys all their monsters");
-            MarkActivated(context, HeroFrogCardId.MiracleFusion);
+            MarkActivated(context, CardId.MiracleFusion);
             return fusion.MainActivateFromIndex();
         }
 
@@ -609,67 +628,67 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             // Only when the Monarch really comes out this turn (round-robin 25b: the hold stood on turns with no Monarch summon;
             // user, 2026-11-13: "plan this all from the start"): a tribute on the field, or fodder we can make this turn.
             bool monarchComing = CheapestTributes(botMonsters.Where(card => card.ID > 0)).Any() ||
-                                 botMonsters.All(card => card.ID <= 0) && (TryGetSpecialSummon(state, HeroFrogCardId.EvilHeroInfernalProdigy, out _) ||
-                                                                          TryGetActivable(state, HeroFrogCardId.OneForOne, out _) ||
-                                                                          TryGetSpecialSummon(state, HeroFrogCardId.SwapFrog, out _));
-            if (twoCards == null && monarchComing && (TryGetActivable(state, HeroFrogCardId.BrainControl, out _) || TryGetActivable(state, HeroFrogCardId.EnemyController, out _)))
+                                 botMonsters.All(card => card.ID <= 0) && (TryGetSpecialSummon(state, CardId.EvilHEROInfernalProdigy, out _) ||
+                                                                          TryGetActivable(state, CardId.OneForOne, out _) ||
+                                                                          TryGetSpecialSummon(state, CardId.SwapFrog, out _));
+            if (twoCards == null && monarchComing && (TryGetActivable(state, CardId.BrainControl, out _) || TryGetActivable(state, CardId.EnemyController, out _)))
             {
                 Note(context, "keep Brain Control / Enemy Controller: the Monarch deals with their card by itself");
-                Hold(HeroFrogCardId.BrainControl, MainAction.Activate, HeroFrogRules.HoldSteal);
-                Hold(HeroFrogCardId.EnemyController, MainAction.Activate, HeroFrogRules.HoldSteal);
+                Hold(CardId.BrainControl, MainAction.Activate, HeroFrogRules.HoldSteal);
+                Hold(CardId.EnemyController, MainAction.Activate, HeroFrogRules.HoldSteal);
             }
 
             // Brain Control (800 LP): their monster becomes the tribute, and the Monarch's trigger takes another card.
-            if (twoCards != null && TryGetActivable(state, HeroFrogCardId.BrainControl, out var brain) && BestStealTarget(enemyMonsters, brainControl: true) is { ID: > 0 } bcTarget &&
+            if (twoCards != null && TryGetActivable(state, CardId.BrainControl, out var brain) && BestStealTarget(enemyMonsters, brainControl: true) is { ID: > 0 } bcTarget &&
                 await CurrentField.GetBotLifePoints() > 800 + 1000 && Rule(HeroFrogRules.BrainControlTribute))
             {
                 PlanTarget(context.Header.CurrentTurn, bcTarget, theirs: true);
                 Note(context, $"activate Brain Control on {CardNames.Get(bcTarget.ID)}: tribute it for the Monarch in hand ({twoCards})");
-                MarkActivated(context, HeroFrogCardId.BrainControl);
-                return await MonarchRoutineAsync(context, brain.MainActivateFromIndex(), new RoutineStep(MainAction.Activate, HeroFrogCardId.BrainControl, "Brain Control"), hand, enemyMonsters, stolen: 1);
+                MarkActivated(context, CardId.BrainControl);
+                return await MonarchRoutineAsync(context, brain.MainActivateFromIndex(), new RoutineStep(MainAction.Activate, CardId.BrainControl, "Brain Control"), hand, enemyMonsters, stolen: 1);
             }
             // Enemy Controller (take control): tribute our cheapest monster (Treeborn comes back), take theirs, tribute it.
             var cheap = CheapestTributes(botMonsters.Where(card => card.ID > 0)).FirstOrDefault();
-            if (twoCards != null && TryGetActivable(state, HeroFrogCardId.EnemyController, out var controller) && steal.ID > 0 && cheap.ID > 0 &&
+            if (twoCards != null && TryGetActivable(state, CardId.EnemyController, out var controller) && steal.ID > 0 && cheap.ID > 0 &&
                 TributeCost(cheap) <= ExpendableTributeCost && Rule(HeroFrogRules.EnemyControllerTribute))
             {
                 _enemyControllerMode = 2;
                 PlanTributes(context.Header.CurrentTurn, new[] { cheap }, "Enemy Controller");
                 PlanTarget(context.Header.CurrentTurn, steal, theirs: true);
                 Note(context, $"activate Enemy Controller: tribute {CardNames.Get(cheap.ID)}, take {CardNames.Get(steal.ID)} and tribute it for the Monarch ({twoCards})");
-                MarkActivated(context, HeroFrogCardId.EnemyController);
-                return await MonarchRoutineAsync(context, controller.MainActivateFromIndex(), new RoutineStep(MainAction.Activate, HeroFrogCardId.EnemyController, "Enemy Controller"), hand, enemyMonsters, stolen: 1);
+                MarkActivated(context, CardId.EnemyController);
+                return await MonarchRoutineAsync(context, controller.MainActivateFromIndex(), new RoutineStep(MainAction.Activate, CardId.EnemyController, "Enemy Controller"), hand, enemyMonsters, stolen: 1);
             }
             if (botMonsters.Any(card => card.ID > 0))
                 return null;
             // No monster at all: Infernal Prodigy (special summon with no monsters), or One for One (a Level 1 from the deck).
-            if (TryGetSpecialSummon(state, HeroFrogCardId.EvilHeroInfernalProdigy, out var prodigy) && Rule(HeroFrogRules.ProdigyFodder))
+            if (TryGetSpecialSummon(state, CardId.EvilHEROInfernalProdigy, out var prodigy) && Rule(HeroFrogRules.ProdigyFodder))
             {
                 Note(context, "special summon Infernal Prodigy: tribute fodder for the Monarch in hand");
-                return await MonarchRoutineAsync(context, prodigy.SpecialSummon(), new RoutineStep(MainAction.SpSummon, HeroFrogCardId.EvilHeroInfernalProdigy, "special summon Infernal Prodigy"), hand, enemyMonsters, stolen: 0);
+                return await MonarchRoutineAsync(context, prodigy.SpecialSummon(), new RoutineStep(MainAction.SpSummon, CardId.EvilHEROInfernalProdigy, "special summon Infernal Prodigy"), hand, enemyMonsters, stolen: 0);
             }
-            if (TryGetActivable(state, HeroFrogCardId.OneForOne, out var oneForOne))
+            if (TryGetActivable(state, CardId.OneForOne, out var oneForOne))
             {
                 var send = hand.Where(card => card.HasType(CardType.Monster) && !IsId(card, TributeSummons) || hand.Count(c => IsId(c, TributeSummons)) >= 2 && IsId(card, TributeSummons))
                     .OrderBy(DiscardRank).FirstOrDefault();
-                int target = await InDeckAsync(HeroFrogCardId.TreebornFrog) > 0 && !(send.ID > 0 && IsId(send, HeroFrogCardId.TreebornFrog) && await InDeckAsync(HeroFrogCardId.TreebornFrog) < 1)
-                    ? HeroFrogCardId.TreebornFrog
-                    : HeroFrogCardId.Substitoad;
+                int target = await InDeckAsync(CardId.TreebornFrog) > 0 && !(send.ID > 0 && IsId(send, CardId.TreebornFrog) && await InDeckAsync(CardId.TreebornFrog) < 1)
+                    ? CardId.TreebornFrog
+                    : CardId.Substitoad;
                 if (send.ID > 0 && Rule(HeroFrogRules.OneForOneFodder))
                 {
                     _discardPick = send.ID;
                     _deckSummonPick = target;
                     Note(context, $"activate One for One: send {CardNames.Get(send.ID)}, special summon {CardNames.Get(target)} as tribute fodder for the Monarch");
-                    MarkActivated(context, HeroFrogCardId.OneForOne);
-                    return await MonarchRoutineAsync(context, oneForOne.MainActivateFromIndex(), new RoutineStep(MainAction.Activate, HeroFrogCardId.OneForOne, "One for One"), hand, enemyMonsters, stolen: 0);
+                    MarkActivated(context, CardId.OneForOne);
+                    return await MonarchRoutineAsync(context, oneForOne.MainActivateFromIndex(), new RoutineStep(MainAction.Activate, CardId.OneForOne, "One for One"), hand, enemyMonsters, stolen: 0);
                 }
             }
             // No other way: Swap Frog's own special summon (discarding a WATER) is the fodder (user, 2026-11-10: it's normally
             // not worth the discard, but a Monarch coming out is).
-            if (TryGetSpecialSummon(state, HeroFrogCardId.SwapFrog, out var swapFodder) && Rule(HeroFrogRules.SwapFodder))
+            if (TryGetSpecialSummon(state, CardId.SwapFrog, out var swapFodder) && Rule(HeroFrogRules.SwapFodder))
             {
                 Note(context, "special summon Swap Frog (discarding a WATER): the only tribute fodder for the Monarch in hand");
-                return await MonarchRoutineAsync(context, swapFodder.SpecialSummon(), new RoutineStep(MainAction.SpSummon, HeroFrogCardId.SwapFrog, "special summon Swap Frog"), hand, enemyMonsters, stolen: 0);
+                return await MonarchRoutineAsync(context, swapFodder.SpecialSummon(), new RoutineStep(MainAction.SpSummon, CardId.SwapFrog, "special summon Swap Frog"), hand, enemyMonsters, stolen: 0);
             }
             return null;
         }
@@ -685,8 +704,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         {
             int theirCards = enemyMonsters.Count + (await GetEnemySpellCardsAsync()).Count - stolen;
             int[] allowed = theirCards > 0
-                ? new[] { HeroFrogCardId.CaiusTheShadowMonarch, HeroFrogCardId.RaizaTheStormMonarch, HeroFrogCardId.ThestalosTheFirestormMonarch, HeroFrogCardId.DesFrog }
-                : new[] { HeroFrogCardId.ThestalosTheFirestormMonarch, HeroFrogCardId.DesFrog };
+                ? new[] { CardId.CaiusTheShadowMonarch, CardId.RaizaTheStormMonarch, CardId.ThestalosTheFirestormMonarch, CardId.DesFrog }
+                : new[] { CardId.ThestalosTheFirestormMonarch, CardId.DesFrog };
             var inHand = allowed.Where(id => hand.Any(card => IsId(card, id))).ToArray();
             if (inHand.Length == 0)
             {
@@ -719,7 +738,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 : BeatenInBattle(theirs, ourAttackers.Where(card => card.ID > 0 && card.IsFaceup() && card.IsAttack() && !card.Attacked).Select(EffectiveAttack)
                     .Append(monarchAtk).Where(atk => atk > 0)).Count;
             int field = theirs.Count - beaten + (await GetEnemySpellCardsAsync()).Count;
-            bool fieldMonarch = hand.Any(card => IsId(card, HeroFrogCardId.CaiusTheShadowMonarch) || IsId(card, HeroFrogCardId.RaizaTheStormMonarch));
+            bool fieldMonarch = hand.Any(card => IsId(card, CardId.CaiusTheShadowMonarch) || IsId(card, CardId.RaizaTheStormMonarch));
             if (fieldMonarch && field >= 2)
                 return $"they have {field} cards: the steal clears one and the Monarch the other";
             if (!fieldMonarch && field >= 1)
@@ -802,9 +821,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             DynamicCard pick = default;
             string why = "";
             DynamicCard Find(int id) => options.FirstOrDefault(card => IsId(card, id));
-            if (hasTarget && Find(HeroFrogCardId.CaiusTheShadowMonarch) is { ID: > 0 } caius)
+            if (hasTarget && Find(CardId.CaiusTheShadowMonarch) is { ID: > 0 } caius)
                 (pick, why) = (caius, $"banish {DescribePick(target)}" + ((target.Attribute & (int)CardAttribute.Dark) != 0 && target.IsFaceup() ? " (DARK: +1000 damage)" : ""));
-            else if (hasTarget && Find(HeroFrogCardId.RaizaTheStormMonarch) is { ID: > 0 } raiza)
+            else if (hasTarget && Find(CardId.RaizaTheStormMonarch) is { ID: > 0 } raiza)
             {
                 // Raiza only delays a main-deck card: they draw it again. Best on an Extra Deck monster or token (gone
                 // for good); a Level 5+ main-deck monster comes straight back off a free tribute (a Raiza / Monarch loop
@@ -817,26 +836,26 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                     target = targets.OrderByDescending(RaizaValue).First();
                 (pick, why) = (raiza, $"put {DescribePick(target)} on top of their deck");
             }
-            else if (oppHand > 0 && Find(HeroFrogCardId.ThestalosTheFirestormMonarch) is { ID: > 0 } thestalos)
+            else if (oppHand > 0 && Find(CardId.ThestalosTheFirestormMonarch) is { ID: > 0 } thestalos)
                 (pick, why) = (thestalos, $"discard one of their {oppHand} hand card(s) at random");
-            else if (Find(HeroFrogCardId.DesFrog) is { ID: > 0 } des)
+            else if (Find(CardId.DesFrog) is { ID: > 0 } des)
                 (pick, why) = (des, "a 1900 body");
-            else if (!hasTarget && Find(HeroFrogCardId.ThestalosTheFirestormMonarch) is { ID: > 0 } emptyThestalos)
+            else if (!hasTarget && Find(CardId.ThestalosTheFirestormMonarch) is { ID: > 0 } emptyThestalos)
                 (pick, why) = (emptyThestalos, "a 2400 body (their hand is empty)");
             if (pick.ID <= 0)
             {
                 if (!hasTarget)
                 {
                     Note(context, "hold Caius / Raiza: they have no card on the field, and the trigger is mandatory (it would hit our own card)");
-                    Hold(HeroFrogCardId.CaiusTheShadowMonarch, MainAction.Summon, HeroFrogRules.MonarchSummon);
-                    Hold(HeroFrogCardId.RaizaTheStormMonarch, MainAction.Summon, HeroFrogRules.MonarchSummon);
+                    Hold(CardId.CaiusTheShadowMonarch, MainAction.Summon, HeroFrogRules.MonarchSummon);
+                    Hold(CardId.RaizaTheStormMonarch, MainAction.Summon, HeroFrogRules.MonarchSummon);
                 }
                 return null;
             }
             if (!Rule(HeroFrogRules.MonarchSummon))
                 return null;
             PlanTributes(context.Header.CurrentTurn, new[] { tribute }, CardNames.Get(pick.ID));
-            if (IsId(pick, HeroFrogCardId.CaiusTheShadowMonarch) || IsId(pick, HeroFrogCardId.RaizaTheStormMonarch))
+            if (IsId(pick, CardId.CaiusTheShadowMonarch) || IsId(pick, CardId.RaizaTheStormMonarch))
                 PlanTarget(context.Header.CurrentTurn, target, theirs: true);
             Note(context, $"tribute summon {CardNames.Get(pick.ID)} (tributing {CardNames.Get(tribute.ID)}): {why}");
             return pick.NormalSummon();
@@ -848,16 +867,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         /// </summary>
         private async Task<IdleCmdResponse?> TryHeroForFusionAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> hand)
         {
-            if (NormalSummonUsed(context.Header) || !hand.Any(card => IsId(card, HeroFrogCardId.MiracleFusion)))
+            if (NormalSummonUsed(context.Header) || !hand.Any(card => IsId(card, CardId.MiracleFusion)))
                 return null;
             var grave = (await GetBotGraveyardCardsAsync()).Where(card => card.ID > 0 && card.HasType(CardType.Monster)).ToList();
             var ours = await GetBotMonsterCardsAsync();
             if (grave.Any(card => IsHero(card) && !card.HasType(CardType.Fusion)) ||
                 ours.Any(card => card.IsFaceup() && IsHero(card) && !card.HasType(CardType.Fusion)) ||
-                !grave.Any(card => IsWater(card) && !IsId(card, HeroFrogCardId.TreebornFrog)))
+                !grave.Any(card => IsWater(card) && !IsId(card, CardId.TreebornFrog)))
                 return null;
             var pick = (state.SummonableCards ?? Array.Empty<DynamicCard>()).Where(card => IsHero(card) && card.Level <= 4)
-                .OrderBy(card => IsId(card, HeroFrogCardId.ElementalHeroStratos) ? 0 : IsId(card, HeroFrogCardId.ElementalHeroOcean) ? 1 : 2)
+                .OrderBy(card => IsId(card, CardId.ElementalHEROStratos) ? 0 : IsId(card, CardId.ElementalHEROOcean) ? 1 : 2)
                 .FirstOrDefault();
             if (pick.ID <= 0 || !Rule(HeroFrogRules.HeroForFusion))
                 return null;
@@ -877,12 +896,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 return null;
             var candidates = (state.SummonableCards ?? Array.Empty<DynamicCard>())
                 .Where(card => card.ID > 0 && card.Level <= 4 && card.Attack >= 1500 && !card.HasType(CardType.Flip) &&
-                               !IsId(card, HeroFrogCardId.ElementalHeroOcean)).ToList(); // Ocean: a weak card, Swap Frog's discard, not a beater
+                               !IsId(card, CardId.ElementalHEROOcean)).ToList(); // Ocean: a weak card, Swap Frog's discard, not a beater
             if (candidates.Count == 0)
                 return null;
             bool open(DynamicCard attacker) => enemyMonsters.All(card => card.IsFaceup() && card.IsAttack() && card.Attack < attacker.Attack);
             var pick = candidates.Where(open)
-                .OrderBy(card => IsId(card, HeroFrogCardId.ElementalHeroStratos) ? 0 : 1).ThenByDescending(card => card.Attack).FirstOrDefault();
+                .OrderBy(card => IsId(card, CardId.ElementalHEROStratos) ? 0 : 1).ThenByDescending(card => card.Attack).FirstOrDefault();
             if (pick.ID <= 0 || !Rule(HeroFrogRules.PressureSummon))
                 return null;
             Note(context, $"normal summon {CardNames.Get(pick.ID)} ({pick.Attack}): " +
@@ -915,13 +934,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         {
             bool mainTwo = (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main2 || !state.CanBattlePhase || context.Header.CurrentTurn == 1;
             var ours = botMonsters.Where(card => card.ID > 0 && card.IsFaceup()).ToList();
-            bool toadAlone = ours.Count > 0 && ours.All(card => IsId(card, HeroFrogCardId.Substitoad) || IsDupe(card)) &&
-                             ours.Any(card => IsId(card, HeroFrogCardId.Substitoad));
+            bool toadAlone = ours.Count > 0 && ours.All(card => IsId(card, CardId.Substitoad) || IsDupe(card)) &&
+                             ours.Any(card => IsId(card, CardId.Substitoad));
             // With a Dupe Frog out already, Substitoad itself gives the second: no fodder needed.
             int dupesNeeded = 2;
-            if (!mainTwo || !toadAlone || _dupesOnField >= 1 || !TryGetActivable(state, HeroFrogCardId.Substitoad, out _) ||
-                await InDeckAsync(HeroFrogCardId.DupeFrog) < dupesNeeded || !TryGetSpecialSummon(state, HeroFrogCardId.SwapFrog, out var swap) ||
-                TryGetSpecialSummon(state, HeroFrogCardId.EvilHeroInfernalProdigy, out _) || !Rule(HeroFrogRules.SwapFodder))
+            if (!mainTwo || !toadAlone || _dupesOnField >= 1 || !TryGetActivable(state, CardId.Substitoad, out _) ||
+                await InDeckAsync(CardId.DupeFrog) < dupesNeeded || !TryGetSpecialSummon(state, CardId.SwapFrog, out var swap) ||
+                TryGetSpecialSummon(state, CardId.EvilHEROInfernalProdigy, out _) || !Rule(HeroFrogRules.SwapFodder))
                 return null;
             Note(context, "special summon Swap Frog (discarding a WATER): fodder for Substitoad, for the Dupe lock (no other monster to tribute)");
             return swap.SpecialSummon();
@@ -934,10 +953,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         /// </summary>
         private async Task<IdleCmdResponse?> TryDupeFromHandAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> botMonsters)
         {
-            if (NormalSummonUsed(context.Header) || !TryGetSummonable(state, HeroFrogCardId.DupeFrog, out var dupe))
+            if (NormalSummonUsed(context.Header) || !TryGetSummonable(state, CardId.DupeFrog, out var dupe))
                 return null;
-            bool toadOut = botMonsters.Any(card => card.IsFaceup() && IsId(card, HeroFrogCardId.Substitoad));
-            bool completes = _dupesOnField >= 1 || toadOut && await InDeckAsync(HeroFrogCardId.DupeFrog) >= 1;
+            bool toadOut = botMonsters.Any(card => card.IsFaceup() && IsId(card, CardId.Substitoad));
+            bool completes = _dupesOnField >= 1 || toadOut && await InDeckAsync(CardId.DupeFrog) >= 1;
             if (!completes || !Rule(HeroFrogRules.DupeLockFromHand))
                 return null;
             Note(context, _dupesOnField >= 1
@@ -958,9 +977,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         private async Task<IdleCmdResponse?> TryDupeLockFirstAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> botMonsters,
             List<DynamicCard> enemyMonsters)
         {
-            if (NormalSummonUsed(context.Header) || !TryGetSummonable(state, HeroFrogCardId.Substitoad, out var toad))
+            if (NormalSummonUsed(context.Header) || !TryGetSummonable(state, CardId.Substitoad, out var toad))
                 return null;
-            int dupesInDeck = await InDeckAsync(HeroFrogCardId.DupeFrog);
+            int dupesInDeck = await InDeckAsync(CardId.DupeFrog);
             bool fodder = botMonsters.Any(card => card.ID > 0 && !IsDupe(card) || card.ID <= 0 && card.CurrentCoordinates.Location != 0 && !card.IsFaceup());
             bool reachesLock = fodder && dupesInDeck >= 2 || _dupesOnField >= 1 && dupesInDeck >= 1;
             if (!reachesLock)
@@ -990,10 +1009,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         protected override async Task DeckHoldsAsync(DecisionContext<IdleCmdData> context)
         {
             var setable = context.StateData.SpellSetableCards ?? Array.Empty<DynamicCard>();
-            if (setable.Any(card => IsId(card, HeroFrogCardId.SpiritualWaterArtAoi)) &&
+            if (setable.Any(card => IsId(card, CardId.SpiritualWaterArtAoi)) &&
                 !(await GetBotMonsterCardsAsync()).Any(card => (card.Attribute & (int)CardAttribute.Water) != 0) &&
                 Rule(HeroFrogRules.AoiSetNeedsWater))
-                Hold(HeroFrogCardId.SpiritualWaterArtAoi, MainAction.SetSpell, HeroFrogRules.AoiSetNeedsWater);
+                Hold(CardId.SpiritualWaterArtAoi, MainAction.SetSpell, HeroFrogRules.AoiSetNeedsWater);
         }
 
         /// <summary>The turn the Swap Frog route to the Dupe lock started (its steps follow one another).</summary>
@@ -1013,15 +1032,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             int dupesInHand = hand.Count(IsDupe);
             if (dupesInHand == 0 || dupesInHand + _dupesOnField < 2)
                 return null;
-            var swapOnField = botMonsters.FirstOrDefault(card => card.IsFaceup() && IsId(card, HeroFrogCardId.SwapFrog));
+            var swapOnField = botMonsters.FirstOrDefault(card => card.IsFaceup() && IsId(card, CardId.SwapFrog));
             var swapEffect = (state.ActivableCards ?? Array.Empty<DynamicCard>())
-                .FirstOrDefault(card => IsId(card, HeroFrogCardId.SwapFrog) && card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone);
+                .FirstOrDefault(card => IsId(card, CardId.SwapFrog) && card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone);
 
             // The route under way: its next step.
             if (_swapLockTurn == turn)
             {
                 // The extra summon Swap Frog's bounce granted: the second Dupe Frog.
-                if (_dupesOnField >= 1 && swapOnField.ID <= 0 && TryGetSummonable(state, HeroFrogCardId.DupeFrog, out var second))
+                if (_dupesOnField >= 1 && swapOnField.ID <= 0 && TryGetSummonable(state, CardId.DupeFrog, out var second))
                 {
                     Note(context, "normal summon the second Dupe Frog (Swap Frog's extra summon): the Dupe lock, they can't attack at all");
                     return second.NormalSummon();
@@ -1030,10 +1049,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 {
                     PlanTarget(turn, swapEffect, theirs: false);
                     Note(context, "Swap Frog returns itself to the hand: one more summon of a small WATER Aqua, the second Dupe Frog");
-                    MarkActivated(context, HeroFrogCardId.SwapFrog);
+                    MarkActivated(context, CardId.SwapFrog);
                     return swapEffect.MainActivateFromIndex();
                 }
-                if (_dupesOnField == 0 && !NormalSummonUsed(context.Header) && swapOnField.ID > 0 && TryGetSummonable(state, HeroFrogCardId.DupeFrog, out var first))
+                if (_dupesOnField == 0 && !NormalSummonUsed(context.Header) && swapOnField.ID > 0 && TryGetSummonable(state, CardId.DupeFrog, out var first))
                 {
                     Note(context, "normal summon Dupe Frog: the first half of the Dupe lock (Swap Frog's bounce brings the second)");
                     return first.NormalSummon();
@@ -1043,12 +1062,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
 
             // Start it: the Normal Summon free, Swap Frog coming out (or out already with its effect unused), and the Dupes not
             // reachable another way (Substitoad with Dupes in the deck goes through TryDupeLockFirstAsync / TrySubstitoadAsync).
-            if (NormalSummonUsed(context.Header) || await InDeckAsync(HeroFrogCardId.DupeFrog) >= 2)
+            if (NormalSummonUsed(context.Header) || await InDeckAsync(CardId.DupeFrog) >= 2)
                 return null;
-            var discard = hand.Where(card => card.HasType(CardType.Monster) && IsWater(card) && !IsDupe(card) && !IsId(card, HeroFrogCardId.SwapFrog) &&
+            var discard = hand.Where(card => card.HasType(CardType.Monster) && IsWater(card) && !IsDupe(card) && !IsId(card, CardId.SwapFrog) &&
                                              DiscardRank(card) <= 4)
                 .OrderBy(DiscardRank).FirstOrDefault();
-            bool swapFromHand = swapOnField.ID <= 0 && TryGetSpecialSummon(state, HeroFrogCardId.SwapFrog, out _) && discard.ID > 0;
+            bool swapFromHand = swapOnField.ID <= 0 && TryGetSpecialSummon(state, CardId.SwapFrog, out _) && discard.ID > 0;
             if (!swapFromHand && !(swapOnField.ID > 0 && swapEffect.ID > 0))
                 return null;
             bool losing = await WeLoseNextTurnAsync() || enemyMonsters.Count(card => card.IsFaceup() && card.IsAttack() && card.Attack > 2400) >= 2;
@@ -1058,7 +1077,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             if (!Rule(HeroFrogRules.DupeLockViaSwap))
                 return null;
             _swapLockTurn = turn;
-            if (swapFromHand && TryGetSpecialSummon(state, HeroFrogCardId.SwapFrog, out var swap))
+            if (swapFromHand && TryGetSpecialSummon(state, CardId.SwapFrog, out var swap))
             {
                 _discardPick = discard.ID;
                 Note(context, $"special summon Swap Frog (discarding {CardNames.Get(discard.ID)}): the route to the Dupe lock with both Dupe Frogs in hand " +
@@ -1083,34 +1102,34 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
 
         private async Task<IdleCmdResponse?> TrySubstitoadAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> botMonsters)
         {
-            if (!TryGetActivable(state, HeroFrogCardId.Substitoad, out var toad) || ActivationsThisTurn(context, HeroFrogCardId.Substitoad) >= 8)
+            if (!TryGetActivable(state, CardId.Substitoad, out var toad) || ActivationsThisTurn(context, CardId.Substitoad) >= 8)
                 return null;
-            int dupesInDeck = await InDeckAsync(HeroFrogCardId.DupeFrog);
-            int swapsInDeck = await InDeckAsync(HeroFrogCardId.SwapFrog);
-            int treebornInDeck = await InDeckAsync(HeroFrogCardId.TreebornFrog);
-            int desInDeck = await InDeckAsync(HeroFrogCardId.DesFrog);
+            int dupesInDeck = await InDeckAsync(CardId.DupeFrog);
+            int swapsInDeck = await InDeckAsync(CardId.SwapFrog);
+            int treebornInDeck = await InDeckAsync(CardId.TreebornFrog);
+            int desInDeck = await InDeckAsync(CardId.DesFrog);
             var ours = botMonsters.Where(card => card.ID > 0 && card.IsFaceup()).ToList();
-            var toads = ours.Where(card => IsId(card, HeroFrogCardId.Substitoad)).ToList();
+            var toads = ours.Where(card => IsId(card, CardId.Substitoad)).ToList();
             bool alone = ours.Count == toads.Count;
-            bool IsDes(DynamicCard card) => IsId(card, HeroFrogCardId.DesFrog) && !IsDupe(card);
+            bool IsDes(DynamicCard card) => IsId(card, CardId.DesFrog) && !IsDupe(card);
             // A battle ahead only when one is worth entering: with nothing that can attack (Treeborn, Substitoad), the lock
             // goes up in Main Phase 1 rather than waiting for a Battle Phase that does nothing (user, 2026-11-11).
             bool battleAhead = (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 && state.CanBattlePhase && context.Header.CurrentTurn > 1 &&
                                await BattleWorthEnteringAsync() == null;
             // Tribute: the cheapest monster that isn't a Dupe Frog (it stays for the lock) or the last Substitoad (the
             // engine); Des Frog once the battle is over.
-            var others = CheapestTributes(ours.Where(card => !IsDupe(card) && !IsId(card, HeroFrogCardId.Substitoad) &&
+            var others = CheapestTributes(ours.Where(card => !IsDupe(card) && !IsId(card, CardId.Substitoad) &&
                                                              (TributeCost(card) < 3 || IsDes(card) && !battleAhead))).ToList();
             if (toads.Count > 1)
                 others.AddRange(toads.Skip(1));
             bool dumpReady = treebornInDeck > 0 && !_treebornInGrave && swapsInDeck > 0;
             bool desOnField = ours.Any(IsDes);
-            bool worthShielding = ours.Any(card => !IsDupe(card) && !IsId(card, HeroFrogCardId.Substitoad) && EffectiveAttack(card) >= 1800);
+            bool worthShielding = ours.Any(card => !IsDupe(card) && !IsId(card, CardId.Substitoad) && EffectiveAttack(card) >= 1800);
             // Treeborn live is the engine's first priority: in the graveyard (or on the field, to be tributed there), or
             // another way to get it there this turn (Swap Frog in hand with a cheap WATER to discard: its trigger sends it).
             var hand = await GetBotHandCardsAsync();
             bool treebornSetUp = _treebornInGrave || _treebornOnField;
-            bool anotherWay = treebornInDeck > 0 && hand.Any(card => IsId(card, HeroFrogCardId.SwapFrog)) &&
+            bool anotherWay = treebornInDeck > 0 && hand.Any(card => IsId(card, CardId.SwapFrog)) &&
                               hand.Count(card => IsWater(card) && card.HasType(CardType.Monster) && DiscardRank(card) <= 4) >= 2;
             bool desAllowed = desInDeck > 0 && !desOnField && (treebornSetUp || anotherWay);
             DynamicCard tribute = default;
@@ -1118,33 +1137,33 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             string why = "";
             bool lockFirst = _lockFirstTurn == context.Header.CurrentTurn && dupesInDeck > 0;
             if (lockFirst && others.Count > 0)
-                (tribute, summon, why) = (others[0], HeroFrogCardId.DupeFrog, "the Dupe lock first (we're losing on board): Dupe Frog");
+                (tribute, summon, why) = (others[0], CardId.DupeFrog, "the Dupe lock first (we're losing on board): Dupe Frog");
             else if (lockFirst && toads.Count > 0 && _dupesOnField >= 1)
-                (tribute, summon, why) = (toads[0], HeroFrogCardId.DupeFrog, "the Dupe lock first: Substitoad itself for the second Dupe Frog (they can't attack at all)");
+                (tribute, summon, why) = (toads[0], CardId.DupeFrog, "the Dupe lock first: Substitoad itself for the second Dupe Frog (they can't attack at all)");
             else if (!treebornSetUp && dumpReady && (others.Count > 0 || alone))
-                (tribute, summon, why) = (others.Count > 0 ? others[0] : toads[0], HeroFrogCardId.SwapFrog,
+                (tribute, summon, why) = (others.Count > 0 ? others[0] : toads[0], CardId.SwapFrog,
                     "Treeborn first: Swap Frog's trigger sends Treeborn Frog to the graveyard (it comes back every turn)");
             else if (!treebornSetUp && treebornInDeck > 0 && swapsInDeck == 0 && others.Count > 0)
-                (tribute, summon, why) = (others[0], HeroFrogCardId.TreebornFrog, "Treeborn first (no Swap Frog left): Treeborn Frog from the deck");
+                (tribute, summon, why) = (others[0], CardId.TreebornFrog, "Treeborn first (no Swap Frog left): Treeborn Frog from the deck");
             else if (battleAhead)
             {
                 if (desAllowed && (others.Count > 0 || alone))
-                    (tribute, summon, why) = (others.Count > 0 ? others[0] : toads[0], HeroFrogCardId.DesFrog,
+                    (tribute, summon, why) = (others.Count > 0 ? others[0] : toads[0], CardId.DesFrog,
                         "Treeborn is set up: Des Frog (1900) attacks this turn; the Dupe lock waits for Main Phase 2");
             }
             else if (alone)
             {
                 if (desAllowed)
-                    (tribute, summon, why) = (toads[0], HeroFrogCardId.DesFrog, "alone, Treeborn set up: Substitoad becomes Des Frog (1900)");
+                    (tribute, summon, why) = (toads[0], CardId.DesFrog, "alone, Treeborn set up: Substitoad becomes Des Frog (1900)");
             }
             else if (_dupesOnField >= 2 && desAllowed && others.Count > 0 && Rule(HeroFrogRules.LockThenClock))
                 // The lock is up: spare fodder (Treeborn comes back every Standby Phase) becomes a clock behind it (seen
                 // 2026-11-11: two Dupes, Treeborn and Substitoad sat for eight turns doing nothing).
-                (tribute, summon, why) = (others[0], HeroFrogCardId.DesFrog, "the Dupe lock is up: spare fodder becomes Des Frog (1900), a clock behind the lock");
+                (tribute, summon, why) = (others[0], CardId.DesFrog, "the Dupe lock is up: spare fodder becomes Des Frog (1900), a clock behind the lock");
             else if (dupesInDeck > 0 && others.Count > 0)
-                (tribute, summon, why) = (others[0], HeroFrogCardId.DupeFrog, "Dupe Frog for the lock");
+                (tribute, summon, why) = (others[0], CardId.DupeFrog, "Dupe Frog for the lock");
             else if (dupesInDeck > 0 && toads.Count > 0 && (_dupesOnField >= 1 || worthShielding))
-                (tribute, summon, why) = (toads[0], HeroFrogCardId.DupeFrog, _dupesOnField >= 1
+                (tribute, summon, why) = (toads[0], CardId.DupeFrog, _dupesOnField >= 1
                     ? "the last step: Substitoad itself for the second Dupe Frog (they can't attack at all)"
                     : "Substitoad itself for Dupe Frog: they can only attack the Dupe, not our big monster");
             if (summon == 0 || !Rule(HeroFrogRules.SubstitoadEngine))
@@ -1152,7 +1171,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             PlanTributes(context.Header.CurrentTurn, new[] { tribute }, "Substitoad");
             _deckSummonPick = summon;
             Note(context, $"activate Substitoad: tribute {CardNames.Get(tribute.ID)}, special summon {CardNames.Get(summon)}: {why}");
-            MarkActivated(context, HeroFrogCardId.Substitoad);
+            MarkActivated(context, CardId.Substitoad);
             return toad.MainActivateFromIndex();
         }
 
@@ -1162,10 +1181,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         /// </summary>
         private async Task<IdleCmdResponse?> TrySummonSubstitoadAsync(DecisionContext<IdleCmdData> context, IdleCmdData state)
         {
-            if (NormalSummonUsed(context.Header) || !TryGetSummonable(state, HeroFrogCardId.Substitoad, out var toad) ||
-                TryGetSummonable(state, HeroFrogCardId.ElementalHeroStratos, out _))
+            if (NormalSummonUsed(context.Header) || !TryGetSummonable(state, CardId.Substitoad, out var toad) ||
+                TryGetSummonable(state, CardId.ElementalHEROStratos, out _))
                 return null;
-            if (await InDeckAsync(HeroFrogCardId.DupeFrog) + await InDeckAsync(HeroFrogCardId.SwapFrog) == 0 || !Rule(HeroFrogRules.SubstitoadSummon))
+            if (await InDeckAsync(CardId.DupeFrog) + await InDeckAsync(CardId.SwapFrog) == 0 || !Rule(HeroFrogRules.SubstitoadSummon))
                 return null;
             Note(context, "normal summon Substitoad: the engine (Frogs can't be destroyed by battle; tribute into Frogs from the deck, ending on two Dupe Frogs)");
             return toad.NormalSummon();
@@ -1177,10 +1196,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         private async Task<IdleCmdResponse?> TryJunkSynchronAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> botMonsters,
             List<DynamicCard> enemyMonsters)
         {
-            if (NormalSummonUsed(context.Header) || !TryGetSummonable(state, HeroFrogCardId.JunkSynchron, out var junk))
+            if (NormalSummonUsed(context.Header) || !TryGetSummonable(state, CardId.JunkSynchron, out var junk))
                 return null;
             var revive = (await GetBotGraveyardCardsAsync()).Where(card => card.ID > 0 && card.HasType(CardType.Monster) && card.Level == 2 && !card.HasType(CardType.Tuner))
-                .OrderBy(card => IsId(card, HeroFrogCardId.DupeFrog) ? 1 : 0).FirstOrDefault();
+                .OrderBy(card => IsId(card, CardId.DupeFrog) ? 1 : 0).FirstOrDefault();
             if (revive.ID <= 0)
                 return null;
             var ourAtk = botMonsters.Where(card => card.IsFaceup()).Select(EffectiveAttack).ToList();
@@ -1217,7 +1236,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         private async Task<IdleCmdResponse?> TryRaigekiMainAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> hand,
             List<DynamicCard> enemyMonsters, List<DynamicCard> enemySpells)
         {
-            if (!TryGetActivable(state, HeroFrogCardId.RaigekiBreak, out var raigeki) || hand.Count == 0)
+            if (!TryGetActivable(state, CardId.RaigekiBreak, out var raigeki) || hand.Count == 0)
                 return null;
             var discard = hand.OrderBy(DiscardRank).First();
             if (DiscardRank(discard) > 3)
@@ -1232,7 +1251,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             _discardPick = discard.ID;
             PlanTarget(context.Header.CurrentTurn, target, theirs: true);
             Note(context, $"activate Raigeki Break: discard {CardNames.Get(discard.ID)}, destroy {DescribePick(target)}");
-            MarkActivated(context, HeroFrogCardId.RaigekiBreak);
+            MarkActivated(context, CardId.RaigekiBreak);
             return raigeki.MainActivateFromIndex();
         }
 
@@ -1240,17 +1259,17 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
 
         // What we lose least by discarding / sending from the hand (Treeborn works from the graveyard).
         private int DiscardRank(DynamicCard card) =>
-            IsId(card, HeroFrogCardId.TreebornFrog) ? 0
-            : IsId(card, HeroFrogCardId.SwapFrog) ? 1
-            : IsId(card, HeroFrogCardId.DesFrog) ? 2
-            : IsId(card, HeroFrogCardId.DupeFrog) ? 2
-            : IsId(card, HeroFrogCardId.EvilHeroInfernalProdigy) ? 3
-            : IsId(card, HeroFrogCardId.Substitoad) ? 7 // the deck's best card
-            : IsId(card, HeroFrogCardId.ElementalHeroOcean) ? 1 // a weak card, in for being a WATER HERO: Swap Frog's discard (user, 2026-11-10)
-            : IsId(card, HeroFrogCardId.JunkSynchron) ? 4
+            IsId(card, CardId.TreebornFrog) ? 0
+            : IsId(card, CardId.SwapFrog) ? 1
+            : IsId(card, CardId.DesFrog) ? 2
+            : IsId(card, CardId.DupeFrog) ? 2
+            : IsId(card, CardId.EvilHEROInfernalProdigy) ? 3
+            : IsId(card, CardId.Substitoad) ? 7 // the deck's best card
+            : IsId(card, CardId.ElementalHEROOcean) ? 1 // a weak card, in for being a WATER HERO: Swap Frog's discard (user, 2026-11-10)
+            : IsId(card, CardId.JunkSynchron) ? 4
             : IsId(card, Monarchs) ? 6
-            : IsId(card, HeroFrogCardId.BattleFader) ? 6
-            : IsId(card, HeroFrogCardId.GorzTheEmissaryOfDarkness) ? 8
+            : IsId(card, CardId.BattleFader) ? 6
+            : IsId(card, CardId.GorzTheEmissaryOfDarkness) ? 8
             : card.HasType(CardType.Spell) || card.HasType(CardType.Trap) ? 5
             : 5;
 
@@ -1263,42 +1282,42 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         {
             // Treeborn is always the cheapest tribute: it comes back (user rule, 2026-11-09). Only a banish is worth
             // protecting it from.
-            if (IsId(card, HeroFrogCardId.TreebornFrog))
+            if (IsId(card, CardId.TreebornFrog))
                 return -1;
             if (IsStolen(card))
                 return 0;
-            if (IsId(card, HeroFrogCardId.ElementalHeroAbsoluteZero))
+            if (IsId(card, CardId.ElementalHEROAbsoluteZero))
                 return _enemyMonsters >= 2 ? TributeAbsoluteZeroLive : TributeAbsoluteZero;
             if (IsDupe(card))
                 return _dupesOnField >= 2 ? TributeDupeLock : TributeDupe; // the lock piece: above the small Frogs (its search is a bonus)
             if (card.HasType(CardType.Token)) return TributeToken;
-            if (IsId(card, HeroFrogCardId.EvilHeroInfernalProdigy)) return TributeInfernalProdigy;
-            if (IsId(card, HeroFrogCardId.BattleFader)) return TributeBattleFader;
-            if (IsId(card, HeroFrogCardId.SwapFrog)) return TributeSwapFrog;
-            if (IsId(card, HeroFrogCardId.JunkSynchron)) return TributeJunkSynchron;
-            if (IsId(card, HeroFrogCardId.Substitoad)) return TributeSubstitoad;
-            if (IsId(card, HeroFrogCardId.ElementalHeroOcean) || IsId(card, HeroFrogCardId.ElementalHeroStratos)) return TributeOceanStratos;
-            if (IsId(card, HeroFrogCardId.DesFrog)) return TributeDesFrog; // expendable once it has attacked (or when it can't attack)
+            if (IsId(card, CardId.EvilHEROInfernalProdigy)) return TributeInfernalProdigy;
+            if (IsId(card, CardId.BattleFader)) return TributeBattleFader;
+            if (IsId(card, CardId.SwapFrog)) return TributeSwapFrog;
+            if (IsId(card, CardId.JunkSynchron)) return TributeJunkSynchron;
+            if (IsId(card, CardId.Substitoad)) return TributeSubstitoad;
+            if (IsId(card, CardId.ElementalHEROOcean) || IsId(card, CardId.ElementalHEROStratos)) return TributeOceanStratos;
+            if (IsId(card, CardId.DesFrog)) return TributeDesFrog; // expendable once it has attacked (or when it can't attack)
             return base.TributeCost(card);
         }
 
         // Substitoad is the engine, never expendable (the shared default counts any small Level 4 or lower monster as expendable:
         // seen 2026-11-11, it was sent into a face-down Ryko as the "cheap" attacker and the flip killed it).
         protected override bool IsExpendable(DynamicCard card) =>
-            !IsId(card, HeroFrogCardId.Substitoad) &&
+            !IsId(card, CardId.Substitoad) &&
             (base.IsExpendable(card) ||
-             IsId(card, HeroFrogCardId.TreebornFrog) || IsDupe(card) || IsId(card, HeroFrogCardId.EvilHeroInfernalProdigy) ||
-             IsId(card, HeroFrogCardId.BattleFader) || IsId(card, HeroFrogCardId.SwapFrog));
+             IsId(card, CardId.TreebornFrog) || IsDupe(card) || IsId(card, CardId.EvilHEROInfernalProdigy) ||
+             IsId(card, CardId.BattleFader) || IsId(card, CardId.SwapFrog));
 
         // Stratos first (it searches Ocean or pops a Spell/Trap), then Substitoad (the engine), Ocean, Junk Synchron.
         protected override int SafeSummonPriority(DynamicCard card, List<DynamicCard> hand) =>
-            IsId(card, HeroFrogCardId.ElementalHeroStratos) ? 0
-            : IsId(card, HeroFrogCardId.Substitoad) ? 1
-            : IsId(card, HeroFrogCardId.ElementalHeroOcean) ? 9 // a very low priority summon (user, 2026-11-10)
+            IsId(card, CardId.ElementalHEROStratos) ? 0
+            : IsId(card, CardId.Substitoad) ? 1
+            : IsId(card, CardId.ElementalHEROOcean) ? 9 // a very low priority summon (user, 2026-11-10)
             : 3;
 
         protected override string? BattleDeathPayoff(DynamicCard card) =>
-            IsId(card, HeroFrogCardId.ElementalHeroAbsoluteZero) ? "Absolute Zero leaving the field destroys all their monsters"
+            IsId(card, CardId.ElementalHEROAbsoluteZero) ? "Absolute Zero leaving the field destroys all their monsters"
             : base.BattleDeathPayoff(card);
 
         /// <summary>
@@ -1308,15 +1327,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         /// only effects that trigger when the card is destroyed.)
         /// </summary>
         protected override double BattleDeathGain(DynamicCard card, DynamicCard killer, List<DynamicCard> theirMonsters) =>
-            IsId(card, HeroFrogCardId.ElementalHeroAbsoluteZero) ? theirMonsters.Sum(TargetThreat)
+            IsId(card, CardId.ElementalHEROAbsoluteZero) ? theirMonsters.Sum(TargetThreat)
             : base.BattleDeathGain(card, killer, theirMonsters);
 
         protected override void OnFieldRefreshed(FieldInfo field)
         {
             var grave = field.OwnSide.Grave ?? Array.Empty<int>();
-            _treebornInGrave = grave.Contains(HeroFrogCardId.TreebornFrog);
+            _treebornInGrave = grave.Contains(CardId.TreebornFrog);
             var zones = field.OwnSide.MonsterZones ?? Array.Empty<CardArray>();
-            _treebornOnField = zones.Any(zone => zone.Cards?.Contains(HeroFrogCardId.TreebornFrog) == true);
+            _treebornOnField = zones.Any(zone => zone.Cards?.Contains(CardId.TreebornFrog) == true);
             _ourSpellTraps = (field.OwnSide.SpellZones ?? Array.Empty<CardArray>()).Count(zone => zone.Cards?.Any(id => id != 0) == true);
             _enemyMonsters = (field.EnemySide.MonsterZones ?? Array.Empty<CardArray>()).Count(zone => zone.Cards?.Length > 0);
         }
@@ -1330,9 +1349,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             foreach (var location in new[] { CardLocation.Hand, CardLocation.Grave, CardLocation.Removed, CardLocation.MonsterZone })
             {
                 var cards = await CurrentField.GetCardsInLocation(location);
-                seen += cards.Count(card => card.Owner == 0 && (id == HeroFrogCardId.DupeFrog ? IsDupe(card) : IsId(card, id) && !(id == HeroFrogCardId.DesFrog && IsDupe(card))));
+                seen += cards.Count(card => card.Owner == 0 && (id == CardId.DupeFrog ? IsDupe(card) : IsId(card, id) && !(id == CardId.DesFrog && IsDupe(card))));
             }
-            if (id == HeroFrogCardId.DupeFrog)
+            if (id == CardId.DupeFrog)
                 _dupesOnField = (await GetBotMonsterCardsAsync()).Count(card => card.IsFaceup() && IsDupe(card));
             return Math.Max(0, total - seen);
         }
@@ -1369,11 +1388,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             var phase = (DuelPhase)context.Header.CurrentPhase;
             int Index(int id) => Array.FindIndex(options, card => IsId(card, id) && card.CurrentCoordinates.Controller == 0);
 
-            if (Index(HeroFrogCardId.SpiritualWaterArtAoi) is int aoi and >= 0 && Rule(HeroFrogRules.AoiStrip))
+            if (Index(CardId.SpiritualWaterArtAoi) is int aoi and >= 0 && Rule(HeroFrogRules.AoiStrip))
                 return aoi;
 
             bool swapHasTarget = false;
-            if (Index(HeroFrogCardId.SwapFrog) >= 0)
+            if (Index(CardId.SwapFrog) >= 0)
             {
                 foreach (int target in CardRules.SwapFrogDeckTargets)
                     if (await InDeckAsync(target) > 0)
@@ -1384,7 +1403,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             }
             // Our own optional triggers: Swap Frog's dump, Dupe Frog's search, Treeborn's revive, Stratos, Junk Synchron.
             int trigger = Array.FindIndex(options, card => IsId(card, OwnTriggers) && card.CurrentCoordinates.Controller == 0 &&
-                                                           (!IsId(card, HeroFrogCardId.SwapFrog) || swapHasTarget) &&
+                                                           (!IsId(card, CardId.SwapFrog) || swapHasTarget) &&
                                                            card.CurrentCoordinates.Location != (byte)CardLocation.Hand &&
                                                            card.CurrentCoordinates.Location != (byte)CardLocation.SpellZone);
             if (trigger >= 0)
@@ -1398,7 +1417,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 return doomed;
 
             // Ocean (our Standby Phase): Absolute Zero back to the Extra Deck to wipe their monsters, or a HERO back.
-            if (Index(HeroFrogCardId.ElementalHeroOcean) is int ocean and >= 0 && botTurn && await OceanTargetAsync(context) is DynamicCard oceanTarget)
+            if (Index(CardId.ElementalHEROOcean) is int ocean and >= 0 && botTurn && await OceanTargetAsync(context) is DynamicCard oceanTarget)
             {
                 PlanTarget(context.Header.CurrentTurn, oceanTarget, theirs: false);
                 return ocean;
@@ -1406,17 +1425,17 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
 
             // Our Standby Phase: Enemy Controller tributing Treeborn (it comes back this same Standby Phase), take their
             // monster, and tribute it for a Monarch in Main Phase 1.
-            if (botTurn && phase == DuelPhase.Standby && Index(HeroFrogCardId.EnemyController) is int ec and >= 0 &&
+            if (botTurn && phase == DuelPhase.Standby && Index(CardId.EnemyController) is int ec and >= 0 &&
                 await StandbyStealAsync(context) is int steal)
                 return steal;
 
             if (!botTurn)
             {
                 // Battle Fader on a direct attack (Gorz instead when it can come: no cards of ours and not lethal).
-                if (Index(HeroFrogCardId.BattleFader) is int fader and >= 0 && await FaderNowAsync(context))
+                if (Index(CardId.BattleFader) is int fader and >= 0 && await FaderNowAsync(context))
                     return fader;
                 bool clearForTreeborn = phase == DuelPhase.End && await TreatBackrowAsDoomedAsync(false, phase);
-                if (clearForTreeborn && Index(HeroFrogCardId.CompulsoryEvacuationDevice) is int compulsory and >= 0)
+                if (clearForTreeborn && Index(CardId.CompulsoryEvacuationDevice) is int compulsory and >= 0)
                 {
                     var best = (await GetEnemyMonsterCardsAsync()).Where(card => card.ID > 0 || !card.IsFaceup())
                         .OrderByDescending(card => card.HasType(CardType.Fusion) || card.HasType(CardType.Synchro) || card.HasType(CardType.Token) ? 1 : 0)
@@ -1429,7 +1448,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                     }
                 }
                 // Raigeki Break: on an attack that hurts, or at their End Phase so our zone is clear for Treeborn.
-                if (Index(HeroFrogCardId.RaigekiBreak) is int raigeki and >= 0 && await RaigekiNowAsync(context) is string raigekiWhy &&
+                if (Index(CardId.RaigekiBreak) is int raigeki and >= 0 && await RaigekiNowAsync(context) is string raigekiWhy &&
                     Rule(HeroFrogRules.RaigekiBreak))
                 {
                     Note(context, $"activate Raigeki Break: {raigekiWhy}");
@@ -1457,14 +1476,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         {
             if (phase != (ourTurn ? DuelPhase.Draw : DuelPhase.End))
                 return false;
-            bool treebornInGrave = (await GetBotGraveyardCardsAsync()).Any(card => IsId(card, HeroFrogCardId.TreebornFrog));
+            bool treebornInGrave = (await GetBotGraveyardCardsAsync()).Any(card => IsId(card, CardId.TreebornFrog));
             return HeroFrogRules.TreebornDoomsBackrow(ourTurn, phase, treebornInGrave,
                 !ourTurn && treebornInGrave && (await GetBotHandCardsAsync()).Any(card => IsId(card, Monarchs)));
         }
 
         internal override Func<bool, DuelPhase, DuelSim.Engine.SideSummary, bool> SearchBackrowDoomRule =>
             (ourTurn, phase, own) => HeroFrogRules.TreebornDoomsBackrow(ourTurn, phase,
-                own.GraveCodes.Any(code => Search.SearchHost.Is(code, HeroFrogCardId.TreebornFrog)),
+                own.GraveCodes.Any(code => Search.SearchHost.Is(code, CardId.TreebornFrog)),
                 !ourTurn && own.HandCodes.Any(code => Monarchs.Any(monarch => Search.SearchHost.Is(code, monarch))));
 
         /// <summary>Ocean's Standby return: Absolute Zero (wipes their 2+ monsters or a big threat), else Stratos / a HERO from the graveyard.</summary>
@@ -1472,7 +1491,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         {
             var ours = await GetBotMonsterCardsAsync();
             var enemy = await GetEnemyMonsterCardsAsync();
-            var zero = ours.FirstOrDefault(card => card.IsFaceup() && IsId(card, HeroFrogCardId.ElementalHeroAbsoluteZero));
+            var zero = ours.FirstOrDefault(card => card.IsFaceup() && IsId(card, CardId.ElementalHEROAbsoluteZero));
             bool bigThreat = false;
             foreach (var card in enemy.Where(card => card.IsFaceup() && card.ID > 0))
                 if (await IsBigThreatAsync(card)) { bigThreat = true; break; }
@@ -1482,7 +1501,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 return zero;
             }
             var hero = (await GetBotGraveyardCardsAsync()).Where(card => IsHero(card) && !card.HasType(CardType.Fusion))
-                .OrderBy(card => IsId(card, HeroFrogCardId.ElementalHeroStratos) ? 0 : 1).FirstOrDefault();
+                .OrderBy(card => IsId(card, CardId.ElementalHEROStratos) ? 0 : 1).FirstOrDefault();
             if (hero.ID > 0 && Rule(HeroFrogRules.OceanReturnsHero))
             {
                 Note(context, $"Ocean returns {CardNames.Get(hero.ID)} from the graveyard to the hand");
@@ -1503,11 +1522,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             {
                 var card = options[i];
                 if (card.CurrentCoordinates.Controller != 0 || card.CurrentCoordinates.Location != (byte)CardLocation.SpellZone ||
-                    !(IsId(card, HeroFrogCardId.CompulsoryEvacuationDevice) || IsId(card, HeroFrogCardId.RaigekiBreak)) ||
+                    !(IsId(card, CardId.CompulsoryEvacuationDevice) || IsId(card, CardId.RaigekiBreak)) ||
                     !await OurSetCardTargetedAsync(card))
                     continue;
                 var theirs = (await GetEnemyMonsterCardsAsync()).Where(m => m.ID > 0 || !m.IsFaceup()).ToList();
-                if (IsId(card, HeroFrogCardId.CompulsoryEvacuationDevice))
+                if (IsId(card, CardId.CompulsoryEvacuationDevice))
                 {
                     var best = theirs.Where(m => !(m.IsFaceup() && HasFlipEffect(m)))
                         .OrderByDescending(m => m.HasType(CardType.Fusion) || m.HasType(CardType.Synchro) || m.HasType(CardType.Token) ? 1 : 0)
@@ -1540,9 +1559,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         private async Task<int?> StandbyStealAsync(DecisionContext<SelectChainData> context)
         {
             var options = context.StateData.SelectableCards ?? Array.Empty<DynamicCard>();
-            int index = Array.FindIndex(options, card => IsId(card, HeroFrogCardId.EnemyController) && card.CurrentCoordinates.Controller == 0);
+            int index = Array.FindIndex(options, card => IsId(card, CardId.EnemyController) && card.CurrentCoordinates.Controller == 0);
             var hand = await GetBotHandCardsAsync();
-            var treeborn = (await GetBotMonsterCardsAsync()).FirstOrDefault(card => card.IsFaceup() && IsId(card, HeroFrogCardId.TreebornFrog));
+            var treeborn = (await GetBotMonsterCardsAsync()).FirstOrDefault(card => card.IsFaceup() && IsId(card, CardId.TreebornFrog));
             var steal = BestStealTarget(await GetEnemyMonsterCardsAsync(), brainControl: false);
             // Enemy Controller (user, 2026-11-10): its position-change effect is rubbish; the good one is the second: tribute
             // our Treeborn Frog to take one of their monsters, in the Standby Phase so Treeborn comes straight back. Free:
@@ -1560,7 +1579,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 // our attackers reach their life points.
                 var rest = enemy.Where(card => !(card.ID == steal.ID && card.CurrentCoordinates.Sequence == steal.CurrentCoordinates.Sequence)).ToList();
                 int ourAttack = (await GetBotMonsterCardsAsync())
-                    .Where(card => card.IsFaceup() && card.IsAttack() && !IsId(card, HeroFrogCardId.TreebornFrog))
+                    .Where(card => card.IsFaceup() && card.IsAttack() && !IsId(card, CardId.TreebornFrog))
                     .Sum(EffectiveAttack);
                 int oppLp = await CurrentField.GetBotLifePoints(isOwnSide: false);
                 if (rest.Count == 0 && ourAttack + steal.Attack >= oppLp)
@@ -1588,7 +1607,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             int lp = await CurrentField.GetBotLifePoints();
             var hand = await GetBotHandCardsAsync();
             bool lethal = damage >= lp;
-            bool gorzReady = hand.Any(card => IsId(card, HeroFrogCardId.GorzTheEmissaryOfDarkness)) &&
+            bool gorzReady = hand.Any(card => IsId(card, CardId.GorzTheEmissaryOfDarkness)) &&
                              (await GetBotMonsterCardsAsync()).Count == 0 && !(await CurrentField.GetCardsInSpellZone()).Any();
             if (!lethal && gorzReady)
             {
@@ -1668,7 +1687,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         {
             double cost = base.PlanSuggestions(steps, index, offered, theirs);
             static int Desc(string key) => key.StartsWith("option:") && int.TryParse(key.AsSpan(7), out int d) ? d : -1;
-            static bool Stratos(int d) => d >= 0 && (d >> 4 == HeroFrogCardId.ElementalHeroStratos || d >> 4 == HeroFrogCardId.ElementalHeroStratos + 20);
+            static bool Stratos(int d) => d >= 0 && (d >> 4 == CardId.ElementalHEROStratos || d >> 4 == CardId.ElementalHEROStratos + 20);
             int chosen = Desc(steps[index].Key);
             var stratos = offered.Select(Desc).Where(Stratos).OrderBy(d => d & 0xF).ToList();
             return Stratos(chosen) && stratos.Count >= 2 && chosen == stratos[0] ? cost + SuggestionCost : cost;
@@ -1687,7 +1706,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 return nth >= 1 && nth <= own.Count ? own[nth - 1] : -1;
             }
             // Enemy Controller: the mode we planned (1: change a position, 2: take control).
-            if (_enemyControllerMode > 0 && Find(HeroFrogCardId.EnemyController, _enemyControllerMode) is int ec and >= 0)
+            if (_enemyControllerMode > 0 && Find(CardId.EnemyController, _enemyControllerMode) is int ec and >= 0)
             {
                 _enemyControllerMode = 0;
                 return ec;
@@ -1695,13 +1714,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             // Stratos: almost always search a HERO (user, 2026-11-10). Destroying their Spell/Traps only when that clears the
             // way for lethal this turn: no monster of theirs, our attackers deal their life points, and set cards could stop it.
             // Only one choice offered (the other has no target): that one.
-            int stratosChoices = options.Count(o => o >> 4 == HeroFrogCardId.ElementalHeroStratos || o >> 4 == HeroFrogCardId.ElementalHeroStratos + 20);
+            int stratosChoices = options.Count(o => o >> 4 == CardId.ElementalHEROStratos || o >> 4 == CardId.ElementalHEROStratos + 20);
             if (stratosChoices == 1)
-                return Find(HeroFrogCardId.ElementalHeroStratos, 1);
+                return Find(CardId.ElementalHEROStratos, 1);
             if (stratosChoices >= 2)
             {
-                int destroy = Find(HeroFrogCardId.ElementalHeroStratos, 1);
-                int search = Find(HeroFrogCardId.ElementalHeroStratos, 2);
+                int destroy = Find(CardId.ElementalHEROStratos, 1);
+                int search = Find(CardId.ElementalHEROStratos, 2);
                 await PrepareContextAsync(context, ct);
                 bool theirSets = (await GetEnemySpellCardsAsync()).Any(card => !card.IsFaceup());
                 bool open = (await GetEnemyMonsterCardsAsync()).Count == 0;
@@ -1709,7 +1728,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 bool lethal = open && theirSets && ourAttack >= await CurrentField.GetBotLifePoints(isOwnSide: false);
                 // Or nothing left to search: the deck's two HERO targets (Ocean, Infernal Prodigy) are both out of the deck
                 // already (user, 2026-11-10: "you may as well destroy").
-                bool nothingToSearch = await InDeckAsync(HeroFrogCardId.ElementalHeroOcean) == 0 && await InDeckAsync(HeroFrogCardId.EvilHeroInfernalProdigy) == 0;
+                bool nothingToSearch = await InDeckAsync(CardId.ElementalHEROOcean) == 0 && await InDeckAsync(CardId.EvilHEROInfernalProdigy) == 0;
                 bool destroyIt = lethal || nothingToSearch;
                 Note(context, lethal ? "Stratos: destroy their Spell/Traps: it clears the way for lethal"
                     : nothingToSearch ? "Stratos: destroy their Spell/Traps: no HERO left in the deck to search" : "Stratos: search a HERO");
@@ -1722,12 +1741,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         {
             var positions = context.StateData.Positions ?? Array.Empty<byte>();
             int id = context.StateData.CardID;
-            bool smallFrog = id is HeroFrogCardId.DupeFrog or HeroFrogCardId.TreebornFrog or HeroFrogCardId.Substitoad or HeroFrogCardId.SwapFrog
-                or HeroFrogCardId.SwapFrog + 20 or HeroFrogCardId.BattleFader;
+            bool smallFrog = id is CardId.DupeFrog or CardId.TreebornFrog or CardId.Substitoad or CardId.SwapFrog
+                or CardId.SwapFrog + 20 or CardId.BattleFader;
             // Swap Frog in attack position when it can hit something this turn (user, 2026-11-11: "may as well have summoned
             // that swap frog in attack and attacked with it"): our Main Phase 1 with a battle to come, and their field empty,
             // a face-down (assumed beaten by 1000), or a face-up monster it beats.
-            if (id is HeroFrogCardId.SwapFrog or HeroFrogCardId.SwapFrog + 20 && positions.Contains((byte)CardPosition.FaceUpAttack) &&
+            if (id is CardId.SwapFrog or CardId.SwapFrog + 20 && positions.Contains((byte)CardPosition.FaceUpAttack) &&
                 context.Header.CurrentPlayer == 0 && (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 && context.Header.CurrentTurn > 1)
             {
                 await PrepareContextAsync(context, ct);
@@ -1748,11 +1767,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         {
             await PrepareContextAsync(context, ct);
             var card = context.StateData.EffectCard;
-            if (card.IsCode(HeroFrogCardId.GorzTheEmissaryOfDarkness))
+            if (card.IsCode(CardId.GorzTheEmissaryOfDarkness))
                 return await GorzNowAsync(context, await GetEnemyMonsterCardsAsync()) != null;
             // Ocean (our Standby Phase, asked as a yes/no): only with a target worth it, never Ocean itself (user, 2026-11-10:
             // "ocean shouldn't return itself to the hand"; seen: it bounced itself, the only HERO on offer).
-            if (IsId(card, HeroFrogCardId.ElementalHeroOcean))
+            if (IsId(card, CardId.ElementalHEROOcean))
             {
                 if (await OceanTargetAsync(context) is DynamicCard target)
                 {
@@ -1764,7 +1783,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             }
             // Swap Frog never sends itself away (user, 2026-11-12, round-robin 40: with no frogs left in the deck it was the only
             // legal card, twice, and the tribute fodder it was summoned as went to the graveyard). No frog in the deck: don't.
-            if (IsId(card, HeroFrogCardId.SwapFrog))
+            if (IsId(card, CardId.SwapFrog))
             {
                 int frogsInDeck = 0;
                 foreach (int id in SwapFrogSends)
@@ -1808,10 +1827,28 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 return picks.Select(x => (byte)x.Index).ToList();
             }
 
+            // A Monarch goes back to the hand (Swap Frog's cost) so it's summoned again next turn and removes what they bring out then
+            // (user, 2026-11-24). The pick is held (the search pays to break it):
+            //  - always without Treeborn set up (in the GY or on the field): next turn's tribute isn't ready ("if treeborn isn't set
+            //    up, this should never be done at all");
+            //  - otherwise before Main Phase 2 (it attacks first), unless their backrow or a monster is set: then bouncing before the
+            //    attack can beat attacking into a trap or a flip, and the search weighs that ("with backrow up - or set monsters").
+            if (hint == DHint.RTOHAND && allOurs && In(CardLocation.MonsterZone) && indexed.Any(x => Monarchs.Any(m => IsId(x.Card, m))) &&
+                Rule(HeroFrogRules.MonarchReturnInMain2))
+            {
+                bool treebornSetUp = _treebornInGrave || _treebornOnField;
+                bool beforeBattle = (DuelPhase)context.Header.CurrentPhase != DuelPhase.Main2 && context.Header.CurrentTurn > 1 &&
+                                    (await GetEnemySpellCardsAsync()).All(card => card.IsFaceup()) &&
+                                    (await GetEnemyMonsterCardsAsync()).All(card => card.IsFaceup());
+                if (!treebornSetUp || beforeBattle)
+                    foreach (int monarch in indexed.Where(x => Monarchs.Any(m => IsId(x.Card, m))).Select(x => x.Card.ID).Distinct())
+                        HoldPick(monarch, HeroFrogRules.MonarchReturnInMain2);
+            }
+
             // Fusion materials with no plan (the search's line fired Miracle Fusion): graveyard before field, Treeborn Frog
             // last (the engine), cheapest first.
             if (hint == DHint.FMATERIAL && allOurs)
-                return Pick(indexed.OrderBy(x => IsId(x.Card, HeroFrogCardId.TreebornFrog) ? 1 : 0)
+                return Pick(indexed.OrderBy(x => IsId(x.Card, CardId.TreebornFrog) ? 1 : 0)
                     .ThenBy(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Grave ? 0 : 1)
                     .ThenBy(x => EffectiveAttack(x.Card)), "fusion material (unplanned)");
 
@@ -1819,8 +1856,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             // "swap frog should always send treeborn frog".)
 
             // Miracle Fusion: which fusion -> Absolute Zero.
-            if (hint == DHint.SPSUMMON && In(CardLocation.Extra) && indexed.Any(x => IsId(x.Card, HeroFrogCardId.ElementalHeroAbsoluteZero)))
-                return Pick(indexed.OrderBy(x => IsId(x.Card, HeroFrogCardId.ElementalHeroAbsoluteZero) ? 0 : 1), "fusion summon");
+            if (hint == DHint.SPSUMMON && In(CardLocation.Extra) && indexed.Any(x => IsId(x.Card, CardId.ElementalHEROAbsoluteZero)))
+                return Pick(indexed.OrderBy(x => IsId(x.Card, CardId.ElementalHEROAbsoluteZero) ? 0 : 1), "fusion summon");
 
             // A monster from the deck (Substitoad, One for One): the one we planned. Unplanned (the search activated it), Treeborn first while
             // it isn't set up: Swap Frog (its trigger sends Treeborn to the graveyard), else Dupe Frog > Treeborn > Swap Frog (user, 2026-11-18:
@@ -1830,26 +1867,26 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             {
                 int planned = _deckSummonPick;
                 _deckSummonPick = 0;
-                bool setUpTreeborn = planned == 0 && !_treebornInGrave && !_treebornOnField && await InDeckAsync(HeroFrogCardId.TreebornFrog) > 0 &&
-                                     indexed.Any(x => IsId(x.Card, HeroFrogCardId.SwapFrog));
+                bool setUpTreeborn = planned == 0 && !_treebornInGrave && !_treebornOnField && await InDeckAsync(CardId.TreebornFrog) > 0 &&
+                                     indexed.Any(x => IsId(x.Card, CardId.SwapFrog));
                 var order = setUpTreeborn
-                    ? new[] { HeroFrogCardId.SwapFrog, HeroFrogCardId.DupeFrog, HeroFrogCardId.TreebornFrog, HeroFrogCardId.Substitoad, HeroFrogCardId.BattleFader }
-                    : new[] { planned, HeroFrogCardId.DupeFrog, HeroFrogCardId.TreebornFrog, HeroFrogCardId.SwapFrog, HeroFrogCardId.Substitoad, HeroFrogCardId.BattleFader };
+                    ? new[] { CardId.SwapFrog, CardId.DupeFrog, CardId.TreebornFrog, CardId.Substitoad, CardId.BattleFader }
+                    : new[] { planned, CardId.DupeFrog, CardId.TreebornFrog, CardId.SwapFrog, CardId.Substitoad, CardId.BattleFader };
                 if (setUpTreeborn && Rule(HeroFrogRules.TreebornSetupFirst))
-                    foreach (int other in indexed.Where(x => !IsId(x.Card, HeroFrogCardId.SwapFrog)).Select(x => x.Card.ID).Distinct())
+                    foreach (int other in indexed.Where(x => !IsId(x.Card, CardId.SwapFrog)).Select(x => x.Card.ID).Distinct())
                         HoldPick(other, HeroFrogRules.TreebornSetupFirst);
                 return Pick(indexed.OrderBy(x => Array.FindIndex(order, id => id > 0 && IsId(x.Card, id)) is int i and >= 0 ? i : order.Length), "special summon from the deck");
             }
 
             // Swap Frog's trigger: Treeborn into the graveyard, always (user, 2026-11-18). Any other card it could send is held, so a search line
             // that sends one (Dupe Frog, for its search) pays for it.
-            if (hint == DHint.TOGRAVE && allOurs && indexed.Any(x => IsId(x.Card, HeroFrogCardId.TreebornFrog) && x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck) &&
+            if (hint == DHint.TOGRAVE && allOurs && indexed.Any(x => IsId(x.Card, CardId.TreebornFrog) && x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck) &&
                 Rule(HeroFrogRules.SwapSendsTreeborn))
-                foreach (int other in indexed.Where(x => !IsId(x.Card, HeroFrogCardId.TreebornFrog)).Select(x => x.Card.ID).Distinct())
+                foreach (int other in indexed.Where(x => !IsId(x.Card, CardId.TreebornFrog)).Select(x => x.Card.ID).Distinct())
                     HoldPick(other, HeroFrogRules.SwapSendsTreeborn);
             // No Treeborn left: the rest of the order (Substitoad, Swap Frog, Dupe Frog last), each card below the best one on offer held lightly.
             else if (hint == DHint.TOGRAVE && allOurs && indexed.Any(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck) &&
-                     indexed.Any(x => IsId(x.Card, HeroFrogCardId.SwapFrog) || IsId(x.Card, HeroFrogCardId.DupeFrog) || IsId(x.Card, HeroFrogCardId.Substitoad)) &&
+                     indexed.Any(x => IsId(x.Card, CardId.SwapFrog) || IsId(x.Card, CardId.DupeFrog) || IsId(x.Card, CardId.Substitoad)) &&
                      Rule(HeroFrogRules.SwapSendOrder))
             {
                 var fromDeck = indexed.Where(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck).ToList();
@@ -1859,7 +1896,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
             }
             // Swap Frog's trigger: Treeborn into the graveyard.
             if (hint == DHint.TOGRAVE && allOurs && In(CardLocation.Deck | CardLocation.MonsterZone) && indexed.Any(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck))
-                return Pick(indexed.Where(x => !(x.Card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && IsId(x.Card, HeroFrogCardId.SwapFrog)))
+                return Pick(indexed.Where(x => !(x.Card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && IsId(x.Card, CardId.SwapFrog)))
                     .OrderBy(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck ? 0 : 1)
                     .ThenBy(x => StaplePriorityIndex(SwapFrogSends, x.Card)), "Swap Frog sends to the graveyard (never itself)");
 
@@ -1870,16 +1907,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
                 var ours = await GetBotMonsterCardsAsync();
                 bool Has(int id) => hand.Any(card => IsId(card, id)) || ours.Any(card => IsId(card, id));
                 int[] order;
-                if (indexed.Any(x => IsId(x.Card, HeroFrogCardId.SwapFrog) || IsId(x.Card, HeroFrogCardId.Substitoad) || IsId(x.Card, HeroFrogCardId.TreebornFrog)))
+                if (indexed.Any(x => IsId(x.Card, CardId.SwapFrog) || IsId(x.Card, CardId.Substitoad) || IsId(x.Card, CardId.TreebornFrog)))
                     // Dupe Frog's search: the engine (Substitoad) if we have none, Swap Frog (a body + a Treeborn dump), Treeborn.
-                    order = Has(HeroFrogCardId.Substitoad)
-                        ? new[] { HeroFrogCardId.SwapFrog, HeroFrogCardId.TreebornFrog, HeroFrogCardId.Substitoad, HeroFrogCardId.DesFrog }
-                        : new[] { HeroFrogCardId.Substitoad, HeroFrogCardId.SwapFrog, HeroFrogCardId.TreebornFrog, HeroFrogCardId.DesFrog };
+                    order = Has(CardId.Substitoad)
+                        ? new[] { CardId.SwapFrog, CardId.TreebornFrog, CardId.Substitoad, CardId.DesFrog }
+                        : new[] { CardId.Substitoad, CardId.SwapFrog, CardId.TreebornFrog, CardId.DesFrog };
                 else
                     // HERO / Warrior searches: Stratos (it searches again or pops a Spell/Trap), then Ocean, Junk Synchron, Prodigy.
-                    order = Has(HeroFrogCardId.ElementalHeroStratos)
-                        ? new[] { HeroFrogCardId.ElementalHeroOcean, HeroFrogCardId.JunkSynchron, HeroFrogCardId.EvilHeroInfernalProdigy, HeroFrogCardId.ElementalHeroStratos }
-                        : new[] { HeroFrogCardId.ElementalHeroStratos, HeroFrogCardId.ElementalHeroOcean, HeroFrogCardId.JunkSynchron, HeroFrogCardId.EvilHeroInfernalProdigy };
+                    order = Has(CardId.ElementalHEROStratos)
+                        ? new[] { CardId.ElementalHEROOcean, CardId.JunkSynchron, CardId.EvilHEROInfernalProdigy, CardId.ElementalHEROStratos }
+                        : new[] { CardId.ElementalHEROStratos, CardId.ElementalHEROOcean, CardId.JunkSynchron, CardId.EvilHEROInfernalProdigy };
                 return Pick(indexed.OrderBy(x => Array.FindIndex(order, id => IsId(x.Card, id)) is int i and >= 0 ? i : order.Length), "search");
             }
 

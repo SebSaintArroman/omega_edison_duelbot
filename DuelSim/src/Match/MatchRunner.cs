@@ -25,7 +25,11 @@ public sealed record MatchOptions(
     int? SearchMsA = null,
     int? SearchMsB = null,
     /// <summary>Deck B answers this much later (ms), like a human thinking: deck A's dead time (--think-b).</summary>
-    int ThinkMsB = 0);
+    int ThinkMsB = 0,
+    /// <summary>Deck A's / deck B's own tuning values (--tuning-a / --tuning-b: a file in the bot-tuning.txt format listing only the numbers
+    /// that side changes); null = the tuning file's for that side.</summary>
+    BotTest.Game.AI.Brains.TuningProfile? TuningA = null,
+    BotTest.Game.AI.Brains.TuningProfile? TuningB = null);
 
 public sealed record DuelOutcome(int Number, string FirstDeck, string SecondDeck, DuelResult Result, string Folder, int Warnings);
 
@@ -202,6 +206,8 @@ public sealed class MatchRunner
         var botTasks = bots.Select((bot, seat) => Task.Run(async () =>
         {
             SimContext.Seat.Value = seat;
+            // This side's own tuning values: its brain, search twins and search threads all run from this flow.
+            BotTest.Game.AI.Brains.TuningProfile.Use((seat == 0) == aFirst ? options.TuningA : options.TuningB);
             try
             {
                 if (!await bot.Connect(ct: duelCts.Token))

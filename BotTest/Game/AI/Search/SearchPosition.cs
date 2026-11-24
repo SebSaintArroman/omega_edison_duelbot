@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using static BotTest.Game.AI.CardId;
 
 namespace BotTest.Game.AI.Search
 {
@@ -59,8 +60,6 @@ namespace BotTest.Game.AI.Search
         public const uint PosFaceUpAttack = 0x1, PosFaceDownAttack = 0x2, PosFaceUpDefense = 0x4, PosFaceDownDefense = 0x8,
             PosFaceUp = 0x5, PosFaceDown = 0xa;
 
-        /// <summary>Gladiator Beast Darius: its revived monster goes back to the deck when it leaves (see ToLua).</summary>
-        public const int DariusId = 25924653;
 
         internal static readonly string BlindRevealSetup = $$"""
 
@@ -222,9 +221,9 @@ namespace BotTest.Game.AI.Search
                     lua.Append($"if {c} then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS) e:SetRange(LOCATION_MZONE) ")
                         .Append($"e:SetCode(EVENT_PHASE+PHASE_END) e:SetCountLimit(1) e:SetCondition(function(e) return Duel.IsTurnPlayer(e:GetHandler():GetControler()) end) ")
                         .Append($"e:SetOperation(function(e) Duel.Destroy(e:GetHandler(),REASON_EFFECT) end) e:SetReset(RESET_EVENT+RESETS_STANDARD) {c}:RegisterEffect(e) end\n");
-                if (Cards[i].Location == LocMZone && Cards[i].Targets.Count > 0 && (Cards[i].Code == DariusId || SearchHost.CanonicalId(Cards[i].Code) == DariusId))
-                    lua.Append($"if {c} and c{DariusId} and c{DariusId}.regop then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS) ")
-                        .Append($"e:SetCode(EVENT_LEAVE_FIELD_P) e:SetOperation(c{DariusId}.regop) e:SetReset(RESET_EVENT+RESETS_STANDARD) {c}:RegisterEffect(e) end\n");
+                if (Cards[i].Location == LocMZone && Cards[i].Targets.Count > 0 && (Cards[i].Code == GladiatorBeastDarius || SearchHost.CanonicalId(Cards[i].Code) == GladiatorBeastDarius))
+                    lua.Append($"if {c} and c{GladiatorBeastDarius} and c{GladiatorBeastDarius}.regop then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS) ")
+                        .Append($"e:SetCode(EVENT_LEAVE_FIELD_P) e:SetOperation(c{GladiatorBeastDarius}.regop) e:SetReset(RESET_EVENT+RESETS_STANDARD) {c}:RegisterEffect(e) end\n");
             }
             // Sirocco the Dawn's restriction this turn: our other monsters, those summoned later too, can't attack (its own field effect, by the
             // target's field id, reset at the End Phase; the skipped turns' End Phases count).

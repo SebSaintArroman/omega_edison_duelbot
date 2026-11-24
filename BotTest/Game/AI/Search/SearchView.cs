@@ -1,5 +1,6 @@
 ﻿using BotTest.Game.AI.Brains;
 using System.Runtime.InteropServices;
+using static BotTest.Game.AI.CardId;
 
 namespace BotTest.Game.AI.Search
 {
@@ -38,14 +39,14 @@ namespace BotTest.Game.AI.Search
     internal sealed class SearchView
     {
         /// <summary>A face-down monster when the deck read can't name one: a plain 1200/1500 body (Beaver Warrior).</summary>
-        public const int UnknownSetMonster = 32452818;
+        public const int UnknownSetMonster = BeaverWarrior;
 
         /// <summary>
         /// A card that can never do anything (Bubble Blaster: an Equip Spell only for Elemental HERO Bubbleman, which our decks never play; was Jar
         /// Robber until 2026-11-18, which answers Pot of Greed and every deck plays Pot of Greed now), standing in for their
         /// unknown set spells/traps and their draws: the search doesn't guess at what they are.
         /// </summary>
-        public const int InertCard = 53586134;
+        public const int InertCard = BubbleBlaster;
 
         /// <summary>Cards we know are in their hand (seen going back to it, revealed by Trap Dustshoot...): the search plays them.</summary>
         public List<int> EnemyKnownHand { get; } = new();
@@ -447,7 +448,7 @@ namespace BotTest.Game.AI.Search
             Pile(EnemyBanished, 1, SearchPosition.LocRemoved, SearchPosition.PosFaceUp, thisTurn: EnemyArrivedThisTurn);
             // No guessing at their unknown cards (user, 2026-11-11): only the cards we know are in their hand; their draws
             // are inert (Bubble Blaster, an equip only for Bubbleman), so their turn plays out with what we know. What
-            // their unknown cards might do is the evaluator's threat term instead (MctsEvaluator.Threat).
+            // their unknown cards might do is the evaluator's threat term instead (BoardEvaluator.Threat).
             var knownHand = EnemyKnownHand.Where(Known).ToList();
             Pile(knownHand, 1, SearchPosition.LocHand, SearchPosition.PosFaceDown);
             // Their other hand cards as inert stand-ins (still no guessing at what they are): effects that need cards in their hand see

@@ -2,6 +2,7 @@ using DuelSim.Data;
 using DuelSim.Native;
 using BotTest.Game.AI.Brains;
 using OmegaBotWrapper.Enum;
+using static BotTest.Game.AI.CardId;
 
 namespace DuelSim.Engine;
 
@@ -29,9 +30,6 @@ internal sealed partial class DuelHost
         _rng = new Random(seed);
         _duel = duel;
         _ownsDuel = false;
-        // The search only needs who and what a card is (its key) and its stats: skip targets, equips, counters, reasons.
-        _queryFlags = Ocg.QueryCode | Ocg.QueryPosition | Ocg.QueryAlias | Ocg.QueryType | Ocg.QueryLevel | Ocg.QueryAttack |
-                      Ocg.QueryDefense | Ocg.QueryOwner | Ocg.QueryIsPublic | Ocg.QueryStatus;
         Decks = new[] { new DeckList("searcher", Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>()),
                         new DeckList("opponent", Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>()) };
     }
@@ -275,6 +273,9 @@ internal sealed partial class DuelHost
         _searchExtraCodes[player] ??= QueryCodes(player, Ocg.LocExtra)
             .Where(code => code.HasValue).Select(code => code.GetValueOrDefault()).ToArray();
 
+    internal int[] BanishedCodes(int player) => QueryCodes(player, Ocg.LocRemoved)
+        .Where(code => code.HasValue).Select(code => code.GetValueOrDefault()).ToArray();
+
     internal StrategicCard[] StrategicCards(int player, bool spellZone) =>
         (spellZone
             ? QueryList(player, Ocg.LocSZone, Ocg.QueryCode | Ocg.QueryPosition | Ocg.QueryAttack | Ocg.QueryDefense | Ocg.QueryStatus)
@@ -377,7 +378,7 @@ internal sealed partial class DuelHost
         return new SideSummary(_lp[player], monsters, setSpells, faceUpSpells, hand.Count, deck.Count, deck,
             grave.Count, Count(Ocg.LocExtra), spells, hand, grave, foreign)
         {
-            ExtraCodes = player == 0 && grave.Contains(72714392) ? ExtraDeckCodes(player) : Array.Empty<int>(),
+            ExtraCodes = player == 0 && grave.Contains(BlackwingVayuTheEmblemOfHonor) ? ExtraDeckCodes(player) : Array.Empty<int>(),
         };
     }
 }

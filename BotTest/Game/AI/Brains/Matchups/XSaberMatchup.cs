@@ -1,5 +1,6 @@
 ﻿using OmegaBotWrapper.Logging;
 using OmegaBotWrapper.Struct;
+using static BotTest.Game.AI.CardId;
 
 namespace BotTest.Game.AI.Brains.Matchups
 {
@@ -11,8 +12,6 @@ namespace BotTest.Game.AI.Brains.Matchups
     /// </summary>
     public sealed class XSaberMatchup : Matchup
     {
-        public const int XXSaberEmmersblade = 42737833;
-        public const int XXSaberHyunlei = 2203790;
 
         /// <summary>Most exposed set cards while Hyunlei threatens (it takes up to 3 at once).</summary>
         public static int MaxSetsUnderHyunlei { get; set; } = 1;
@@ -26,7 +25,7 @@ namespace BotTest.Game.AI.Brains.Matchups
 
         public override string? HoldSet(IReadOnlyList<DynamicCard> theirFaceUpMonsters, int ourExposedSets)
         {
-            if (ourExposedSets < MaxSetsUnderHyunlei || !theirFaceUpMonsters.Any(card => Is(card.ID, XXSaberEmmersblade)))
+            if (ourExposedSets < MaxSetsUnderHyunlei || !theirFaceUpMonsters.Any(card => Is(card.ID, CardId.XXSaberEmmersblade)))
                 return null;
             return $"XX-Saber Emmersblade is on their field: XX-Saber Hyunlei (destroys up to 3 spells/traps) is likely next turn, " +
                    $"and we already have {ourExposedSets} set";

@@ -5,6 +5,7 @@ using OmegaBotWrapper.Heuristics;
 using OmegaBotWrapper.Logging;
 using OmegaBotWrapper.States;
 using OmegaBotWrapper.Struct;
+using static BotTest.Game.AI.CardId;
 
 namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
 {
@@ -28,50 +29,50 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         // ------------------------------------------------------------------ tunable numbers (bot-tuning-<deck>.txt, user 2026-11-16)
 
         [Tunable("Dark Armed Dragon in hand that is live (or can be made live), in rough card points (discard / Allure choices).")]
-        public static double DadLiveHandValue = 7;
+        public static readonly Tuned<double> DadLiveHandValue = new(7);
         [Tunable("Dark Armed Dragon in hand that can't be made live, in rough card points.")]
-        public static double DadDeadHandValue = 0.5;
+        public static readonly Tuned<double> DadDeadHandValue = new(0.5);
         [Tunable("The search's setup value for a face-up Card Trooper of ours (a mill engine for Vayu and Dark Armed Dragon), card units.")]
-        public static double TrooperSetupValue = 1.0;
+        public static readonly Tuned<double> TrooperSetupValue = new(1.0);
         [Tunable("The search's setup value for Dark Armed Dragon in hand with exactly 3 DARKs in the graveyard (card units).")]
-        public static double DadLiveSetupValue = 1.2;
+        public static readonly Tuned<double> DadLiveSetupValue = new(1.2);
         [Tunable("The search's setup value for Dark Armed Dragon in hand with 2 DARKs in the graveyard (card units).")]
-        public static double DadNearSetupValue = 0.4;
+        public static readonly Tuned<double> DadNearSetupValue = new(0.4);
         [Tunable("Burial / Miracle Dig pick rank (high first): a Vayu while we have more partners than Vayus.")]
-        public static double BurialRankVayuShort = 10;
+        public static readonly Tuned<double> BurialRankVayuShort = new(10);
         [Tunable("Burial / Miracle Dig pick rank: a Vayu with as many partners as Vayus.")]
-        public static double BurialRankVayuEven = 7.5;
+        public static readonly Tuned<double> BurialRankVayuEven = new(7.5);
         [Tunable("Burial / Miracle Dig pick rank: a Vayu beyond the partners.")]
-        public static double BurialRankVayuSpare = 4;
+        public static readonly Tuned<double> BurialRankVayuSpare = new(4);
         [Tunable("Burial / Miracle Dig pick rank: a partner while we have more Vayus than partners.")]
-        public static double BurialRankPartnerShort = 10;
+        public static readonly Tuned<double> BurialRankPartnerShort = new(10);
         [Tunable("Burial / Miracle Dig pick rank: a partner with as many Vayus as partners.")]
-        public static double BurialRankPartnerEven = 1.5;
+        public static readonly Tuned<double> BurialRankPartnerEven = new(1.5);
         [Tunable("Burial / Miracle Dig pick rank: a partner beyond the Vayus (below Necro Gardna).")]
-        public static double BurialRankPartnerSpare = 0.3;
+        public static readonly Tuned<double> BurialRankPartnerSpare = new(0.3);
         [Tunable("Burial / Miracle Dig pick rank: Plaguespreader with none in the graveyard.")]
-        public static double BurialRankPlague = 6;
+        public static readonly Tuned<double> BurialRankPlague = new(6);
         [Tunable("Burial / Miracle Dig pick rank: a second Plaguespreader.")]
-        public static double BurialRankPlagueSecond = 1;
+        public static readonly Tuned<double> BurialRankPlagueSecond = new(1);
         [Tunable("Burial / Miracle Dig pick rank: Necro Gardna with none in the graveyard.")]
-        public static double BurialRankNecro = 2;
+        public static readonly Tuned<double> BurialRankNecro = new(2);
         [Tunable("Burial / Miracle Dig pick rank: a second Necro Gardna.")]
-        public static double BurialRankNecroSecond = 0.5;
+        public static readonly Tuned<double> BurialRankNecroSecond = new(0.5);
         [Tunable("The turn planner's cost for a recursion play (Return from the Different Dimension / Burial) that brings Vayus back.")]
-        public static double RecursionPlayCost = 2.5;
+        public static readonly Tuned<double> RecursionPlayCost = new(2.5);
         [Tunable("The turn planner's cost for using the Normal Summon in a play.")]
-        public static double NormalSummonPlayCost = 0.5;
+        public static readonly Tuned<double> NormalSummonPlayCost = new(0.5);
 
         [Tunable("The search's value for Kalut in hand (its +1400 in battle), card units.")]
-        public static double KalutHandValue = 1.0; // user, 2026-11-19: raise it (was 0.6)
+        public static readonly Tuned<double> KalutHandValue = new(1.0); // user, 2026-11-19: raise it (was 0.6)
         [Tunable("The search's value for a face-up Black Whirlwind (a search per Blackwing summon), card units.")]
-        public static double WhirlwindFieldValue = 0.8;
+        public static readonly Tuned<double> WhirlwindFieldValue = new(0.8);
         [Tunable("Tribute order: a Vayu of ours.")]
-        public static double TributeVayu = 1;
+        public static readonly Tuned<double> TributeVayu = new(1);
         [Tunable("Tribute order: Blizzard, Kalut or Gale (small Blackwings, done once used).")]
-        public static double TributeSmallBlackwing = 1.5;
+        public static readonly Tuned<double> TributeSmallBlackwing = new(1.5);
         [Tunable("Icarus Attack chained to save our Blackwing as its free tribute: from this chance that it's doomed anyway.")]
-        public static double IcarusDoomedChance = 0.5;
+        public static readonly Tuned<double> IcarusDoomedChance = new(0.5);
 
         // Non-Tuner Blackwings that can pair with Vayu in the graveyard (Vayu L1 + partner = Synchro level):
         // Sirocco L5 -> Armed Wing, Elphin L6 / Armed Wing L6 -> Armor Master, Armor Master L7 -> Silverwind.
@@ -90,7 +91,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             if ((DuelPhase)context.Header.CurrentPhase != DuelPhase.Main1 || NormalSummonUsed(context.Header) ||
                 botMonsters.Count > 0 || enemyMonsters.Count == 0)
                 return false;
-            var sirocco = (state.SummonableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault(card => card.IsCode(BlackwingCardId.BlackwingSiroccoTheDawn));
+            var sirocco = (state.SummonableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault(card => card.IsCode(CardId.BlackwingSiroccoTheDawn));
             if (sirocco.ID <= 0)
                 return false;
             Note(context, $"normal summon Blackwing - Sirocco the Dawn first: tribute-free only while our field is empty, " +
@@ -103,118 +104,118 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
 
         private static readonly int[] VayuPartners =
         {
-            BlackwingCardId.BlackwingSiroccoTheDawn,
-            BlackwingCardId.BlackwingElphinTheRaven,
-            BlackwingCardId.BlackwingArmedWing,
-            BlackwingCardId.BlackwingArmorMaster
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.BlackwingElphinTheRaven,
+            CardId.BlackwingArmedWing,
+            CardId.BlackwingArmorMaster
         };
 
         // Blackwing Synchros that make sending Sirocco unnecessary when already in (or headed for) the graveyard.
         private static readonly int[] SynchroVayuPartners =
         {
-            BlackwingCardId.BlackwingArmedWing,
-            BlackwingCardId.BlackwingArmorMaster
+            CardId.BlackwingArmedWing,
+            CardId.BlackwingArmorMaster
         };
 
         // Cheapest cards to discard first (Necro Gardna works from the graveyard; keep DAD/Gorz).
         private static readonly int[] PreferDiscard =
         {
-            BlackwingCardId.NecroGardna,
-            BlackwingCardId.PlaguespreaderZombie,
-            BlackwingCardId.BlackwingVayuTheEmblemOfHonor,
-            BlackwingCardId.BlackwingElphinTheRaven,
-            BlackwingCardId.BlackwingSiroccoTheDawn,
-            BlackwingCardId.ChaosSorcerer,
-            BlackwingCardId.GorzTheEmissaryOfDarkness,
-            BlackwingCardId.DarkArmedDragon
+            CardId.NecroGardna,
+            CardId.PlaguespreaderZombie,
+            CardId.BlackwingVayuTheEmblemOfHonor,
+            CardId.BlackwingElphinTheRaven,
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.ChaosSorcerer,
+            CardId.GorzTheEmissaryOfDarkness,
+            CardId.DarkArmedDragon
         };
 
         // Graveyard cards to banish first as costs (DAD / Chaos Sorcerer); graveyard engines last.
         private static readonly int[] PreferBanishFromGrave =
         {
-            BlackwingCardId.ArmageddonKnight,
-            BlackwingCardId.DarkGrepher,
-            BlackwingCardId.CardTrooper,
-            BlackwingCardId.RykoLightswornHunter,
-            BlackwingCardId.LylaLightswornSorceress,
-            BlackwingCardId.GorzTheEmissaryOfDarkness,
-            BlackwingCardId.ChaosSorcerer,
-            BlackwingCardId.DarkArmedDragon,
+            CardId.ArmageddonKnight,
+            CardId.DarkGrepher,
+            CardId.CardTrooper,
+            CardId.RykoLightswornHunterPreErrata,
+            CardId.LylaLightswornSorceressPreErrata,
+            CardId.GorzTheEmissaryOfDarkness,
+            CardId.ChaosSorcerer,
+            CardId.DarkArmedDragon,
             // Graveyard pieces last: partners (spare ones are easy to replace), then Necro Gardna's negate, then
             // Plaguespreader and Vayu, which make plays.
-            BlackwingCardId.BlackwingSiroccoTheDawn,
-            BlackwingCardId.BlackwingElphinTheRaven,
-            BlackwingCardId.NecroGardna,
-            BlackwingCardId.PlaguespreaderZombie,
-            BlackwingCardId.BlackwingVayuTheEmblemOfHonor
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.BlackwingElphinTheRaven,
+            CardId.NecroGardna,
+            CardId.PlaguespreaderZombie,
+            CardId.BlackwingVayuTheEmblemOfHonor
         };
 
         // Banished monsters to bring back with Burial from a Different Dimension: Vayu and its partners, then the rest.
         private static readonly int[] BurialPriority =
         {
-            BlackwingCardId.BlackwingVayuTheEmblemOfHonor,
-            BlackwingCardId.BlackwingArmorMaster,
-            BlackwingCardId.BlackwingArmedWing,
-            BlackwingCardId.BlackwingSiroccoTheDawn,
-            BlackwingCardId.BlackwingElphinTheRaven,
-            BlackwingCardId.PlaguespreaderZombie,
-            BlackwingCardId.NecroGardna,
-            BlackwingCardId.DarkArmedDragon,
-            BlackwingCardId.ChaosSorcerer,
-            BlackwingCardId.GorzTheEmissaryOfDarkness,
-            BlackwingCardId.DarkGrepher,
-            BlackwingCardId.ArmageddonKnight
+            CardId.BlackwingVayuTheEmblemOfHonor,
+            CardId.BlackwingArmorMaster,
+            CardId.BlackwingArmedWing,
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.BlackwingElphinTheRaven,
+            CardId.PlaguespreaderZombie,
+            CardId.NecroGardna,
+            CardId.DarkArmedDragon,
+            CardId.ChaosSorcerer,
+            CardId.GorzTheEmissaryOfDarkness,
+            CardId.DarkGrepher,
+            CardId.ArmageddonKnight
         };
 
         // Normal Summon priority when the summon is safe.
         private static readonly int[] SummonPriority =
         {
-            BlackwingCardId.ArmageddonKnight,
-            BlackwingCardId.DarkGrepher,
-            BlackwingCardId.BlackwingSiroccoTheDawn,
-            BlackwingCardId.LylaLightswornSorceress,
-            BlackwingCardId.CardTrooper,
-            BlackwingCardId.BlackwingVayuTheEmblemOfHonor,
-            BlackwingCardId.PlaguespreaderZombie
+            CardId.ArmageddonKnight,
+            CardId.DarkGrepher,
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.LylaLightswornSorceressPreErrata,
+            CardId.CardTrooper,
+            CardId.BlackwingVayuTheEmblemOfHonor,
+            CardId.PlaguespreaderZombie
         };
 
         // Face-down Set priority when summoning into a stronger monster would just lose it.
         private static readonly int[] SetPriority =
         {
-            BlackwingCardId.RykoLightswornHunter,
-            BlackwingCardId.NecroGardna,
-            BlackwingCardId.DarkGrepher,
-            BlackwingCardId.ArmageddonKnight
+            CardId.RykoLightswornHunterPreErrata,
+            CardId.NecroGardna,
+            CardId.DarkGrepher,
+            CardId.ArmageddonKnight
         };
 
         // Extra Deck Synchro preference.
         private static readonly int[] SynchroPriority =
         {
-            BlackwingCardId.GoyoGuardian,
-            BlackwingCardId.ColossalFighter,
-            BlackwingCardId.StardustDragon,
-            BlackwingCardId.BlackwingSilverwindTheAscendant,
-            BlackwingCardId.DarkEndDragon,
-            BlackwingCardId.BlackwingArmorMaster,
-            BlackwingCardId.BrionacDragonOfTheIceBarrier,
-            BlackwingCardId.BlackwingArmedWing,
+            CardId.GoyoGuardianPreErrata,
+            CardId.ColossalFighter,
+            CardId.StardustDragon,
+            CardId.BlackwingSilverwindTheAscendant,
+            CardId.DarkEndDragon,
+            CardId.BlackwingArmorMaster,
+            CardId.BrionacDragonOfTheIceBarrierPreErrata,
+            CardId.BlackwingArmedWing,
             // Catastor is mostly summoned for its effect (checked before this list, in the shared synchro helpers).
-            BlackwingCardId.AllyOfJusticeCatastor
+            CardId.AllyOfJusticeCatastor
         };
 
         // Cards this brain may choose to chain; any other optional chain prompt is passed without querying the field.
         private static readonly int[] ChainCandidates =
         {
-            BlackwingCardId.GorzTheEmissaryOfDarkness,
-            BlackwingCardId.MirrorForce,
-            BlackwingCardId.DimensionalPrison,
-            BlackwingCardId.NecroGardna,
-            BlackwingCardId.BottomlessTrapHole,
-            BlackwingCardId.TorrentialTribute,
-            BlackwingCardId.TrapDustshoot,
+            CardId.GorzTheEmissaryOfDarkness,
+            CardId.MirrorForce,
+            CardId.DimensionalPrison,
+            CardId.NecroGardna,
+            CardId.BottomlessTrapHole,
+            CardId.TorrentialTribute,
+            CardId.TrapDustshoot,
             // Shared staple rules (Solemn: a big play of theirs or ours; Return from the Different Dimension in their End Phase).
-            BlackwingCardId.SolemnJudgment,
-            BlackwingCardId.ReturnFromTheDifferentDimension
+            CardId.SolemnJudgment,
+            CardId.ReturnFromTheDifferentDimension
         };
 
         private int? _ownTurnParity;
@@ -264,7 +265,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             BoraPurposeHold(context, state, botMonsters, enemyMonsters);
             // Sirocco's effect with nothing to gain, whichever play the brain makes first (user, 2026-11-18: "why isn't the rule about not
             // using sirocco's effect pointlessly stopping sirocco's effect being used pointlessly?").
-            if (TryGetActivable(state, BlackwingCardId.BlackwingSiroccoTheDawn, out var pointlessBoost) &&
+            if (TryGetActivable(state, CardId.BlackwingSiroccoTheDawn, out var pointlessBoost) &&
                 pointlessBoost.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && SiroccoBoostPointless(botMonsters, enemyMonsters))
                 Hold(pointlessBoost.ID, MainAction.Activate, BlackwingRules.SiroccoBoostPointless);
 
@@ -285,7 +286,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             // Heavy Storm pushes big plays through (or wins on card count); Lyla; MST for a big play (otherwise it is set as
             // bait for the opponent's removal, step 8). Shared staple rules.
             if (await TryBackrowRemovalAsync(context, state, enemySpells.Count,
-                    botSpells.Count(card => card.ID > 0 && !card.IsCode(BlackwingCardId.HeavyStorm))) is IdleCmdResponse backrow)
+                    botSpells.Count(card => card.ID > 0 && !card.IsCode(CardId.HeavyStorm))) is IdleCmdResponse backrow)
                 return backrow;
             // Shared monster staples (Smashing Ground, Brain Control; round-robin 36, 47).
             if (await TryMonsterStaplesAsync(context) is IdleCmdResponse monsterStaple)
@@ -306,11 +307,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             // 3. Big special summons from hand: resources, so only when they buy something.
             // Dark Armed Dragon live right now while something this turn will move the DARK count off 3 (a synchro
             // whose materials go to the graveyard, Plaguespreader out for one): summon it first, the window closes.
-            if (TryGetSpecialSummon(state, BlackwingCardId.DarkArmedDragon, out _) &&
+            if (TryGetSpecialSummon(state, CardId.DarkArmedDragon, out _) &&
                 (PlagueForDadTurn == context.Header.CurrentTurn ||
                  PlagueTargetTurn == context.Header.CurrentTurn && PlagueTargetSynchro > 0 ||
-                 botMonsters.Any(card => card.IsCode(BlackwingCardId.PlaguespreaderZombie))) &&
-                TrySpecialSummon(context, state, BlackwingCardId.DarkArmedDragon,
+                 botMonsters.Any(card => card.IsCode(CardId.PlaguespreaderZombie))) &&
+                TrySpecialSummon(context, state, CardId.DarkArmedDragon,
                     "Dark Armed Dragon is live now (exactly 3 DARKs in the graveyard); a synchro this turn would move the count off 3, so it goes first", out response))
                 return response;
             // A special summon decided before Sirocco went down first (see TrySiroccoFirst): follow through.
@@ -321,43 +322,45 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
                 if (TrySpecialSummon(context, state, id, $"{why} (after Sirocco)", out response))
                     return response;
             }
-            if (TryGetSpecialSummon(state, BlackwingCardId.DarkArmedDragon, out _) &&
-                await JustifySpendAsync(context, "Dark Armed Dragon", newAtk: 2800, fieldMaterials: null, removal: true, cardId: BlackwingCardId.DarkArmedDragon) is string dadWhy && Rule(BlackwingRules.DadSummon) &&
-                (TrySiroccoFirst(context, state, botMonsters, enemyMonsters, BlackwingCardId.DarkArmedDragon, dadWhy, out response) ||
-                 TrySpecialSummon(context, state, BlackwingCardId.DarkArmedDragon, dadWhy, out response)))
+            if (TryGetSpecialSummon(state, CardId.DarkArmedDragon, out _) &&
+                await JustifySpendAsync(context, "Dark Armed Dragon", newAtk: 2800, fieldMaterials: null, removal: true, cardId: CardId.DarkArmedDragon) is string dadWhy && Rule(BlackwingRules.DadSummon) &&
+                (TrySiroccoFirst(context, state, botMonsters, enemyMonsters, CardId.DarkArmedDragon, dadWhy, out response) ||
+                 TrySpecialSummon(context, state, CardId.DarkArmedDragon, dadWhy, out response)))
                 return response;
-            if (TryGetSpecialSummon(state, BlackwingCardId.ChaosSorcerer, out _) &&
+            if (TryGetSpecialSummon(state, CardId.ChaosSorcerer, out _) &&
                 await ChaosSorcererNeededAsync(context) is string chaosNeed &&
-                await JustifySpendAsync(context, $"Chaos Sorcerer ({chaosNeed})", newAtk: 2300, fieldMaterials: null, removal: true, cardId: BlackwingCardId.ChaosSorcerer) is string chaosWhy && Rule(BlackwingRules.ChaosSummon) &&
-                (TrySiroccoFirst(context, state, botMonsters, enemyMonsters, BlackwingCardId.ChaosSorcerer, chaosWhy, out response) ||
-                 TrySpecialSummon(context, state, BlackwingCardId.ChaosSorcerer, chaosWhy, out response)))
+                await JustifySpendAsync(context, $"Chaos Sorcerer ({chaosNeed})", newAtk: 2300, fieldMaterials: null, removal: true, cardId: CardId.ChaosSorcerer) is string chaosWhy && Rule(BlackwingRules.ChaosSummon) &&
+                (TrySiroccoFirst(context, state, botMonsters, enemyMonsters, CardId.ChaosSorcerer, chaosWhy, out response) ||
+                 TrySpecialSummon(context, state, CardId.ChaosSorcerer, chaosWhy, out response)))
                 return response;
-            if (TryGetSpecialSummon(state, BlackwingCardId.DarkGrepher, out _) &&
+            if (TryGetSpecialSummon(state, CardId.DarkGrepher, out _) &&
                 ShouldSpecialSummonGrepher(state, hand, botMonsters, out string grepherReason) &&
                 await GrepherSummonWinsAsync(context, enemyMonsters, botMonsters) is string grepherLethal &&
-                TrySpecialSummon(context, state, BlackwingCardId.DarkGrepher, $"{grepherLethal}; {grepherReason}", out response, rule: BlackwingRules.GrepherSpecialForLethal))
+                TrySpecialSummon(context, state, CardId.DarkGrepher, $"{grepherLethal}; {grepherReason}", out response, rule: BlackwingRules.GrepherSpecialForLethal))
                 return response;
 
             // 4. Removal effects on the field: only on cards the board can't already handle (or for lethal).
-            if (TryGetActivable(state, BlackwingCardId.DarkArmedDragon, out _) &&
+            if (TryGetActivable(state, CardId.DarkArmedDragon, out _) &&
                 await DadEffectWhyAsync(context) is string dadEffectWhy &&
-                await DestructionNegatedAsync(context, BlackwingCardId.DarkArmedDragon) == null &&
-                TryActivate(context, state, BlackwingCardId.DarkArmedDragon, dadEffectWhy, out response, rule: BlackwingRules.DadEffect))
+                await DestructionNegatedAsync(context, CardId.DarkArmedDragon) == null &&
+                TryActivate(context, state, CardId.DarkArmedDragon, dadEffectWhy, out response, rule: BlackwingRules.DadEffect))
                 return response;
-            if (enemyMonsters.Any(card => card.IsFaceup()) && TryGetActivable(state, BlackwingCardId.ChaosSorcerer, out _) &&
+            if (enemyMonsters.Any(card => card.IsFaceup()) && TryGetActivable(state, CardId.ChaosSorcerer, out _) &&
                 await ChaosEffectWhyAsync(context, enemyMonsters, botMonsters) is string chaosEffectWhy &&
-                TryActivate(context, state, BlackwingCardId.ChaosSorcerer, chaosEffectWhy, out response, rule: BlackwingRules.ChaosEffect))
+                TryActivate(context, state, CardId.ChaosSorcerer, chaosEffectWhy, out response, rule: BlackwingRules.ChaosEffect))
                 return response;
 
             // 5. Graveyard setup (free) and synchro enablers (resources).
             // (Grepher's effect adds 2 DARKs to the graveyard: not past the 3 Dark Armed Dragon needs.)
-            string? grepherDad = TryGetActivable(state, BlackwingCardId.DarkGrepher, out _) ? await DadBlocksAddingDarksAsync(2) : null;
+            string? grepherDad = TryGetActivable(state, CardId.DarkGrepher, out _) ? await DadBlocksAddingDarksAsync(2) : null;
             if (grepherDad != null && !Rule(BlackwingRules.HoldGrepherForDad))
                 grepherDad = null;
             if (grepherDad != null)
                 Note(context, $"hold Dark Grepher's effect: {grepherDad}");
-            if (grepherDad == null && hand.Any(card => card.IsCode(GoodDarkDiscards)) &&
-                TryActivate(context, state, BlackwingCardId.DarkGrepher, "discard a spare DARK to send a DARK from deck", out response, rule: BlackwingRules.GrepherEffect))
+            if (grepherDad == null && TryGetActivable(state, CardId.DarkGrepher, out _) &&
+                hand.Any(card => CardRules.IsGoodDarkDiscard(card.ID)) &&
+                await GoodDiscardDeckSendAllowedAsync(CardId.DarkGrepher, context.Header, context.Bot) &&
+                TryActivate(context, state, CardId.DarkGrepher, "discard a spare DARK to send a DARK from deck", out response, rule: BlackwingRules.GrepherEffect))
                 return response;
             // Card Trooper: mill, or defence when the deck is too thin (shared staple rule).
             if (await TryCardTrooperAsync(context, state) is IdleCmdResponse trooperPlay)
@@ -365,11 +368,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             // Look one step ahead: Vayu's cost banishes 2 monsters, which can switch on Miracle Dig (it needs
             // 5+ of our monsters banished, returns 3), or Burial in hand can return them. Either way Vayu, its partner
             // and Plaguespreader come back for the next play, so this Vayu is nearly free.
-            string? vayuRefund = TryGetActivable(state, BlackwingCardId.BlackwingVayuTheEmblemOfHonor, out _)
+            string? vayuRefund = TryGetActivable(state, CardId.BlackwingVayuTheEmblemOfHonor, out _)
                 ? await RecursionAfterVayuAsync(state, hand)
                 : null;
             // Judge Vayu on the synchro it will actually make (the same partner choice its cost prompt uses).
-            var vayuPlan = TryGetActivable(state, BlackwingCardId.BlackwingVayuTheEmblemOfHonor, out _)
+            var vayuPlan = TryGetActivable(state, CardId.BlackwingVayuTheEmblemOfHonor, out _)
                 ? await PlannedVayuSynchroAsync()
                 : (Level: 0, Atk: 0, Why: "");
             // No Vayu play now, but Miracle Dig / Burial would make one: fire it only if that synchro passes the same spend
@@ -378,12 +381,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             // gives a smaller synchro instead, keeping Armor Master as a partner.)
             bool onlyUnneededAscendant = vayuPlan.Level == 8 && await AscendantNeededAsync(context) is not string &&
                                          (await RecursionVayuPlaysAsync()).After.Any(atk => atk < 2800);
-            foreach (int recursion in new[] { BlackwingCardId.MiracleDig, BlackwingCardId.BurialFromADifferentDimension })
+            foreach (int recursion in new[] { CardId.MiracleDig, CardId.BurialFromADifferentDimension })
             {
                 if ((vayuPlan.Atk <= 0 || onlyUnneededAscendant) && TryGetActivable(state, recursion, out _) &&
                     await MiracleDigVayuPlayAsync() is (int digAtk, int digSpares, string digWhat) &&
                     await JustifySpendAsync(context, $"{CardNames.Get(recursion)} for a Vayu play ({digWhat})", newAtk: digAtk, fieldMaterials: null, removal: false,
-                        cardId: BlackwingCardId.BlackwingVayuTheEmblemOfHonor, extraDeck: true, allowPush: digSpares > 0, spares: digSpares) is string digWhy &&
+                        cardId: CardId.BlackwingVayuTheEmblemOfHonor, extraDeck: true, allowPush: digSpares > 0, spares: digSpares) is string digWhy &&
                     TryActivate(context, state, recursion, digWhy, out response, rule: BlackwingRules.RecursionForVayu))
                     return response;
             }
@@ -397,16 +400,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
                               "which ends the Vayu chain and strands the other Vayus; it's not needed now (not lethal, no big threat only 2800 answers, " +
                               "holding back doesn't lose), so keep Armor Master for when it is");
                 ascendantHeld = true;
-                Hold(BlackwingCardId.BlackwingVayuTheEmblemOfHonor, MainAction.Activate, BlackwingRules.HoldAscendant);
+                Hold(CardId.BlackwingVayuTheEmblemOfHonor, MainAction.Activate, BlackwingRules.HoldAscendant);
             }
 
             // The more Vayus in the graveyard, the less each one needs saving: spare ones loosen what we hold for.
             int spareVayus = vayuPlan.Atk > 0 ? await SpareVayusAsync() : 0;
             if (vayuPlan.Atk > 0 && !ascendantHeld &&
                 await JustifySpendAsync(context, $"Vayu's graveyard synchro ({vayuPlan.Why})", newAtk: vayuPlan.Atk, fieldMaterials: null, removal: false,
-                    cardId: BlackwingCardId.BlackwingVayuTheEmblemOfHonor, extraDeck: true, allowPush: spareVayus > 0, refundedBy: vayuRefund,
+                    cardId: CardId.BlackwingVayuTheEmblemOfHonor, extraDeck: true, allowPush: spareVayus > 0, refundedBy: vayuRefund,
                     spares: spareVayus) is string vayuWhy &&
-                TryActivate(context, state, BlackwingCardId.BlackwingVayuTheEmblemOfHonor, vayuWhy, out response, rule: BlackwingRules.VayuSynchro))
+                TryActivate(context, state, CardId.BlackwingVayuTheEmblemOfHonor, vayuWhy, out response, rule: BlackwingRules.VayuSynchro))
             {
                 _vayuPlannedLevel = vayuPlan.Level;
                 _vayuPlannedTurn = context.Header.CurrentTurn;
@@ -422,22 +425,22 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
                 await BestSynchroForLevelAsync(8, enemyMonsters, botMonsters.Where(card => card.IsFaceup()).Select(EffectiveAttack).ToList())
                     is { } level8 &&
                 await JustifySpendAsync(context, $"Vayu -> Armed Wing, then Plaguespreader + Armed Wing into {CardNames.Get(level8.Synchro.Id)}",
-                    newAtk: level8.Synchro.Attack, fieldMaterials: null, removal: false, cardId: BlackwingCardId.BlackwingVayuTheEmblemOfHonor,
+                    newAtk: level8.Synchro.Attack, fieldMaterials: null, removal: false, cardId: CardId.BlackwingVayuTheEmblemOfHonor,
                     extraDeck: true, allowPush: spareVayus > 0, refundedBy: vayuRefund, effectAnswer: level8.Answer, spares: spareVayus) is string comboWhy &&
                 await JustifySpendAsync(context, $"Plaguespreader (one-shot) for {CardNames.Get(level8.Synchro.Id)} after Vayu's Armed Wing",
-                    newAtk: level8.Synchro.Attack, fieldMaterials: null, removal: false, cardId: BlackwingCardId.PlaguespreaderZombie,
+                    newAtk: level8.Synchro.Attack, fieldMaterials: null, removal: false, cardId: CardId.PlaguespreaderZombie,
                     extraDeck: true, effectAnswer: level8.Answer) is string &&
                 // The whole combo as a routine (Vayu, then Plaguespreader, then the Level 8): checked and scored on the engine, and
                 // followed step by step (no Plaguespreader without its synchro).
                 await ContinueRoutineAsync(context, "Vayu + Plaguespreader Level 8", comboWhy,
-                    new RoutineStep(MainAction.Activate, BlackwingCardId.BlackwingVayuTheEmblemOfHonor, "Vayu's synchro (Blackwing Armed Wing)"),
+                    new RoutineStep(MainAction.Activate, CardId.BlackwingVayuTheEmblemOfHonor, "Vayu's synchro (Blackwing Armed Wing)"),
                     new[]
                     {
-                        new RoutineStep(MainAction.Activate, BlackwingCardId.PlaguespreaderZombie, "Plaguespreader from the graveyard",
+                        new RoutineStep(MainAction.Activate, CardId.PlaguespreaderZombie, "Plaguespreader from the graveyard",
                             OnTake: () => { PlagueTargetSynchro = level8.Synchro.Id; PlagueTargetTurn = context.Header.CurrentTurn; }),
                         new RoutineStep(MainAction.SpSummon, level8.Synchro.Id, $"synchro summon {CardNames.Get(level8.Synchro.Id)}"),
                     }) &&
-                TryActivate(context, state, BlackwingCardId.BlackwingVayuTheEmblemOfHonor, comboWhy, out response, rule: BlackwingRules.VayuPlagueLevel8))
+                TryActivate(context, state, CardId.BlackwingVayuTheEmblemOfHonor, comboWhy, out response, rule: BlackwingRules.VayuPlagueLevel8))
             {
                 _vayuPlannedLevel = 6;
                 _vayuPlannedTurn = context.Header.CurrentTurn;
@@ -447,8 +450,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             }
             // Its follow-up: Armed Wing is out, now Plaguespreader into the planned Level 8.
             if (_vayuPlagueComboTurn == context.Header.CurrentTurn &&
-                botMonsters.Any(card => card.IsFaceup() && card.IsCode(BlackwingCardId.BlackwingArmedWing)) &&
-                TryActivate(context, state, BlackwingCardId.PlaguespreaderZombie,
+                botMonsters.Any(card => card.IsFaceup() && card.IsCode(CardId.BlackwingArmedWing)) &&
+                TryActivate(context, state, CardId.PlaguespreaderZombie,
                     $"Plaguespreader + Blackwing Armed Wing into {CardNames.Get(_vayuPlagueComboSynchro)} (the plan when Vayu was used)", out response))
             {
                 _vayuPlagueComboTurn = -1;
@@ -461,9 +464,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             // traded) a second Vayu makes Armor Master (2500), which can. Not a strong play, so only when it's our only
             // way to answer that monster: a big threat at 2301-2500, no partner for Armor Master yet, another Vayu
             // waiting, and nothing else that beats it (DAD, Chaos Sorcerer, a Plaguespreader Level 8).
-            if (vayuPlan.Level == 6 && !ascendantHeld && TryGetActivable(state, BlackwingCardId.BlackwingVayuTheEmblemOfHonor, out _) &&
+            if (vayuPlan.Level == 6 && !ascendantHeld && TryGetActivable(state, CardId.BlackwingVayuTheEmblemOfHonor, out _) &&
                 await ArmedWingSteppingStoneAsync(state, enemyMonsters, botMonsters) is string stoneWhy &&
-                TryActivate(context, state, BlackwingCardId.BlackwingVayuTheEmblemOfHonor, stoneWhy, out response, rule: BlackwingRules.ArmedWingSteppingStone))
+                TryActivate(context, state, CardId.BlackwingVayuTheEmblemOfHonor, stoneWhy, out response, rule: BlackwingRules.ArmedWingSteppingStone))
             {
                 _vayuPlannedLevel = 6;
                 _vayuPlannedTurn = context.Header.CurrentTurn;
@@ -472,7 +475,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             // Plaguespreader + a non-Tuner on the field into the best synchro (shared rule).
             if (await TryPlaguespreaderSynchroAsync(context, state, enemyMonsters, botMonsters, BlackwingRules.PlagueSynchro) is IdleCmdResponse plagueSynchroPlay)
             {
-                _lastActivatedCard = BlackwingCardId.PlaguespreaderZombie;
+                _lastActivatedCard = CardId.PlaguespreaderZombie;
                 return plagueSynchroPlay;
             }
             // A Tuner of ours already on the field + a non-Tuner: their synchro (shared).
@@ -519,14 +522,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             }
             // Black Rose wipes the whole field (itself included). Count what we'd actually lose: Black Rose plus our
             // cards that aren't its synchro materials, against everything the opponent has.
-            if (TryGetSpecialSummon(state, BlackwingCardId.BlackRoseDragon, out var blackRose))
+            if (TryGetSpecialSummon(state, CardId.BlackRoseDragon, out var blackRose))
             {
                 int materials = GuessSynchroMaterials(blackRose, botMonsters).Count;
                 int ourLoss = 1 + botMonsters.Count - materials + botSpells.Count;
                 int theirLoss = enemyMonsters.Count + enemySpells.Count;
                 if (theirLoss > ourLoss &&
-                    await DestructionNegatedAsync(context, BlackwingCardId.BlackRoseDragon) == null &&
-                    TrySpecialSummon(context, state, BlackwingCardId.BlackRoseDragon,
+                    await DestructionNegatedAsync(context, CardId.BlackRoseDragon) == null &&
+                    TrySpecialSummon(context, state, CardId.BlackRoseDragon,
                         $"board wipe: opponent loses {theirLoss} cards, we lose {ourLoss} (Black Rose itself + {ourLoss - 1} other)", out response, rule: BlackwingRules.BlackRoseWipe))
                     return response;
             }
@@ -580,7 +583,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             seen.AddRange(await CurrentField.GetCardsInLocation(CardLocation.Removed));
 
             var (order, _) = await DarkSendPriorityAsync();
-            foreach (int id in order)
+            foreach (int id in order.Where(CardRules.IsGoodDarkDiscard))
             {
                 int copies = MainDeckCopies.TryGetValue(id, out int c) ? c : 0;
                 if (seen.Count(card => card.IsCode(id)) < copies)
@@ -594,21 +597,21 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
 
         private static readonly Dictionary<int, int> HybridCopies = new()
         {
-            [BlackwingCardId.BlackwingVayuTheEmblemOfHonor] = 3,
-            [BlackwingCardId.BlackwingSiroccoTheDawn] = 3,
-            [BlackwingCardId.DarkGrepher] = 2,
-            [BlackwingCardId.ArmageddonKnight] = 1
+            [CardId.BlackwingVayuTheEmblemOfHonor] = 3,
+            [CardId.BlackwingSiroccoTheDawn] = 3,
+            [CardId.DarkGrepher] = 2,
+            [CardId.ArmageddonKnight] = 1
         };
 
         private static readonly Dictionary<int, int> StandardCopies = new()
         {
-            [BlackwingCardId.BlackwingVayuTheEmblemOfHonor] = 3,
-            [BlackwingCardId.BlackwingSiroccoTheDawn] = 3,
-            [BlackwingCardId.NecroGardna] = 1,
-            [BlackwingCardId.PlaguespreaderZombie] = 1,
-            [BlackwingCardId.DarkGrepher] = 3,
-            [BlackwingCardId.ArmageddonKnight] = 3,
-            [BlackwingCardId.BlackwingElphinTheRaven] = 0
+            [CardId.BlackwingVayuTheEmblemOfHonor] = 3,
+            [CardId.BlackwingSiroccoTheDawn] = 3,
+            [CardId.NecroGardna] = 1,
+            [CardId.PlaguespreaderZombie] = 1,
+            [CardId.DarkGrepher] = 3,
+            [CardId.ArmageddonKnight] = 3,
+            [CardId.BlackwingElphinTheRaven] = 0
         };
 
         /// <summary>
@@ -642,11 +645,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             var enemyMonsters = await GetEnemyMonsterCardsAsync();
             int botLp = await CurrentField.GetBotLifePoints();
 
-            bool vayuInGrave = grave.Any(card => card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor));
+            bool vayuInGrave = grave.Any(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
             bool partnerInGrave = grave.Any(card => card.IsCode(VayuPartners));
             bool synchroPartnerExpected = grave.Any(card => card.IsCode(SynchroVayuPartners)) || field.Any(card => card.IsCode(SynchroVayuPartners));
-            bool necroInGrave = grave.Any(card => card.IsCode(BlackwingCardId.NecroGardna));
-            bool plagueInGrave = grave.Any(card => card.IsCode(BlackwingCardId.PlaguespreaderZombie));
+            bool necroInGrave = grave.Any(card => card.IsCode(CardId.NecroGardna));
+            bool plagueInGrave = grave.Any(card => card.IsCode(CardId.PlaguespreaderZombie));
             var plagueTarget = enemyMonsters.FirstOrDefault(card => card.IsFaceup() && card.Attack is >= 2300 and <= 2800);
 
             // The metric is expected LIVE pairs (Vayu + partner both in the graveyard). Only graveyard cards are sure;
@@ -655,20 +658,20 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             //  - on the field (a synchro partner, or Vayu/Sirocco themselves): run over in battle, Mirror Force,
             //    Torrential (banishing answers like Dimensional Prison keep it out, so they don't count).
             var hand = await GetBotHandCardsAsync();
-            bool discardOutlet = hand.Concat(field).Any(card => card.IsCode(BlackwingCardId.DarkGrepher));
+            bool discardOutlet = hand.Concat(field).Any(card => card.IsCode(CardId.DarkGrepher));
             double handChance = discardOutlet ? HandToGraveWithOutletChance : HandToGraveChance;
-            int vayusSure = grave.Count(card => card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor));
+            int vayusSure = grave.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
             int partnersSure = grave.Count(card => card.IsCode(VayuPartners));
             var vayuOdds = new List<double>();
             var partnerOdds = new List<double>();
             foreach (var card in hand)
             {
-                if (card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)) vayuOdds.Add(handChance);
+                if (card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) vayuOdds.Add(handChance);
                 else if (card.IsCode(VayuPartners)) partnerOdds.Add(handChance);
             }
             foreach (var card in field.Where(card => card.ID > 0))
             {
-                if (card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)) vayuOdds.Add(ReachesGraveChance(card, enemyMonsters));
+                if (card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) vayuOdds.Add(ReachesGraveChance(card, enemyMonsters));
                 else if (card.IsCode(VayuPartners) || card.IsCode(SynchroVayuPartners)) partnerOdds.Add(ReachesGraveChance(card, enemyMonsters));
             }
             double vayusHad = vayusSure + vayuOdds.Sum();
@@ -702,43 +705,43 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             // No defensive exception at low LP: the best defence is a good offence.
             var order = new List<int>();
             if (plagueTarget.ID > 0 && !plagueInGrave)
-                order.Add(BlackwingCardId.PlaguespreaderZombie);
+                order.Add(CardId.PlaguespreaderZombie);
             if (vayusSure == 0 && vayuOdds.Count == 0)
             {
                 // No Vayu anywhere (graveyard, hand, field): get one, it's the scarce half (partners are easy to get:
                 // Armageddon Knight, Grepher, a synchro dying).
-                order.Add(BlackwingCardId.BlackwingVayuTheEmblemOfHonor);
-                order.Add(BlackwingCardId.BlackwingSiroccoTheDawn);
+                order.Add(CardId.BlackwingVayuTheEmblemOfHonor);
+                order.Add(CardId.BlackwingSiroccoTheDawn);
             }
             else if (partnerGain > vayuGain)
             {
-                order.Add(BlackwingCardId.BlackwingSiroccoTheDawn); // a Vayu without a (likely) partner: complete the pair
-                order.Add(BlackwingCardId.BlackwingVayuTheEmblemOfHonor);
+                order.Add(CardId.BlackwingSiroccoTheDawn); // a Vayu without a (likely) partner: complete the pair
+                order.Add(CardId.BlackwingVayuTheEmblemOfHonor);
             }
             else if (vayuGain >= UnpairedSendGain)
             {
-                order.Add(BlackwingCardId.BlackwingVayuTheEmblemOfHonor);
+                order.Add(CardId.BlackwingVayuTheEmblemOfHonor);
             }
             else
             {
                 // Neither half is likely to make a play: Plaguespreader (a play on its own) first, then Vayu (the hard
                 // half of the next pair). Necro Gardna is a last resort, never ahead of these.
                 if (!plagueInGrave)
-                    order.Add(BlackwingCardId.PlaguespreaderZombie);
-                order.Add(BlackwingCardId.BlackwingVayuTheEmblemOfHonor);
+                    order.Add(CardId.PlaguespreaderZombie);
+                order.Add(CardId.BlackwingVayuTheEmblemOfHonor);
             }
-            order.Add(BlackwingCardId.BlackwingVayuTheEmblemOfHonor);
+            order.Add(CardId.BlackwingVayuTheEmblemOfHonor);
             // Necro Gardna is a last resort: after everything that makes or completes a play.
             if (!plagueInGrave)
-                order.Add(BlackwingCardId.PlaguespreaderZombie);
+                order.Add(CardId.PlaguespreaderZombie);
             order.AddRange(new[]
             {
-                BlackwingCardId.PlaguespreaderZombie,
-                BlackwingCardId.BlackwingSiroccoTheDawn,
-                BlackwingCardId.BlackwingElphinTheRaven,
-                BlackwingCardId.DarkGrepher,
-                BlackwingCardId.ArmageddonKnight,
-                BlackwingCardId.NecroGardna
+                CardId.PlaguespreaderZombie,
+                CardId.BlackwingSiroccoTheDawn,
+                CardId.BlackwingElphinTheRaven,
+                CardId.DarkGrepher,
+                CardId.ArmageddonKnight,
+                CardId.NecroGardna
             });
 
             string why = $"expected Vayus {vayusHad:0.##} ({vayusSure} in GY), partners {partnersHad:0.##} ({partnersSure} in GY) " +
@@ -757,10 +760,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         // (Card Trooper is deliberately not here: its effect needs it face-up, so it's summoned instead.)
         private static readonly int[] ValueSets =
         {
-            BlackwingCardId.RykoLightswornHunter,
-            BlackwingCardId.BlackwingVayuTheEmblemOfHonor,
-            BlackwingCardId.PlaguespreaderZombie,
-            BlackwingCardId.NecroGardna
+            CardId.RykoLightswornHunterPreErrata,
+            CardId.BlackwingVayuTheEmblemOfHonor,
+            CardId.PlaguespreaderZombie,
+            CardId.NecroGardna
         };
 
         protected override int[] ValueSetIds => ValueSets;
@@ -770,29 +773,29 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         private int _wingedOnField, _icarusSet;
 
         private bool IcarusNotUsable(DynamicCard card) =>
-            card.IsCode(BlackwingCardId.IcarusAttack) && (_wingedOnField == 0 || _icarusSet > 0) && Rule(BlackwingRules.IcarusSetNeedsWing);
+            card.IsCode(CardId.IcarusAttack) && (_wingedOnField == 0 || _icarusSet > 0) && Rule(BlackwingRules.IcarusSetNeedsWing);
 
         // Burial is set as bait too, but only with 2+ banished monsters we care about to return when it is chained.
         private int _banishedForBait;
         protected override bool IsSetCandidate(DynamicCard card) =>
-            base.IsSetCandidate(card) && !IcarusNotUsable(card) || card.IsCode(BlackwingCardId.BurialFromADifferentDimension) && _banishedForBait >= BurialBaitAt;
+            base.IsSetCandidate(card) && !IcarusNotUsable(card) || card.IsCode(CardId.BurialFromADifferentDimension) && _banishedForBait >= BurialBaitAt;
 
         // Safe Normal Summon order. Dark Grepher's effect needs a DARK to discard; without one it's just a 1700 body, and
         // Lyla (same ATK) at least mills, so Grepher with nothing to pitch goes after the others.
         protected override int SafeSummonPriority(DynamicCard card, List<DynamicCard> hand) =>
-            card.IsCode(BlackwingCardId.DarkGrepher) && !hand.Any(c => c.IsCode(GoodDarkDiscards))
+            card.IsCode(CardId.DarkGrepher) && !hand.Any(c => CardRules.IsGoodDarkDiscard(c.ID))
                 ? SummonPriority.Length
                 : PriorityIndex(SummonPriority, card);
 
         // Armageddon Knight's summon effect does nothing with no useful DARK left to send.
         protected override async Task<bool> OnSummonEffectUselessAsync(DynamicCard card, List<DynamicCard> hand) =>
-            card.IsCode(BlackwingCardId.ArmageddonKnight) && await BestArmageddonTargetAsync(hand) == 0;
+            card.IsCode(CardId.ArmageddonKnight) && await BestArmageddonTargetAsync(hand) == 0;
 
         /// <summary>This deck's Normal Summons, between the shared staple ones: Armageddon Knight (graveyard setup, any LP), then Dark Grepher with a spare DARK to discard.</summary>
         protected override async Task<IdleCmdResponse?> DeckSummonAsync(DecisionContext<IdleCmdData> context, IdleCmdData state,
             List<DynamicCard> developers, List<DynamicCard> hand, bool danger, int botLp)
         {
-            if (developers.TryGetByID(BlackwingCardId.ArmageddonKnight, out var armageddon))
+            if (developers.TryGetByID(CardId.ArmageddonKnight, out var armageddon))
             {
                 var target = await BestArmageddonTargetAsync(hand);
                 // Graveyard setup is development, so do it at any life points.
@@ -802,8 +805,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
                     return armageddon.NormalSummon();
                 }
             }
-            if (!danger && hand.Count(card => card.IsCode(GoodDarkDiscards)) > 0 &&
-                developers.TryGetByID(BlackwingCardId.DarkGrepher, out var grepher) && Rule(BlackwingRules.SummonGrepher))
+            if (!danger && hand.Count(card => CardRules.IsGoodDarkDiscard(card.ID)) > 0 &&
+                developers.TryGetByID(CardId.DarkGrepher, out var grepher) && Rule(BlackwingRules.SummonGrepher))
             {
                 Note(context, $"normal summon Dark Grepher, then discard a spare DARK to its effect (LP {botLp})");
                 return grepher.NormalSummon();
@@ -843,28 +846,30 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
                 await PrepareContextAsync(context, ct);
                 var hand = await GetBotHandCardsAsync();
                 const string window = "use the effect in the priority window, before it can be removed";
-                string? grepherDad = options.Any(card => card.IsCode(BlackwingCardId.DarkGrepher)) ? await DadBlocksAddingDarksAsync(2) : null;
+                string? grepherDad = options.Any(card => card.IsCode(CardId.DarkGrepher)) ? await DadBlocksAddingDarksAsync(2) : null;
                 if (grepherDad != null && !Rule(BlackwingRules.HoldGrepherForDad))
                     grepherDad = null;
                 if (grepherDad != null)
                     Note(context, $"hold Dark Grepher's effect: {grepherDad}");
-                if (grepherDad == null && hand.Any(card => card.IsCode(GoodDarkDiscards)) &&
-                    TryChain(context, options, BlackwingCardId.DarkGrepher, window, out int priorityIndex, rule: BlackwingRules.GrepherEffect))
+                if (grepherDad == null && options.Any(card => card.IsCode(CardId.DarkGrepher)) &&
+                    hand.Any(card => CardRules.IsGoodDarkDiscard(card.ID)) &&
+                    await GoodDiscardDeckSendAllowedAsync(CardId.DarkGrepher, context.Header, context.Bot) &&
+                    TryChain(context, options, CardId.DarkGrepher, window, out int priorityIndex, rule: BlackwingRules.GrepherEffect))
                     return priorityIndex;
-                if (options.Any(card => card.IsCode(BlackwingCardId.CardTrooper)) && await TrooperCanMillAsync(context) &&
-                    TryChainStaple(context, options, BlackwingCardId.CardTrooper, window, out priorityIndex, rule: DeckRules.TrooperMill))
+                if (options.Any(card => card.IsCode(CardId.CardTrooper)) && await TrooperCanMillAsync(context) &&
+                    TryChainStaple(context, options, CardId.CardTrooper, window, out priorityIndex, rule: DeckRules.TrooperMill))
                 {
-                    MarkStapleActivated(BlackwingCardId.CardTrooper); // so the "how many" prompt sends the maximum
+                    MarkStapleActivated(CardId.CardTrooper); // so the "how many" prompt sends the maximum
                     return priorityIndex;
                 }
-                if (options.Any(card => card.IsCode(BlackwingCardId.DarkArmedDragon)) &&
+                if (options.Any(card => card.IsCode(CardId.DarkArmedDragon)) &&
                     await DadEffectWhyAsync(context) is string dadWhy &&
-                    await DestructionNegatedAsync(context, BlackwingCardId.DarkArmedDragon) == null &&
-                    TryChain(context, options, BlackwingCardId.DarkArmedDragon, $"{dadWhy}; {window}", out priorityIndex, rule: BlackwingRules.DadEffect))
+                    await DestructionNegatedAsync(context, CardId.DarkArmedDragon) == null &&
+                    TryChain(context, options, CardId.DarkArmedDragon, $"{dadWhy}; {window}", out priorityIndex, rule: BlackwingRules.DadEffect))
                     return priorityIndex;
-                if (options.Any(card => card.IsCode(BlackwingCardId.ChaosSorcerer)) &&
+                if (options.Any(card => card.IsCode(CardId.ChaosSorcerer)) &&
                     await ChaosEffectWhyAsync(context, await GetEnemyMonsterCardsAsync(), await GetBotMonsterCardsAsync()) is string chaosWhy &&
-                    TryChain(context, options, BlackwingCardId.ChaosSorcerer, $"{chaosWhy}; {window}", out priorityIndex, rule: BlackwingRules.ChaosEffect))
+                    TryChain(context, options, CardId.ChaosSorcerer, $"{chaosWhy}; {window}", out priorityIndex, rule: BlackwingRules.ChaosEffect))
                     return priorityIndex;
             }
 
@@ -885,7 +890,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
 
             // MST in response to the opponent's continuous card (Ultimate Offering, Call of the Haunted): destroying it
             // in the chain stops its effect too. Shared staple rule.
-            if (options.Any(card => card.IsCode(BlackwingCardId.MysticalSpaceTyphoon)) && context.Header.LastChainPlayer == 1)
+            if (options.Any(card => card.IsCode(CardId.MysticalSpaceTyphoon)) && context.Header.LastChainPlayer == 1)
             {
                 await PrepareContextAsync(context, ct);
                 var mstChain = await TryChainMstIntoContinuousAsync(context);
@@ -909,7 +914,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             return await base.OnSelectChainAsync(context, ct);
         }
 
-        private static readonly int[] AttackNegates = { BlackwingCardId.NecroGardna };
+        private static readonly int[] AttackNegates = { CardId.NecroGardna };
 
         // Necro Gardna counts as an attack answer for the shared "one answer per attack" rule.
         protected override int[] AttackNegateIds => AttackNegates;
@@ -922,11 +927,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             List<DynamicCard> enemyMonsters,
             IncomingAttack? incoming)
         {
-            if (!options.Any(card => card.IsCode(BlackwingCardId.NecroGardna)) ||
+            if (!options.Any(card => card.IsCode(CardId.NecroGardna)) ||
                 !await WorthProtectingAsync(context, botMonsters, enemyMonsters, incoming))
                 return null;
             string why = incoming?.Why ?? "attacker unknown";
-            return TryChainStaple(context, options, BlackwingCardId.NecroGardna, $"negate the attack from the graveyard: {why}", out int index,
+            return TryChainStaple(context, options, CardId.NecroGardna, $"negate the attack from the graveyard: {why}", out int index,
                 rule: BlackwingRules.NecroGardna) ? index : null;
         }
 
@@ -1006,14 +1011,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         /// </summary>
         protected override async Task<(double Value, string Why)> HandCardValueAsync(DynamicCard card, List<DynamicCard> botMonsters)
         {
-            if (card.IsCode(BlackwingCardId.DarkArmedDragon))
+            if (card.IsCode(CardId.DarkArmedDragon))
             {
                 var grave = await GetBotGraveyardCardsAsync();
                 bool IsDark(DynamicCard c) => c.HasType(CardType.Monster) && (c.Attribute & (int)CardAttribute.Dark) != 0;
                 int darks = grave.Count(IsDark);
                 // Down: each Vayu + partner pair banished by Vayu's synchro takes 2. Up: our DARK monsters on the field
                 // that can still die (this battle or later).
-                int pairs = Math.Min(grave.Count(c => c.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)), grave.Count(c => c.IsCode(VayuPartners)));
+                int pairs = Math.Min(grave.Count(c => c.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)), grave.Count(c => c.IsCode(VayuPartners)));
                 int lowest = darks - 2 * pairs;
                 int highest = darks + botMonsters.Count(c => c.ID > 0 && IsDark(c));
                 // Under 3: our DARKs dying can bring it up. Over 3: Vayu trims 2 at a time (an odd gap needs a DARK of
@@ -1041,14 +1046,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
                 return true;
             var monsters = await GetBotMonsterCardsAsync();
             var hand = await GetBotHandCardsAsync();
-            if (monsters.Concat(hand).Any(card => card.IsCode(BlackwingCardId.DarkArmedDragon, BlackwingCardId.ChaosSorcerer)))
+            if (monsters.Concat(hand).Any(card => card.IsCode(CardId.DarkArmedDragon, CardId.ChaosSorcerer)))
                 return true;
             // Vayu in the graveyard (Silverwind 2800 with Armor Master there) or Plaguespreader with a Level 4 (Goyo 2800).
             if (await BestVayuSynchroAtkAsync() > GorzAttack &&
-                (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)))
+                (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)))
                 return true;
             return monsters.Any(card => card.Level == 4 && !card.HasType(CardType.Tuner)) &&
-                   (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(BlackwingCardId.PlaguespreaderZombie)) &&
+                   (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(CardId.PlaguespreaderZombie)) &&
                    hand.Count > 0;
         }
 
@@ -1083,9 +1088,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
 
         private static string VayuSynchroName(int level) => level switch
         {
-            6 => CardNames.Get(BlackwingCardId.BlackwingArmedWing),
-            7 => CardNames.Get(BlackwingCardId.BlackwingArmorMaster),
-            8 => CardNames.Get(BlackwingCardId.BlackwingSilverwindTheAscendant),
+            6 => CardNames.Get(CardId.BlackwingArmedWing),
+            7 => CardNames.Get(CardId.BlackwingArmorMaster),
+            8 => CardNames.Get(CardId.BlackwingSilverwindTheAscendant),
             _ => $"a Level {level} synchro"
         };
 
@@ -1150,7 +1155,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         /// hand on top of the deck, so we need at least one card in hand (an empty hand means no Plaguespreader route).
         /// </summary>
         private async Task<bool> PlaguespreaderUsableAsync() =>
-            (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(BlackwingCardId.PlaguespreaderZombie)) &&
+            (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(CardId.PlaguespreaderZombie)) &&
             (await GetBotHandCardsAsync()).Count > 0;
 
         /// <summary>
@@ -1166,13 +1171,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             int banishedMonsters = (await CurrentField.GetCardsInLocation(CardLocation.Removed))
                 .Count(card => card.ID > 0 && card.HasType(CardType.Monster));
             bool plagueBanished = (await CurrentField.GetCardsInLocation(CardLocation.Removed))
-                .Any(card => card.IsCode(BlackwingCardId.PlaguespreaderZombie));
+                .Any(card => card.IsCode(CardId.PlaguespreaderZombie));
             string extra = plagueBanished ? ", and Plaguespreader for another synchro" : "";
-            if (hand.Any(card => card.IsCode(BlackwingCardId.MiracleDig)) && !TryGetActivable(state, BlackwingCardId.MiracleDig, out _) &&
+            if (hand.Any(card => card.IsCode(CardId.MiracleDig)) && !TryGetActivable(state, CardId.MiracleDig, out _) &&
                 banishedMonsters < 5 && banishedMonsters + 2 >= 5)
                 return $"its cost banishes 2 more, switching on Miracle Dig ({banishedMonsters} -> {banishedMonsters + 2} of 5 needed), " +
                        $"which brings Vayu and its partner back{extra}";
-            if (hand.Any(card => card.IsCode(BlackwingCardId.BurialFromADifferentDimension)))
+            if (hand.Any(card => card.IsCode(CardId.BurialFromADifferentDimension)))
                 return $"Burial from a Different Dimension in hand brings Vayu and its partner back afterwards{extra}";
             return null;
         }
@@ -1181,13 +1186,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         // work from the graveyard). Other monsters there don't really matter.
         private static readonly int[] BurialWorthy =
         {
-            BlackwingCardId.BlackwingVayuTheEmblemOfHonor,
-            BlackwingCardId.BlackwingSiroccoTheDawn,
-            BlackwingCardId.BlackwingElphinTheRaven,
-            BlackwingCardId.BlackwingArmedWing,
-            BlackwingCardId.BlackwingArmorMaster,
-            BlackwingCardId.NecroGardna,
-            BlackwingCardId.PlaguespreaderZombie
+            CardId.BlackwingVayuTheEmblemOfHonor,
+            CardId.BlackwingSiroccoTheDawn,
+            CardId.BlackwingElphinTheRaven,
+            CardId.BlackwingArmedWing,
+            CardId.BlackwingArmorMaster,
+            CardId.NecroGardna,
+            CardId.PlaguespreaderZombie
         };
 
         /// <summary>Burial-worthy banished monsters needed to set it as bait (chained when they try to remove it).</summary>
@@ -1209,23 +1214,23 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         // (user, 2026-11-11).
         protected override IReadOnlyCollection<int> BaitCardIds =>
             DefaultBaitCards
-                .Concat(_ourBanishedMonsters >= BurialBaitAt ? new[] { BlackwingCardId.BurialFromADifferentDimension } : Array.Empty<int>())
-                .Concat(_wingedOnField > 0 ? new[] { BlackwingCardId.IcarusAttack } : Array.Empty<int>())
+                .Concat(_ourBanishedMonsters >= BurialBaitAt ? new[] { CardId.BurialFromADifferentDimension } : Array.Empty<int>())
+                .Concat(_wingedOnField > 0 ? new[] { CardId.IcarusAttack } : Array.Empty<int>())
                 .ToArray();
 
         /// <summary>Gorz hold roll: hand plays plus graveyard plays (each live Vayu pair, Plaguespreader).</summary>
         protected override async Task<int> AlternativePlaysAsync()
         {
             var grave = await GetBotGraveyardCardsAsync();
-            int pairs = Math.Min(grave.Count(c => c.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)), grave.Count(c => c.IsCode(VayuPartners)));
-            int plague = grave.Any(c => c.IsCode(BlackwingCardId.PlaguespreaderZombie)) ? 1 : 0;
+            int pairs = Math.Min(grave.Count(c => c.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)), grave.Count(c => c.IsCode(VayuPartners)));
+            int plague = grave.Any(c => c.IsCode(CardId.PlaguespreaderZombie)) ? 1 : 0;
             return await base.AlternativePlaysAsync() + pairs + plague;
         }
 
         // A Heavy Storm doesn't cost us a set Burial (Quick-Play: chained in response).
         protected override IReadOnlyCollection<int> StormProofSets { get; } = new[]
         {
-            JarOfGreedId, LegacyOfYataGarasuId, TrapDustshootId, BlackwingCardId.BurialFromADifferentDimension
+            JarOfGreed, LegacyOfYataGarasu, TrapDustshoot, CardId.BurialFromADifferentDimension
         };
 
         /// <summary>
@@ -1236,7 +1241,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         /// </summary>
         protected override bool IsExpendable(DynamicCard card) =>
             base.IsExpendable(card) ||
-            card.IsCode(BlackwingCardId.BlackwingArmedWing, BlackwingCardId.BlackwingArmorMaster, BlackwingCardId.CardTrooper) && _haveVayuPieces;
+            card.IsCode(CardId.BlackwingArmedWing, CardId.BlackwingArmorMaster, CardId.CardTrooper) && _haveVayuPieces;
 
         // Whether we have a Vayu to work with: one in the graveyard, Armageddon Knight in hand (sends one), or Dark
         // Grepher in hand / on the field with another DARK in hand to discard (sends one). Refreshed every decision.
@@ -1246,20 +1251,20 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         {
             var extra = field.OwnSide.Extra ?? Array.Empty<int>();
             if (extra.Any(code => code > 0))
-                _extraVayuLevels = new[] { (6, BlackwingCardId.BlackwingArmedWing), (7, BlackwingCardId.BlackwingArmorMaster), (8, BlackwingCardId.BlackwingSilverwindTheAscendant) }
+                _extraVayuLevels = new[] { (6, CardId.BlackwingArmedWing), (7, CardId.BlackwingArmorMaster), (8, CardId.BlackwingSilverwindTheAscendant) }
                     .Where(x => extra.Any(code => Search.SearchHost.Is(code, x.Item2))).Select(x => x.Item1).ToHashSet();
             var own = field.OwnSide;
             var grave = own.Grave ?? Array.Empty<int>();
             var hand = own.Hand ?? Array.Empty<int>();
             var monsters = (own.MonsterZones ?? Array.Empty<CardArray>())
                 .Select(zone => zone.Cards is { Length: > 0 } cards ? cards[0] : 0).ToList();
-            bool grepher = hand.Contains(BlackwingCardId.DarkGrepher) || monsters.Contains(BlackwingCardId.DarkGrepher);
+            bool grepher = hand.Contains(CardId.DarkGrepher) || monsters.Contains(CardId.DarkGrepher);
             _wingedOnField = monsters.Count(id => OurBlackwings.Contains(id));
             _icarusSet = (own.SpellZones ?? Array.Empty<CardArray>())
-                .Count(zone => zone.Cards is { Length: > 0 } cards && cards[0] == BlackwingCardId.IcarusAttack);
-            _haveVayuPieces = grave.Contains(BlackwingCardId.BlackwingVayuTheEmblemOfHonor) ||
-                              hand.Contains(BlackwingCardId.ArmageddonKnight) ||
-                              grepher && hand.Any(id => GoodDarkDiscards.Contains(id));
+                .Count(zone => zone.Cards is { Length: > 0 } cards && cards[0] == CardId.IcarusAttack);
+            _haveVayuPieces = grave.Contains(CardId.BlackwingVayuTheEmblemOfHonor) ||
+                              hand.Contains(CardId.ArmageddonKnight) ||
+                              grepher && hand.Any(id => CardRules.IsGoodDarkDiscard(id));
         }
 
         // This brain has its own Gorz / Mirror Force / Torrential chain rules (see OnSelectChainAsync).
@@ -1273,11 +1278,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         /// </summary>
         // The MCTS's card values for this deck (user, 2026-11-11): Vayu in the graveyard (a synchro), Kalut in hand (+1400 in
         // battle, user 2026-11-10), Black Whirlwind face-up (every Blackwing summon searches).
-        internal override double SearchCardBonus(int code, Search.CardPlace place) =>
+        internal override double SearchCardBonus(int code, BotTest.Game.AI.Brains.CardPlace place) =>
             // Hybrid: the Vayu brain's graveyard values (B3, user 2026-11-16: "hybrid should have the same vayu, sirocco, armageddon
             // and grepher stuff as vayu").
-place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.BlackwingKalutTheMoonShadow) ? KalutHandValue
-            : place == Search.CardPlace.Field && Search.SearchHost.Is(code, BlackwingCardId.BlackWhirlwind) ? WhirlwindFieldValue
+place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, CardId.BlackwingKalutTheMoonShadow) ? KalutHandValue
+            : place == BotTest.Game.AI.Brains.CardPlace.Field && Search.SearchHost.Is(code, CardId.BlackWhirlwind) ? WhirlwindFieldValue
             : 0;
 
         /// <summary>
@@ -1288,15 +1293,15 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         /// </summary>
         internal override double SearchNextTurnValue(DuelSim.Engine.SideSummary own, IReadOnlyCollection<int> activatedThisTurn)
         {
-            if (!activatedThisTurn.Any(c => Search.SearchHost.Is(c, BlackwingCardId.BlackWhirlwind)))
+            if (!activatedThisTurn.Any(c => Search.SearchHost.Is(c, CardId.BlackWhirlwind)))
                 return 0;
-            bool whirlwind = own.SpellCodes.Any(s => s.FaceUp && Search.SearchHost.Is(s.Code, BlackwingCardId.BlackWhirlwind)) ||
-                             own.HandCodes.Any(c => Search.SearchHost.Is(c, BlackwingCardId.BlackWhirlwind));
+            bool whirlwind = own.SpellCodes.Any(s => s.FaceUp && Search.SearchHost.Is(s.Code, CardId.BlackWhirlwind)) ||
+                             own.HandCodes.Any(c => Search.SearchHost.Is(c, CardId.BlackWhirlwind));
             if (!whirlwind)
                 return 0;
             bool goodSummon = own.HandCodes.Any(c => Search.SearchHost.Available && Search.SearchHost.Cards.Get(c) is { } r &&
                 (r.Type & 0x1) != 0 && r.Level <= 4 && r.Attack >= WhirlwindGoodSummonAtk && (r.Name ?? "").StartsWith("Blackwing - ") &&
-                !Search.SearchHost.Is(c, BlackwingCardId.BlackwingVayuTheEmblemOfHonor));
+                !Search.SearchHost.Is(c, CardId.BlackwingVayuTheEmblemOfHonor));
             return goodSummon ? WhirlwindNextSummonValue : 0;
         }
 
@@ -1310,9 +1315,9 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         {
             double value = 0;
             // A face-up Card Trooper of ours is a mill engine for Vayu and Dark Armed Dragon (from the Vayu brain, 2026-11-10).
-            if (own.Monsters.Any(m => m.FaceUp && Search.SearchHost.Is(m.Code, BlackwingCardId.CardTrooper)))
+            if (own.Monsters.Any(m => m.FaceUp && Search.SearchHost.Is(m.Code, CardId.CardTrooper)))
                 value += TrooperSetupValue;
-            if (own.HandCodes.Any(code => Search.SearchHost.Is(code, BlackwingCardId.DarkArmedDragon)))
+            if (own.HandCodes.Any(code => Search.SearchHost.Is(code, CardId.DarkArmedDragon)))
             {
                 int darks = own.GraveCodes.Count(code => (Search.SearchHost.Type(code) & 0x1) != 0 && Search.SearchHost.Attribute(code) == 0x20);
                 value += darks == 3 ? DadLiveSetupValue : darks == 2 ? DadNearSetupValue : 0;
@@ -1326,14 +1331,14 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         protected override bool HandlesStapleIdle => true;
 
         // Into an empty field the generic brain attacks smallest first; Chaos Sorcerer always goes last.
-        protected override IReadOnlyCollection<int> AttackLast { get; } = new[] { BlackwingCardId.ChaosSorcerer };
+        protected override IReadOnlyCollection<int> AttackLast { get; } = new[] { CardId.ChaosSorcerer };
 
         // Chaos Sorcerer's banish works from defence: with a reasonable Mirror Force chance it sits in defence.
-        protected override IReadOnlyCollection<int> DefenceUnderMirrorForce { get; } = new[] { BlackwingCardId.ChaosSorcerer };
+        protected override IReadOnlyCollection<int> DefenceUnderMirrorForce { get; } = new[] { CardId.ChaosSorcerer };
 
         private static readonly int[] PriorityWindowEffects =
         {
-            BlackwingCardId.DarkGrepher, BlackwingCardId.CardTrooper, BlackwingCardId.DarkArmedDragon, BlackwingCardId.ChaosSorcerer
+            CardId.DarkGrepher, CardId.CardTrooper, CardId.DarkArmedDragon, CardId.ChaosSorcerer
         };
 
 
@@ -1343,24 +1348,26 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         {
             await PrepareContextAsync(context, ct);
             var card = context.StateData.EffectCard;
+            if (!await GoodDiscardDeckSendAllowedAsync(card.ID, context.Header, context.Bot))
+                return false;
 
             // Armageddon Knight sends a DARK: not while that would take Dark Armed Dragon's graveyard past exactly 3.
-            if (card.IsCode(BlackwingCardId.ArmageddonKnight) && await DadBlocksAddingDarksAsync(1) is string dadWhy && Rule(BlackwingRules.HoldKnightForDad))
+            if (card.IsCode(CardId.ArmageddonKnight) && await DadBlocksAddingDarksAsync(1) is string dadWhy && Rule(BlackwingRules.HoldKnightForDad))
             {
                 Note(context, $"don't use Armageddon Knight's effect: {dadWhy}");
                 return false;
             }
 
-            if (card.IsCode(BlackwingCardId.BlackRoseDragon))
+            if (card.IsCode(CardId.BlackRoseDragon))
             {
                 int enemyCards = (await GetEnemyMonsterCardsAsync()).Count + (await GetEnemySpellCardsAsync()).Count;
                 int botCards = (await GetBotMonsterCardsAsync()).Count + (await CurrentField.GetCardsInSpellZone()).Count();
-                bool wipe = enemyCards > botCards && await DestructionNegatedAsync(context, BlackwingCardId.BlackRoseDragon) == null && Rule(BlackwingRules.BlackRoseWipe);
+                bool wipe = enemyCards > botCards && await DestructionNegatedAsync(context, CardId.BlackRoseDragon) == null && Rule(BlackwingRules.BlackRoseWipe);
                 Note(context, $"Black Rose wipe? opponent {enemyCards} vs our {botCards} -> {(wipe ? "yes" : "no")}");
                 return wipe;
             }
 
-            if (card.IsCode(BlackwingCardId.GorzTheEmissaryOfDarkness))
+            if (card.IsCode(CardId.GorzTheEmissaryOfDarkness))
                 return await GorzNowAsync(context, await GetEnemyMonsterCardsAsync()) != null;
 
             // Every other optional effect in this deck is worth using (Armageddon Knight, Ryko, Goyo, Colossal Fighter...).
@@ -1404,22 +1411,22 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             {
                 var mine = indexed.Where(x => x.Card.CurrentCoordinates.Controller == 0).ToList();
                 var grave = await GetBotGraveyardCardsAsync();
-                int vayus = grave.Count(card => card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor));
+                int vayus = grave.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
                 int partners = grave.Count(card => card.IsCode(VayuPartners));
-                bool plague = grave.Any(card => card.IsCode(BlackwingCardId.PlaguespreaderZombie));
-                bool necro = grave.Any(card => card.IsCode(BlackwingCardId.NecroGardna));
+                bool plague = grave.Any(card => card.IsCode(CardId.PlaguespreaderZombie));
+                bool necro = grave.Any(card => card.IsCode(CardId.NecroGardna));
 
                 double Value((DynamicCard Card, int Index) x)
                 {
-                    if (x.Card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor))
+                    if (x.Card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor))
                         return vayus < partners ? BurialRankVayuShort : vayus == partners ? BurialRankVayuEven : BurialRankVayuSpare;
                     if (x.Card.IsCode(VayuPartners))
                         // A partner beyond the Vayus makes no play: below Necro Gardna (user, 2026-11-11: Miracle Dig returned a third
                         // Armed Wing for two Vayus, when Necro Gardna was the better pick).
                         return (partners < vayus ? BurialRankPartnerShort : partners == vayus ? BurialRankPartnerEven : BurialRankPartnerSpare) + x.Card.Level * 0.01; // higher Level first
-                    if (x.Card.IsCode(BlackwingCardId.PlaguespreaderZombie))
+                    if (x.Card.IsCode(CardId.PlaguespreaderZombie))
                         return plague ? BurialRankPlagueSecond : BurialRankPlague;
-                    if (x.Card.IsCode(BlackwingCardId.NecroGardna))
+                    if (x.Card.IsCode(CardId.NecroGardna))
                         return necro ? BurialRankNecroSecond : BurialRankNecro;
                     return -PriorityIndex(BurialPriority, x.Card) * 0.01;
                 }
@@ -1431,7 +1438,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 // Vayus first: they're the scarce half of every play (partners are much easier to get back: Armageddon
                 // Knight, Grepher, a synchro dying). Keep one slot for a partner only if the graveyard would otherwise
                 // have none, so at least one play is ready now.
-                var banishedVayus = left.Where(x => x.Card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)).ToList();
+                var banishedVayus = left.Where(x => x.Card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)).ToList();
                 bool needPartner = partners == 0 && left.Any(x => x.Card.IsCode(VayuPartners));
                 foreach (var vayu in banishedVayus.Take(Math.Max(needPartner ? Math.Min(1, slots) : 0, slots - (needPartner ? 1 : 0))))
                 {
@@ -1452,10 +1459,10 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                     var best = left.OrderByDescending(Value).First();
                     picks.Add(best);
                     left.Remove(best);
-                    if (best.Card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)) vayus++;
+                    if (best.Card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) vayus++;
                     else if (best.Card.IsCode(VayuPartners)) partners++;
-                    else if (best.Card.IsCode(BlackwingCardId.PlaguespreaderZombie)) plague = true;
-                    else if (best.Card.IsCode(BlackwingCardId.NecroGardna)) necro = true;
+                    else if (best.Card.IsCode(CardId.PlaguespreaderZombie)) plague = true;
+                    else if (best.Card.IsCode(CardId.NecroGardna)) necro = true;
                 }
                 if (picks.Count < state.Minimum)
                     picks.AddRange(indexed.Where(x => !picks.Contains(x)).Take(state.Minimum - picks.Count));
@@ -1479,12 +1486,12 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             if (hint == DHint.ATOHAND && indexed.Count > 0 &&
                 indexed.All(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck && IsBlackwing(x.Card)))
             {
-                int[] order = { BlackwingCardId.BlackwingBoraTheSpear, BlackwingCardId.BlackwingGaleTheWhirlwind, BlackwingCardId.BlackwingKalutTheMoonShadow,
-                    BlackwingCardId.BlackwingBlizzardTheFarNorth, BlackwingCardId.BlackwingShuraTheBlueFlame, BlackwingCardId.BlackwingVayuTheEmblemOfHonor };
+                int[] order = { CardId.BlackwingBoraTheSpear, CardId.BlackwingGaleTheWhirlwind, CardId.BlackwingKalutTheMoonShadow,
+                    CardId.BlackwingBlizzardTheFarNorth, CardId.BlackwingShuraTheBlueFlame, CardId.BlackwingVayuTheEmblemOfHonor };
                 // Kalut summoned as the only Normal Summon with Whirlwind out: the search is Blizzard (user, 2026-11-10).
                 if (LastMainMove is { Action: MainAction.Summon } kalutMove && kalutMove.Turn == context.Header.CurrentTurn &&
-                    (kalutMove.CardId == BlackwingCardId.BlackwingKalutTheMoonShadow || Search.SearchHost.CanonicalId(kalutMove.CardId) == BlackwingCardId.BlackwingKalutTheMoonShadow))
-                    order = new[] { BlackwingCardId.BlackwingBlizzardTheFarNorth }.Concat(order).ToArray();
+                    (kalutMove.CardId == CardId.BlackwingKalutTheMoonShadow || Search.SearchHost.CanonicalId(kalutMove.CardId) == CardId.BlackwingKalutTheMoonShadow))
+                    order = new[] { CardId.BlackwingBlizzardTheFarNorth }.Concat(order).ToArray();
                 var held = await GetBotHandCardsAsync();
                 var pick = indexed
                     .OrderBy(x => held.Any(h => h.IsCode(x.Card.ID)) ? 1 : 0)
@@ -1501,6 +1508,12 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             if (hint == DHint.TOGRAVE)
             {
                 bool fromDeck = indexed.All(x => x.Card.CurrentCoordinates.Location == (byte)CardLocation.Deck);
+                if (fromDeck)
+                {
+                    var tagged = indexed.Where(x => CardRules.IsGoodDarkDiscard(x.Card.ID)).ToList();
+                    if (tagged.Count >= count)
+                        indexed = tagged;
+                }
                 return fromDeck
                     ? Ordered(context, hint, indexed, count, await BuildSendFromDeckPriorityAsync(context), preferLowValue: false)
                     : Ordered(context, hint, indexed, count, PreferDiscard, preferLowValue: true);
@@ -1512,8 +1525,8 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 // Vayu's cost: banish Vayu + a non-Tuner Blackwing partner; the partner's Level decides the synchro
                 // (Sirocco L5 -> Armed Wing 2300, Armed Wing / Elphin L6 -> Armor Master 2500, Armor Master L7 ->
                 // Silverwind the Ascendant 2800). Use the lowest partner that does the job, keeping the bigger ones.
-                if (count == 1 && _lastActivatedCard == BlackwingCardId.BlackwingVayuTheEmblemOfHonor && VayuWasTheMove(context.Header) &&
-                    indexed.Any(x => x.Card.IsCode(VayuPartners)) && !indexed.All(x => x.Card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)))
+                if (count == 1 && _lastActivatedCard == CardId.BlackwingVayuTheEmblemOfHonor && VayuWasTheMove(context.Header) &&
+                    indexed.Any(x => x.Card.IsCode(VayuPartners)) && !indexed.All(x => x.Card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)))
                 {
                     var candidates = indexed.Where(x => x.Card.IsCode(VayuPartners)).ToList();
                     // Make the synchro the decision to use Vayu was based on, if that partner is still there.
@@ -1542,12 +1555,12 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 // (Plaguespreader leaving the graveyard takes it 1 DARK closer to 3; Vayu trims 2 at a time.)
                 var tdGrave = await GetBotGraveyardCardsAsync();
                 int tdDarks = tdGrave.Count(c => c.HasType(CardType.Monster) && (c.Attribute & (int)CardAttribute.Dark) != 0)
-                              - (tdGrave.Any(c => c.IsCode(BlackwingCardId.PlaguespreaderZombie)) ? 1 : 0);
-                int tdPairs = Math.Min(tdGrave.Count(c => c.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)), tdGrave.Count(c => c.IsCode(VayuPartners)));
+                              - (tdGrave.Any(c => c.IsCode(CardId.PlaguespreaderZombie)) ? 1 : 0);
+                int tdPairs = Math.Min(tdGrave.Count(c => c.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)), tdGrave.Count(c => c.IsCode(VayuPartners)));
                 bool dadLiveThisTurn = tdDarks == 3 || tdDarks > 3 && (tdDarks - 3) % 2 == 0 && (tdDarks - 3) / 2 <= tdPairs;
                 int Rank(DynamicCard card) =>
-                    card.IsCode(BlackwingCardId.DarkArmedDragon) && dadLiveThisTurn ? 5
-                    : card.IsCode(BlackwingCardId.GorzTheEmissaryOfDarkness) ? 3
+                    card.IsCode(CardId.DarkArmedDragon) && dadLiveThisTurn ? 5
+                    : card.IsCode(CardId.GorzTheEmissaryOfDarkness) ? 3
                     : card.HasType(CardType.Trap) || card.HasType(CardType.QuickPlay) ? 2
                     : card.HasType(CardType.Spell) ? 1
                     : 0;
@@ -1582,7 +1595,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         /// Armor Master -> Silverwind), so over a game the Vayus in the graveyard are the limiting resource.
         /// </summary>
         private async Task<int> SpareVayusAsync() =>
-            Math.Max(0, (await GetBotGraveyardCardsAsync()).Count(card => card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)) - 1);
+            Math.Max(0, (await GetBotGraveyardCardsAsync()).Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) - 1);
 
 
         // Blackwing synchro Vayu would make from the graveyard, by partner (Vayu L1 + partner level).
@@ -1591,9 +1604,9 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         private async Task<int> BestVayuSynchroAtkAsync()
         {
             var grave = await GetBotGraveyardCardsAsync();
-            if (grave.Any(card => card.IsCode(BlackwingCardId.BlackwingArmorMaster)))
+            if (grave.Any(card => card.IsCode(CardId.BlackwingArmorMaster)))
                 return 2800; // Silverwind
-            if (grave.Any(card => card.IsCode(BlackwingCardId.BlackwingElphinTheRaven, BlackwingCardId.BlackwingArmedWing)))
+            if (grave.Any(card => card.IsCode(CardId.BlackwingElphinTheRaven, CardId.BlackwingArmedWing)))
                 return 2500; // Armor Master
             return 2300;     // Armed Wing (with Sirocco)
         }
@@ -1613,8 +1626,8 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         private async Task<string?> ArmedWingSteppingStoneAsync(IdleCmdData state, List<DynamicCard> enemyMonsters, List<DynamicCard> botMonsters)
         {
             var grave = await GetBotGraveyardCardsAsync();
-            if (grave.Count(c => c.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)) < 2 ||
-                grave.Any(c => c.IsCode(BlackwingCardId.BlackwingArmedWing, BlackwingCardId.BlackwingElphinTheRaven)))
+            if (grave.Count(c => c.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) < 2 ||
+                grave.Any(c => c.IsCode(CardId.BlackwingArmedWing, CardId.BlackwingElphinTheRaven)))
                 return null;
             DynamicCard target = default;
             foreach (var enemy in enemyMonsters.Where(card => card.IsFaceup() && card.GetRealPower() is > 2300 and <= 2500))
@@ -1626,7 +1639,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             // Any other way to answer it?
             if (botMonsters.Any(card => card.IsFaceup() && EffectiveAttack(card) > power))
                 return null;
-            if (TryGetSpecialSummon(state, BlackwingCardId.DarkArmedDragon, out _) || TryGetSpecialSummon(state, BlackwingCardId.ChaosSorcerer, out _))
+            if (TryGetSpecialSummon(state, CardId.DarkArmedDragon, out _) || TryGetSpecialSummon(state, CardId.ChaosSorcerer, out _))
                 return null;
             if (await PlaguespreaderUsableAsync() &&
                 await BestSynchroForLevelAsync(8, enemyMonsters, botMonsters.Select(EffectiveAttack).ToList()) is { } l8 && l8.Synchro.Attack > power)
@@ -1761,7 +1774,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             IdleCmdResponse? Summon(int id, string step) => TrySpecialSummon(context, state, id, Why(step), out var r) ? r : null;
 
             // Vayu first, so DAD's effect knows which DARKs in the graveyard Vayu needs.
-            bool vayu = TryGetActivable(state, BlackwingCardId.BlackwingVayuTheEmblemOfHonor, out _);
+            bool vayu = TryGetActivable(state, CardId.BlackwingVayuTheEmblemOfHonor, out _);
             int vayuPlaysNow = 0;
             if (vayu)
             {
@@ -1770,7 +1783,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 // play counts on, so the cost prompt makes that one (by then other plays are out and the partner choice
                 // alone might go smaller); the next decision re-plans from the new board.
                 var graveNow = await GetBotGraveyardCardsAsync();
-                int graveVayus = graveNow.Count(card => card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor));
+                int graveVayus = graveNow.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
                 var levels = graveNow.Where(card => card.IsCode(VayuPartners)).Select(card => card.Level + 1)
                     .OrderByDescending(level => level).Take(graveVayus).Where(level => VayuSynchroAtk(level) > 0).ToList();
                 Extension? previous = null;
@@ -1779,13 +1792,13 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                     int level = vayuLevel;
                     var play = new Extension
                     {
-                        Name = $"Vayu's synchro ({VayuSynchroName(level)})", Order = 5, Cost = 2, DarkCost = 2, CardId = BlackwingCardId.BlackwingVayuTheEmblemOfHonor,
+                        Name = $"Vayu's synchro ({VayuSynchroName(level)})", Order = 5, Cost = 2, DarkCost = 2, CardId = CardId.BlackwingVayuTheEmblemOfHonor,
                         Requires = previous,
                         Execute = () =>
                         {
                             _vayuPlannedLevel = level;
                             _vayuPlannedTurn = context.Header.CurrentTurn;
-                            return Activate(BlackwingCardId.BlackwingVayuTheEmblemOfHonor, "Vayu's graveyard synchro");
+                            return Activate(CardId.BlackwingVayuTheEmblemOfHonor, "Vayu's graveyard synchro");
                         }
                     };
                     play.AddedAtk.Add(VayuSynchroAtk(level));
@@ -1797,7 +1810,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
 
             // Miracle Dig / Burial, then Vayu: the extra Vayu plays the recursion creates beyond those available now (with
             // no Vayu play now, all of them). Fired first; the next decision re-plans with Vayu live.
-            int recursion = new[] { BlackwingCardId.MiracleDig, BlackwingCardId.BurialFromADifferentDimension }
+            int recursion = new[] { CardId.MiracleDig, CardId.BurialFromADifferentDimension }
                 .FirstOrDefault(id => TryGetActivable(state, id, out _));
             if (recursion != 0)
             {
@@ -1819,25 +1832,25 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             }
 
             Extension? dad = null;
-            bool dadOnField = botMonsters.Any(card => card.IsCode(BlackwingCardId.DarkArmedDragon) && card.IsFaceup());
-            if (!dadOnField && TryGetSpecialSummon(state, BlackwingCardId.DarkArmedDragon, out _))
+            bool dadOnField = botMonsters.Any(card => card.IsCode(CardId.DarkArmedDragon) && card.IsFaceup());
+            if (!dadOnField && TryGetSpecialSummon(state, CardId.DarkArmedDragon, out _))
             {
                 dad = new Extension
                 {
-                    Name = "Dark Armed Dragon", Order = 1, Cost = 3, HandCost = 1, Act = MainAction.SpSummon, CardId = BlackwingCardId.DarkArmedDragon,
-                    Execute = () => Summon(BlackwingCardId.DarkArmedDragon, "special summon Dark Armed Dragon")
+                    Name = "Dark Armed Dragon", Order = 1, Cost = 3, HandCost = 1, Act = MainAction.SpSummon, CardId = CardId.DarkArmedDragon,
+                    Execute = () => Summon(CardId.DarkArmedDragon, "special summon Dark Armed Dragon")
                 };
                 dad.AddedAtk.Add(2800);
                 plays.Add(dad);
             }
 
-            bool chaos = TryGetSpecialSummon(state, BlackwingCardId.ChaosSorcerer, out _);
+            bool chaos = TryGetSpecialSummon(state, CardId.ChaosSorcerer, out _);
             if (chaos)
             {
                 var play = new Extension
                 {
-                    Name = "Chaos Sorcerer", Order = 2, Cost = 3, HandCost = 1, DarkCost = 1, Act = MainAction.SpSummon, CardId = BlackwingCardId.ChaosSorcerer,
-                    Execute = () => Summon(BlackwingCardId.ChaosSorcerer, "special summon Chaos Sorcerer")
+                    Name = "Chaos Sorcerer", Order = 2, Cost = 3, HandCost = 1, DarkCost = 1, Act = MainAction.SpSummon, CardId = CardId.ChaosSorcerer,
+                    Execute = () => Summon(CardId.ChaosSorcerer, "special summon Chaos Sorcerer")
                 };
                 play.AddedAtk.Add(2300);
                 plays.Add(play);
@@ -1854,8 +1867,8 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 {
                     plays.Add(new Extension
                     {
-                        Name = "DAD's effect", Order = 4, Cost = 1, DarkCost = 1, RemovesDefenders = 1, Requires = dad, CardId = BlackwingCardId.DarkArmedDragon,
-                        Execute = () => Activate(BlackwingCardId.DarkArmedDragon, "destroy a blocker or a set card")
+                        Name = "DAD's effect", Order = 4, Cost = 1, DarkCost = 1, RemovesDefenders = 1, Requires = dad, CardId = CardId.DarkArmedDragon,
+                        Execute = () => Activate(CardId.DarkArmedDragon, "destroy a blocker or a set card")
                     });
                 }
             }
@@ -1882,7 +1895,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 freeMaterials.Add(card);
             }
 
-            if (TryGetActivable(state, BlackwingCardId.PlaguespreaderZombie, out _))
+            if (TryGetActivable(state, CardId.PlaguespreaderZombie, out _))
             {
                 // Biggest synchro per Level left in our actual Extra Deck.
                 var atkByLevel = (await ExtraDeckSynchrosAsync())
@@ -1896,9 +1909,9 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 {
                     var play = new Extension
                     {
-                        Name = $"Plaguespreader + {CardNames.Get(material.ID)} synchro", Order = 6, Cost = 4, HandCost = 1, CardId = BlackwingCardId.PlaguespreaderZombie,
+                        Name = $"Plaguespreader + {CardNames.Get(material.ID)} synchro", Order = 6, Cost = 4, HandCost = 1, CardId = CardId.PlaguespreaderZombie,
                         Requires = normalSummon != null && material.Equals(summonable) ? normalSummon : null,
-                        Execute = () => Activate(BlackwingCardId.PlaguespreaderZombie, "Plaguespreader for a synchro")
+                        Execute = () => Activate(CardId.PlaguespreaderZombie, "Plaguespreader for a synchro")
                     };
                     play.AddedAtk.Add(SynchroAtkForLevel(material.Level + 2));
                     play.RemovedAtk.Add(EffectiveAttack(material));
@@ -2136,8 +2149,6 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             return index < 0 ? priority.Length : index;
         }
 
-        // DARK monsters that are fine to discard to Dark Grepher's effect (or its summon cost, for the level 5+ ones).
-        private static readonly int[] GoodDarkDiscards = CardRules.GrepherDiscards;
 
         /// <summary>
         /// Special Summoning Dark Grepher from hand costs a level 5+ DARK, so it's rarely right. Only do it when:
@@ -2170,7 +2181,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             int oppLp = await CurrentField.GetBotLifePoints(isOwnSide: false);
             var grave = await GetBotGraveyardCardsAsync();
             var hand = await GetBotHandCardsAsync();
-            int graveVayus = grave.Count(card => card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor));
+            int graveVayus = grave.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
             var gravePartnerLevels = grave.Where(card => card.IsCode(VayuPartners)).Select(card => (int)card.Level).ToList();
 
             // Without Grepher: the board plus the Vayu plays we already have.
@@ -2182,12 +2193,12 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             }
 
             // With Grepher: the cost card, then the best discard from hand and the best send from deck.
-            var cost = hand.Where(card => card.IsCode(BlackwingCardId.BlackwingSiroccoTheDawn, BlackwingCardId.BlackwingElphinTheRaven))
+            var cost = hand.Where(card => card.IsCode(CardId.BlackwingSiroccoTheDawn, CardId.BlackwingElphinTheRaven))
                 .OrderBy(card => card.Level).FirstOrDefault();
             if (cost.ID <= 0)
                 return null;
             var handLeft = hand.Where(card => !SameCard(card, cost)).ToList();
-            var discards = handLeft.Where(card => card.IsCode(GoodDarkDiscards)).Select(card => (Id: card.ID, Level: (int)card.Level)).Distinct().ToList();
+            var discards = handLeft.Where(card => CardRules.IsGoodDarkDiscard(card.ID)).Select(card => (Id: card.ID, Level: (int)card.Level)).Distinct().ToList();
             var deckDarks = await DeckDarksForGrepherAsync();
 
             int bestTotal = 0;
@@ -2200,7 +2211,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                     var partners = new List<int>(gravePartnerLevels) { (int)cost.Level };
                     foreach (var (id, level) in new[] { discard, send })
                     {
-                        if (id == BlackwingCardId.BlackwingVayuTheEmblemOfHonor) vayus++;
+                        if (id == CardId.BlackwingVayuTheEmblemOfHonor) vayus++;
                         else if (VayuPartners.Contains(id)) partners.Add(level);
                     }
                     var plays = VayuPlayAtks(vayus, partners);
@@ -2258,7 +2269,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             {
                 _chaosHoldNotedTurn = context.Header.CurrentTurn;
                 Note(context, "hold Chaos Sorcerer: no face-up big threat to banish, not lethal, and holding doesn't lose (it's removal, not a clock starter)");
-                Hold(BlackwingCardId.ChaosSorcerer, null, BlackwingRules.ChaosSummon);
+                Hold(CardId.ChaosSorcerer, null, BlackwingRules.ChaosSummon);
             }
             return null;
         }
@@ -2288,7 +2299,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 var board = botMonsters.Where(card => card.IsFaceup() && card.IsAttack()).ToList();
                 var defenders = BoardAssessment.Defenders(enemyMonsters, OpponentMemory);
                 bool lethalWithAttack = BoardAssessment.TurnsToWin(board.Select(EffectiveAttack).ToList(), defenders, oppLp) == 1;
-                var withoutChaos = board.Where(card => !card.IsCode(BlackwingCardId.ChaosSorcerer)).Select(EffectiveAttack).ToList();
+                var withoutChaos = board.Where(card => !card.IsCode(CardId.ChaosSorcerer)).Select(EffectiveAttack).ToList();
                 bool lethalWithBanish = targets.Any(target => BoardAssessment.TurnsToWin(withoutChaos,
                     BoardAssessment.Defenders(enemyMonsters.Where(card => card.CurrentCoordinates.Sequence != target.CurrentCoordinates.Sequence).ToList(), OpponentMemory),
                     oppLp) == 1);
@@ -2350,9 +2361,9 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         {
             var grave = await GetBotGraveyardCardsAsync();
             var banished = (await CurrentField.GetCardsInLocation(CardLocation.Removed)).Where(card => card.ID > 0).ToList();
-            int vayus = grave.Count(card => card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor));
+            int vayus = grave.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
             var partners = grave.Where(card => card.IsCode(VayuPartners)).Select(card => (int)card.Level).ToList();
-            var banishedVayus = banished.Count(card => card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor));
+            var banishedVayus = banished.Count(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor));
             var banishedPartners = banished.Where(card => card.IsCode(VayuPartners)).Select(card => (int)card.Level)
                 .OrderByDescending(level => level).ToList();
             var now = VayuPlayAtks(vayus, partners);
@@ -2388,7 +2399,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         /// </summary>
         private async Task<List<(int Id, int Level)>> DeckDarksForGrepherAsync()
         {
-            var wanted = new[] { (BlackwingCardId.BlackwingVayuTheEmblemOfHonor, 1), (BlackwingCardId.BlackwingSiroccoTheDawn, 5), (BlackwingCardId.BlackwingElphinTheRaven, 6) };
+            var wanted = new[] { (CardId.BlackwingVayuTheEmblemOfHonor, 1), (CardId.BlackwingSiroccoTheDawn, 5), (CardId.BlackwingElphinTheRaven, 6) };
             var deckIds = ((await CurrentField.GetBotField()).OwnSide.Main ?? Array.Empty<int>()).Where(id => id > 0).ToList();
             if (deckIds.Count > 0)
                 return wanted.Where(w => deckIds.Contains(w.Item1)).Select(w => (w.Item1, w.Item2)).ToList();
@@ -2398,19 +2409,19 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 .Concat(await CurrentField.GetCardsInLocation(CardLocation.Removed))
                 .Concat(await GetBotMonsterCardsAsync())
                 .Select(card => card.ID).ToList();
-            return wanted.Where(w => w.Item1 != BlackwingCardId.BlackwingElphinTheRaven && seen.Count(id => id == w.Item1) < 3)
+            return wanted.Where(w => w.Item1 != CardId.BlackwingElphinTheRaven && seen.Count(id => id == w.Item1) < 3)
                 .Select(w => (w.Item1, w.Item2)).ToList();
         }
 
         private static bool ShouldSpecialSummonGrepher(IdleCmdData state, List<DynamicCard> hand, List<DynamicCard> botMonsters, out string reason)
         {
             reason = "";
-            var costCards = hand.Where(card => card.IsCode(BlackwingCardId.BlackwingSiroccoTheDawn, BlackwingCardId.BlackwingElphinTheRaven)).ToList();
+            var costCards = hand.Where(card => card.IsCode(CardId.BlackwingSiroccoTheDawn, CardId.BlackwingElphinTheRaven)).ToList();
             if (costCards.Count == 0)
                 return false;
 
             // The cost uses one of them; something must remain for the effect.
-            int goodDiscards = hand.Count(card => card.IsCode(GoodDarkDiscards));
+            int goodDiscards = hand.Count(card => CardRules.IsGoodDarkDiscard(card.ID));
             if (goodDiscards < 2)
                 return false;
 
@@ -2424,7 +2435,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             // If only one card can pay the cost, it's gone after the summon, so it can't be what the Normal Summon is saved for.
             int? consumedByCost = costCards.Count == 1 ? costCards[0].ID : null;
             var otherNormalSummon = summonable.FirstOrDefault(card =>
-                !card.IsCode(BlackwingCardId.DarkGrepher) &&
+                !card.IsCode(CardId.DarkGrepher) &&
                 card.ID != consumedByCost &&
                 !card.HasType(CardType.Flip) &&
                 card.IsCode(SummonPriority) &&
@@ -2461,12 +2472,12 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         // Kalut in hand: +1400 to a Blackwing in the damage step, so attacks are planned with it (user, 2026-11-10: "the brain
         // may want to make attacks accounting for kalut").
         protected override int HandBattleBoost(DynamicCard attacker) =>
-            IsBlackwing(attacker) && _battleHand.Any(card => card.IsCode(BlackwingCardId.BlackwingKalutTheMoonShadow)) ? 1400 : 0;
+            IsBlackwing(attacker) && _battleHand.Any(card => card.IsCode(CardId.BlackwingKalutTheMoonShadow)) ? 1400 : 0;
 
         // Bouncing Dark Grepher is a plus if we have a DARK to discard: re-summon it and use its effect again.
         protected override bool GainsFromBounce(DynamicCard attacker) =>
             base.GainsFromBounce(attacker) ||
-            attacker.IsCode(BlackwingCardId.DarkGrepher) && _battleHand.Any(card => card.IsCode(GoodDarkDiscards));
+            attacker.IsCode(CardId.DarkGrepher) && _battleHand.Any(card => CardRules.IsGoodDarkDiscard(card.ID));
 
         // Dark Armed Dragon (field or summonable from hand) and Chaos Sorcerer remove Grand Mole outright.
         protected override async Task<string?> BetterAnswerToBouncerAsync()
@@ -2474,14 +2485,14 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             if (await base.BetterAnswerToBouncerAsync() is string shared)
                 return shared;
             var field = await GetBotMonsterCardsAsync();
-            if (field.Any(card => card.IsFaceup() && card.IsCode(BlackwingCardId.DarkArmedDragon, BlackwingCardId.ChaosSorcerer)))
+            if (field.Any(card => card.IsFaceup() && card.IsCode(CardId.DarkArmedDragon, CardId.ChaosSorcerer)))
                 return "our Dark Armed Dragon / Chaos Sorcerer on the field";
             var grave = await GetBotGraveyardCardsAsync();
             int darks = grave.Count(card => card.HasType(CardType.Monster) && (card.Attribute & (int)CardAttribute.Dark) != 0);
-            if (_battleHand.Any(card => card.IsCode(BlackwingCardId.DarkArmedDragon)) && darks == 3)
+            if (_battleHand.Any(card => card.IsCode(CardId.DarkArmedDragon)) && darks == 3)
                 return "Dark Armed Dragon, summonable from our hand next main phase";
             bool light = grave.Any(card => card.HasType(CardType.Monster) && (card.Attribute & (int)CardAttribute.Light) != 0);
-            if (_battleHand.Any(card => card.IsCode(BlackwingCardId.ChaosSorcerer)) && darks > 0 && light)
+            if (_battleHand.Any(card => card.IsCode(CardId.ChaosSorcerer)) && darks > 0 && light)
                 return "Chaos Sorcerer, summonable from our hand next main phase";
             return null;
         }
@@ -2494,10 +2505,10 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
 
         private static readonly int[] OurBlackwings =
         {
-            BlackwingCardId.BlackwingSiroccoTheDawn, BlackwingCardId.BlackwingShuraTheBlueFlame, BlackwingCardId.BlackwingBoraTheSpear,
-            BlackwingCardId.BlackwingKalutTheMoonShadow, BlackwingCardId.BlackwingGaleTheWhirlwind, BlackwingCardId.BlackwingBlizzardTheFarNorth,
-            BlackwingCardId.BlackwingVayuTheEmblemOfHonor, BlackwingCardId.BlackwingElphinTheRaven,
-            BlackwingCardId.BlackwingArmedWing, BlackwingCardId.BlackwingArmorMaster, BlackwingCardId.BlackwingSilverwindTheAscendant
+            CardId.BlackwingSiroccoTheDawn, CardId.BlackwingShuraTheBlueFlame, CardId.BlackwingBoraTheSpear,
+            CardId.BlackwingKalutTheMoonShadow, CardId.BlackwingGaleTheWhirlwind, CardId.BlackwingBlizzardTheFarNorth,
+            CardId.BlackwingVayuTheEmblemOfHonor, CardId.BlackwingElphinTheRaven,
+            CardId.BlackwingArmedWing, CardId.BlackwingArmorMaster, CardId.BlackwingSilverwindTheAscendant
         };
 
         private static bool IsBlackwing(DynamicCard card) => card.IsCode(OurBlackwings);
@@ -2533,10 +2544,10 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         protected override async Task RecordDeckChainHoldsAsync(DecisionContext<SelectChainData> context)
         {
             var offered = context.StateData.SelectableCards ?? Array.Empty<DynamicCard>();
-            if (!offered.Any(card => card.IsCode(BlackwingCardId.BlackwingSiroccoTheDawn) && card.CurrentCoordinates is { Controller: 0, Location: (byte)CardLocation.MonsterZone }))
+            if (!offered.Any(card => card.IsCode(CardId.BlackwingSiroccoTheDawn) && card.CurrentCoordinates is { Controller: 0, Location: (byte)CardLocation.MonsterZone }))
                 return;
             if (SiroccoBoostPointless(await GetBotMonsterCardsAsync(), await GetEnemyMonsterCardsAsync()))
-                foreach (var card in offered.Where(card => card.IsCode(BlackwingCardId.BlackwingSiroccoTheDawn)))
+                foreach (var card in offered.Where(card => card.IsCode(CardId.BlackwingSiroccoTheDawn)))
                     HoldKey(card.ID, "chain:", BlackwingRules.SiroccoBoostPointless);
         }
 
@@ -2544,7 +2555,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         /// (BlackwingRules.BodyNeedsPurpose), so a line that summons it anyway pays for it.</summary>
         private void BoraPurposeHold(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters)
         {
-            if (!TryGetSpecialSummon(state, BlackwingCardId.BlackwingBoraTheSpear, out var body) || body.CurrentCoordinates.Location != (byte)CardLocation.Hand ||
+            if (!TryGetSpecialSummon(state, CardId.BlackwingBoraTheSpear, out var body) || body.CurrentCoordinates.Location != (byte)CardLocation.Hand ||
                 !Rule(BlackwingRules.BodyNeedsPurpose))
                 return;
             bool battleAhead = (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 && state.CanBattlePhase && context.Header.CurrentTurn > 1;
@@ -2553,7 +2564,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             bool addsKill = Kills(up.Append(body).ToList(), theirs) > Kills(up, theirs);
             bool directHit = ClearsTheirBoard(up, theirs) && DirectHitMatters(body, up);
             if (!battleAhead || !addsKill && !directHit)
-                Hold(BlackwingCardId.BlackwingBoraTheSpear, MainAction.SpSummon, BlackwingRules.BodyNeedsPurpose);
+                Hold(CardId.BlackwingBoraTheSpear, MainAction.SpSummon, BlackwingRules.BodyNeedsPurpose);
         }
 
         private async Task<IdleCmdResponse?> TryBlackwingPlaysAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> hand,
@@ -2566,12 +2577,12 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             // Allure of Darkness is a shared staple (TryFreeCardAdvantageAsync: with a DARK to banish, or as the last-resort gamble).
 
             // Black Whirlwind face-up before the Normal Summon (each Blackwing Normal Summon then searches a smaller one).
-            if (!NormalSummonUsed(context.Header) && TryGetActivable(state, BlackwingCardId.BlackWhirlwind, out var whirlwind) &&
-                !(await CurrentField.GetCardsInSpellZone()).Any(card => card.IsFaceup() && card.IsCode(BlackwingCardId.BlackWhirlwind)) &&
+            if (!NormalSummonUsed(context.Header) && TryGetActivable(state, CardId.BlackWhirlwind, out var whirlwind) &&
+                !(await CurrentField.GetCardsInSpellZone()).Any(card => card.IsFaceup() && card.IsCode(CardId.BlackWhirlwind)) &&
                 // Only when a Blackwing Normal Summon is actually coming (one still on offer after the summon filter): otherwise
                 // Whirlwind waits (user, 2026-11-10).
                 // Not Vayu: its summon doesn't trigger Whirlwind (user, 2026-11-10).
-                (state.SummonableCards ?? Array.Empty<DynamicCard>()).Any(card => IsBlackwing(card) && card.Level <= 4 && !card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)) &&
+                (state.SummonableCards ?? Array.Empty<DynamicCard>()).Any(card => IsBlackwing(card) && card.Level <= 4 && !card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) &&
                 Rule(BlackwingRules.BlackWhirlwind))
             {
                 Note(context, "activate Black Whirlwind before the Normal Summon: it turns the summon into a search");
@@ -2581,10 +2592,10 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             // Otherwise Whirlwind waits in hand: face-up with no Blackwing Normal Summon coming this turn, it's only exposed to removal
             // (user, 2026-11-17: "no need to reactivate black whirlwind until you're about to normal summon - it's safer in hand"). Held,
             // so a line that activates it early pays for it.
-            if (TryGetActivable(state, BlackwingCardId.BlackWhirlwind, out var earlyWhirlwind) &&
+            if (TryGetActivable(state, CardId.BlackWhirlwind, out var earlyWhirlwind) &&
                 earlyWhirlwind.CurrentCoordinates.Location == (byte)CardLocation.Hand &&
                 (NormalSummonUsed(context.Header) ||
-                 !(state.SummonableCards ?? Array.Empty<DynamicCard>()).Any(card => IsBlackwing(card) && card.Level <= 4 && !card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor))) &&
+                 !(state.SummonableCards ?? Array.Empty<DynamicCard>()).Any(card => IsBlackwing(card) && card.Level <= 4 && !card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor))) &&
                 Rule(BlackwingRules.WhirlwindWaitsForSummon))
             {
                 Hold(earlyWhirlwind.ID, MainAction.Activate, BlackwingRules.WhirlwindWaitsForSummon);
@@ -2595,15 +2606,15 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             // Gale only with a monster of theirs to shrink: it is mostly removal (user, 2026-11-12: "gale is really mostly removal -
             // it's mostly meant to be used when I have something you want to shrink"; seen summoned on turn 1 into an empty field).
             bool galeTarget = enemyMonsters.Any(card => card.IsFaceup() && card.Attack > 0);
-            if (!galeTarget && TryGetSpecialSummon(state, BlackwingCardId.BlackwingGaleTheWhirlwind, out _))
-                Hold(BlackwingCardId.BlackwingGaleTheWhirlwind, MainAction.SpSummon, BlackwingRules.GaleIsRemoval);
-            foreach (int id in new[] { BlackwingCardId.BlackwingBoraTheSpear, BlackwingCardId.BlackwingGaleTheWhirlwind })
+            if (!galeTarget && TryGetSpecialSummon(state, CardId.BlackwingGaleTheWhirlwind, out _))
+                Hold(CardId.BlackwingGaleTheWhirlwind, MainAction.SpSummon, BlackwingRules.GaleIsRemoval);
+            foreach (int id in new[] { CardId.BlackwingBoraTheSpear, CardId.BlackwingGaleTheWhirlwind })
                 if (TryGetSpecialSummon(state, id, out var body) && body.CurrentCoordinates.Location == (byte)CardLocation.Hand && Rule(BlackwingRules.FreeBody) &&
-                    !(id == BlackwingCardId.BlackwingGaleTheWhirlwind && !galeTarget && Rule(BlackwingRules.GaleIsRemoval)))
+                    !(id == CardId.BlackwingGaleTheWhirlwind && !galeTarget && Rule(BlackwingRules.GaleIsRemoval)))
                 {
                     // Round-robin 33: against their unknown set cards, a body the attack doesn't need stays in hand (Mirror Force
                     // took Shura and both Boras for one Gearframe).
-                    if (id == BlackwingCardId.BlackwingBoraTheSpear && await SpareBodyHoldAsync(context, id, body.Attack) is string spareHold)
+                    if (id == CardId.BlackwingBoraTheSpear && await SpareBodyHoldAsync(context, id, body.Attack) is string spareHold)
                     {
                         Note(context, $"Bora waits: {spareHold}");
                         Hold(id, MainAction.SpSummon, DeckRules.SpareBodyWaits);
@@ -2612,7 +2623,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                     // A free body still needs a purpose this turn (user, 2026-11-13: "why summon the bora? what was the
                     // reasoning?"): its attack adds a kill our attackers up don't make, or a direct hit worth making once they
                     // clear the way. Otherwise it stays in hand (it's just as free later) rather than sit in front of their board.
-                    if (id == BlackwingCardId.BlackwingBoraTheSpear && Rule(BlackwingRules.BodyNeedsPurpose))
+                    if (id == CardId.BlackwingBoraTheSpear && Rule(BlackwingRules.BodyNeedsPurpose))
                     {
                         var up = botMonsters.Where(card => card.IsFaceup() && card.IsAttack() && !card.Attacked).ToList();
                         var theirs = enemyMonsters.Where(card => card.ID != 0 || !card.IsFaceup()).ToList();
@@ -2630,7 +2641,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 }
 
             // Sirocco from hand when they have a monster and we have none: a free 2000 attacker.
-            if (TryGetSpecialSummon(state, BlackwingCardId.BlackwingSiroccoTheDawn, out var sirocco) &&
+            if (TryGetSpecialSummon(state, CardId.BlackwingSiroccoTheDawn, out var sirocco) &&
                 sirocco.CurrentCoordinates.Location == (byte)CardLocation.Hand && Rule(BlackwingRules.SiroccoFree))
             {
                 Note(context, "special summon Sirocco: a free 2000 attacker (they have a monster, we have none)");
@@ -2638,7 +2649,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             }
 
             // Gale: halve the monster in our way before attacking.
-            if (battleAhead && TryGetActivable(state, BlackwingCardId.BlackwingGaleTheWhirlwind, out var gale) &&
+            if (battleAhead && TryGetActivable(state, CardId.BlackwingGaleTheWhirlwind, out var gale) &&
                 gale.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone)
             {
                 int ourBest = botMonsters.Where(card => card.IsFaceup() && card.IsAttack()).Select(EffectiveAttack).DefaultIfEmpty(0).Max();
@@ -2658,7 +2669,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
 
             // Sirocco's effect with nothing to gain is held at the start of the decision (DecideMainPhaseAsync). Otherwise, into a suspected
             // Honest (user, 2026-11-17): the one boosted attacker battling a LIGHT monster of theirs (or a face-down one) hands Honest the boost.
-            TryGetActivable(state, BlackwingCardId.BlackwingSiroccoTheDawn, out var idleBoost);
+            TryGetActivable(state, CardId.BlackwingSiroccoTheDawn, out var idleBoost);
             bool boostPointless = botMonsters.Count(card => card.IsFaceup() && IsBlackwing(card)) < 2 || enemyMonsters.Count == 0;
             if (!boostPointless && idleBoost.ID > 0 && idleBoost.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone &&
                      enemyMonsters.Any(card => !card.IsFaceup() || (card.Attribute & 0x10) != 0) &&
@@ -2667,7 +2678,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
 
             // Sirocco's effect: one Blackwing gets the total ATK of our face-up Blackwings (the others can't attack): for
             // lethal, or when no single attacker can beat their best monster.
-            if (battleAhead && TryGetActivable(state, BlackwingCardId.BlackwingSiroccoTheDawn, out var boost) &&
+            if (battleAhead && TryGetActivable(state, CardId.BlackwingSiroccoTheDawn, out var boost) &&
                 boost.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone)
             {
                 var wings = botMonsters.Where(card => card.IsFaceup() && card.IsAttack() && IsBlackwing(card)).ToList();
@@ -2684,7 +2695,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                     why = $"no single Blackwing beats {CardNames.Get(biggest.ID)} ({biggest.Attack}); together they do ({total})";
                 // Bora into a face-down: with the boost it pierces for a big hit even if the face-down is Ryko, where on its own
                 // it pierces for a few hundred and the others have nothing better to hit (user, 2026-11-10).
-                var bora = wings.FirstOrDefault(card => card.IsCode(BlackwingCardId.BlackwingBoraTheSpear));
+                var bora = wings.FirstOrDefault(card => card.IsCode(CardId.BlackwingBoraTheSpear));
                 bool pierce = false;
                 if (why == null && wings.Count >= 2 && bora.ID > 0 && enemyMonsters.Any(card => !card.IsFaceup()) &&
                     !enemyMonsters.Any(card => card.IsFaceup() && card.GetRealPower() >= total))
@@ -2699,13 +2710,13 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 var summonFirst = NormalSummonUsed(context.Header) ? default
                     : (state.SummonableCards ?? Array.Empty<DynamicCard>())
                         .Where(card => IsBlackwing(card) && card.Level <= 4 &&
-                                       !card.IsCode(BlackwingCardId.BlackwingKalutTheMoonShadow, BlackwingCardId.BlackwingBlizzardTheFarNorth))
+                                       !card.IsCode(CardId.BlackwingKalutTheMoonShadow, CardId.BlackwingBlizzardTheFarNorth))
                         .OrderByDescending(card => card.Attack).FirstOrDefault();
                 if (why != null && summonFirst.ID > 0 && Rule(BlackwingRules.SiroccoBoost) && Rule(BlackwingRules.SummonBeforeSiroccoBoost))
                 {
                     string name = CardNames.Get(summonFirst.ID);
                     var first = new RoutineStep(MainAction.Summon, summonFirst.ID, $"normal summon {name} (its {summonFirst.Attack} joins the boost)");
-                    var rest = new[] { new RoutineStep(MainAction.Activate, BlackwingCardId.BlackwingSiroccoTheDawn, "Sirocco's boost") };
+                    var rest = new[] { new RoutineStep(MainAction.Activate, CardId.BlackwingSiroccoTheDawn, "Sirocco's boost") };
                     if (await ContinueRoutineAsync(context, "Sirocco boost", $"{why}; Normal Summon first: after the boost {name} couldn't attack, " +
                                                                               $"and its ATK adds to the total ({total} -> {total + summonFirst.Attack})", first, rest))
                     {
@@ -2724,7 +2735,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
 
             // Icarus Attack on our turn: clear two cards before attacking when that pushes damage through, tributing our
             // least useful Blackwing (2-for-2).
-            if (battleAhead && TryGetActivable(state, BlackwingCardId.IcarusAttack, out var icarus) &&
+            if (battleAhead && TryGetActivable(state, CardId.IcarusAttack, out var icarus) &&
                 enemyMonsters.Count + enemySpells.Count >= 2 && IcarusTribute(botMonsters) is { ID: > 0 } fodder &&
                 botMonsters.Count(card => card.IsFaceup() && card.IsAttack()) >= 2 && Rule(BlackwingRules.IcarusPush))
             {
@@ -2746,20 +2757,20 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             // Sirocco too when the server offers it (its tribute-free Normal Summon against their monsters): with Black Whirlwind
             // up it searches Kalut / Gale / Bora (seen 2026-11-11: Vayu was summoned instead, triggering nothing, into Kristya).
             var options = (state.SummonableCards ?? Array.Empty<DynamicCard>())
-                .Where(card => IsBlackwing(card) && (card.Level <= 4 || card.IsCode(BlackwingCardId.BlackwingSiroccoTheDawn) && !OwnMonsters.Any(m => m.ID > 0))).ToList();
+                .Where(card => IsBlackwing(card) && (card.Level <= 4 || card.IsCode(CardId.BlackwingSiroccoTheDawn) && !OwnMonsters.Any(m => m.ID > 0))).ToList();
             if (options.Count == 0)
                 return null;
-            bool whirlwind = (await CurrentField.GetCardsInSpellZone()).Any(card => card.IsFaceup() && card.IsCode(BlackwingCardId.BlackWhirlwind));
+            bool whirlwind = (await CurrentField.GetCardsInSpellZone()).Any(card => card.IsFaceup() && card.IsCode(CardId.BlackWhirlwind));
             bool reviveTarget = (await GetBotGraveyardCardsAsync()).Any(card => IsBlackwing(card) && card.Level <= 4 && card.HasType(CardType.Monster) &&
                                                                                  !card.HasType(CardType.Synchro) && !card.HasType(CardType.Tuner));
-            int[] order = { BlackwingCardId.BlackwingSiroccoTheDawn, BlackwingCardId.BlackwingShuraTheBlueFlame, BlackwingCardId.BlackwingBoraTheSpear, BlackwingCardId.BlackwingKalutTheMoonShadow,
-                BlackwingCardId.BlackwingBlizzardTheFarNorth, BlackwingCardId.BlackwingGaleTheWhirlwind, BlackwingCardId.BlackwingVayuTheEmblemOfHonor };
+            int[] order = { CardId.BlackwingSiroccoTheDawn, CardId.BlackwingShuraTheBlueFlame, CardId.BlackwingBoraTheSpear, CardId.BlackwingKalutTheMoonShadow,
+                CardId.BlackwingBlizzardTheFarNorth, CardId.BlackwingGaleTheWhirlwind, CardId.BlackwingVayuTheEmblemOfHonor };
             DynamicCard pick;
             string why;
-            if (reviveTarget && options.FirstOrDefault(card => card.IsCode(BlackwingCardId.BlackwingBlizzardTheFarNorth)) is { ID: > 0 } blizzard)
+            if (reviveTarget && options.FirstOrDefault(card => card.IsCode(CardId.BlackwingBlizzardTheFarNorth)) is { ID: > 0 } blizzard)
                 (pick, why) = (blizzard, "Blizzard revives a Blackwing from the graveyard: two bodies (and a synchro)");
-            else if (whirlwind && options.Any(card => !card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)))
-                (pick, why) = (options.Where(card => !card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)).OrderByDescending(card => card.Attack).First(),
+            else if (whirlwind && options.Any(card => !card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)))
+                (pick, why) = (options.Where(card => !card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)).OrderByDescending(card => card.Attack).First(),
                     "Black Whirlwind searches a smaller Blackwing");
             else
             {
@@ -2801,8 +2812,8 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         private static DynamicCard SiroccoTarget(IEnumerable<DynamicCard> ourMonsters, IEnumerable<DynamicCard> theirMonsters)
         {
             var wings = ourMonsters.Where(card => card.IsFaceup()).ToList();
-            var bora = wings.FirstOrDefault(card => card.IsCode(BlackwingCardId.BlackwingBoraTheSpear));
-            var shura = wings.FirstOrDefault(card => card.IsCode(BlackwingCardId.BlackwingShuraTheBlueFlame));
+            var bora = wings.FirstOrDefault(card => card.IsCode(CardId.BlackwingBoraTheSpear));
+            var shura = wings.FirstOrDefault(card => card.IsCode(CardId.BlackwingShuraTheBlueFlame));
             bool defenders = theirMonsters.Any(card => !card.IsFaceup() || !card.IsAttack());
             bool attackers = theirMonsters.Any(card => card.IsFaceup() && card.IsAttack());
             if (shura.ID > 0 && (bora.ID <= 0 || attackers && !defenders))
@@ -2815,9 +2826,9 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         {
             double cost = base.PlanSuggestions(steps, index, offered, theirs);
             if (index == 0 || !steps[index].Key.StartsWith("card:") ||
-                !steps[index - 1].Key.StartsWith($"{(int)MainAction.Activate}:") || KeyCardId(steps[index - 1].Key) != BlackwingCardId.BlackwingSiroccoTheDawn)
+                !steps[index - 1].Key.StartsWith($"{(int)MainAction.Activate}:") || KeyCardId(steps[index - 1].Key) != CardId.BlackwingSiroccoTheDawn)
                 return cost;
-            static bool BoraOrShura(string key) => KeyCardId(key) is BlackwingCardId.BlackwingBoraTheSpear or BlackwingCardId.BlackwingShuraTheBlueFlame;
+            static bool BoraOrShura(string key) => KeyCardId(key) is CardId.BlackwingBoraTheSpear or CardId.BlackwingShuraTheBlueFlame;
             return !BoraOrShura(steps[index].Key) && offered.Any(BoraOrShura) ? cost + SuggestionCost : cost;
         }
 
@@ -2826,7 +2837,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         private IList<byte>? SiroccoPick(DynamicCard[] cards, int minimum, int maximum)
         {
             if (LastMainMove is not { Action: MainAction.Activate } move || move.Turn != CurrentTurnNumber ||
-                !(move.CardId == BlackwingCardId.BlackwingSiroccoTheDawn || Search.SearchHost.CanonicalId(move.CardId) == BlackwingCardId.BlackwingSiroccoTheDawn) ||
+                !(move.CardId == CardId.BlackwingSiroccoTheDawn || Search.SearchHost.CanonicalId(move.CardId) == CardId.BlackwingSiroccoTheDawn) ||
                 minimum > 1 || cards.Any(card => card.CurrentCoordinates.Controller != 0 || card.CurrentCoordinates.Location != (byte)CardLocation.MonsterZone))
                 return null;
             var target = SiroccoTarget(cards, OpponentMonsters);
@@ -2837,7 +2848,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         }
 
         // Black Whirlwind always searches when it can (user, 2026-11-10: "it should always always trigger when possible").
-        protected override bool AlwaysTriggers(DynamicCard card) => card.IsCode(BlackwingCardId.BlackWhirlwind);
+        protected override bool AlwaysTriggers(DynamicCard card) => card.IsCode(CardId.BlackWhirlwind);
 
         protected override bool SearchMayChoose(DynamicCard card, MainAction action) =>
             base.SearchMayChoose(card, action) &&
@@ -2845,29 +2856,29 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             // Icarus Attack in our own turn only to attack through what it clears (Main Phase 1). Otherwise it waits for their
             // turn: their attack, their removal, or their End Phase, by when they may have committed something better to
             // hit (user, 2026-11-11: it was fired in our Main Phase 2 at Gorz + token).
-            !(action == MainAction.Activate && card.IsCode(BlackwingCardId.IcarusAttack) &&
+            !(action == MainAction.Activate && card.IsCode(CardId.IcarusAttack) &&
               (DuelPhase)CurrentHeader.CurrentPhase != DuelPhase.Main1 && Rule(BlackwingRules.IcarusWaitsForTheirTurn));
 
         private async Task<IdleCmdData> WithoutPointlessSummonsAsync(DecisionContext<IdleCmdData> context, IdleCmdData state,
             List<DynamicCard> hand, List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters)
         {
             bool battleAhead = (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 && state.CanBattlePhase && context.Header.CurrentTurn > 1;
-            bool whirlwind = (await CurrentField.GetCardsInSpellZone()).Any(card => card.IsFaceup() && card.IsCode(BlackwingCardId.BlackWhirlwind));
+            bool whirlwind = (await CurrentField.GetCardsInSpellZone()).Any(card => card.IsFaceup() && card.IsCode(CardId.BlackWhirlwind));
             // A non-Tuner: Blizzard is a Tuner itself, so reviving Gale or Vayu leaves nothing to synchro with (user, 2026-11-10).
             bool reviveTarget = (await GetBotGraveyardCardsAsync()).Any(card => IsBlackwing(card) && card.Level <= 4 && card.HasType(CardType.Monster) &&
                                                                                  !card.HasType(CardType.Synchro) && !card.HasType(CardType.Tuner));
-            bool bodyInHand = hand.Any(card => card.IsCode(BlackwingCardId.BlackwingBoraTheSpear, BlackwingCardId.BlackwingGaleTheWhirlwind));
+            bool bodyInHand = hand.Any(card => card.IsCode(CardId.BlackwingBoraTheSpear, CardId.BlackwingGaleTheWhirlwind));
             var ourFaceUp = botMonsters.Where(card => card.IsFaceup()).ToList();
             int oppLp = await CurrentField.GetBotLifePoints(isOwnSide: false);
 
             bool CanHit(DynamicCard card) =>
                 battleAhead && (enemyMonsters.Count == 0 ||
                                 enemyMonsters.Any(e => e.IsFaceup() && card.Attack > e.GetRealPower()) ||
-                                enemyMonsters.Any(e => !e.IsFaceup()) && card.IsCode(BlackwingCardId.BlackwingShuraTheBlueFlame, BlackwingCardId.BlackwingBoraTheSpear));
+                                enemyMonsters.Any(e => !e.IsFaceup()) && card.IsCode(CardId.BlackwingShuraTheBlueFlame, CardId.BlackwingBoraTheSpear));
             string? Play(DynamicCard card)
             {
-                if (whirlwind && !card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)) return "Black Whirlwind searches";
-                if (card.IsCode(BlackwingCardId.BlackwingBlizzardTheFarNorth) && reviveTarget) return "Blizzard revives a Blackwing to synchro with";
+                if (whirlwind && !card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) return "Black Whirlwind searches";
+                if (card.IsCode(CardId.BlackwingBlizzardTheFarNorth) && reviveTarget) return "Blizzard revives a Blackwing to synchro with";
                 if (bodyInHand) return "Bora / Gale come out next to it";
                 bool tuner = card.HasType(CardType.Tuner);
                 if (ourFaceUp.Any(m => m.HasType(CardType.Tuner) != tuner && !m.HasType(CardType.Synchro))) return "a synchro with our monster";
@@ -2880,7 +2891,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             {
                 // Blizzard: its revive on Normal Summon is the point (a Level 4 or lower Blackwing back, then a synchro): only
                 // with a target in the graveyard; otherwise it waits in hand (user, 2026-11-10: summoning it first wastes it).
-                if (card.IsCode(BlackwingCardId.BlackwingBlizzardTheFarNorth))
+                if (card.IsCode(CardId.BlackwingBlizzardTheFarNorth))
                 {
                     if (reviveTarget || !Rule(BlackwingRules.BlizzardNeedsTarget))
                         keep.Add(card);
@@ -2895,23 +2906,23 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 // summoning"). Summoned only when it's the missing piece of a synchro (a Level in our Extra Deck that our
                 // Tuner reaches with Kalut and not without it: seen 2026-11-10, Kalut + Blizzard made Level 5, which we
                 // don't have, while Shura + Blizzard already made the 6s), or when its damage is lethal.
-                if (card.IsCode(BlackwingCardId.BlackwingKalutTheMoonShadow))
+                if (card.IsCode(CardId.BlackwingKalutTheMoonShadow))
                 {
                     var newLevels = await LevelsOnlyWithAsync(ourFaceUp, card.Level);
                     int ourAttack = ourFaceUp.Where(m => m.IsAttack() && !m.Attacked).Sum(m => m.Attack);
                     bool lethal = battleAhead && enemyMonsters.Count == 0 && ourAttack + card.Attack >= oppLp;
                     // The exception (user, 2026-11-10): Black Whirlwind out (or in hand) and Kalut our only Normal Summon: summon
                     // it, and Whirlwind searches Blizzard.
-                    bool whirlwindHeld = whirlwind || hand.Any(h => h.IsCode(BlackwingCardId.BlackWhirlwind));
-                    bool onlySummon = summonable.All(other => other.IsCode(BlackwingCardId.BlackwingKalutTheMoonShadow));
+                    bool whirlwindHeld = whirlwind || hand.Any(h => h.IsCode(CardId.BlackWhirlwind));
+                    bool onlySummon = summonable.All(other => other.IsCode(CardId.BlackwingKalutTheMoonShadow));
                     if (whirlwindHeld && onlySummon)
                         Note(context, "summon Kalut: our only Normal Summon, and Black Whirlwind searches Blizzard off it");
                     // Its +1400 (attacking or defending) needs another Blackwing of ours to battle. With no other Blackwing on the
                     // field or in hand (only Kaluts), the boost has nothing to go on: Kalut is judged as a monster like any other
                     // (user, 2026-11-12, round-robin 32: held two turns with nothing to boost while Gearframe and Returner hit for
                     // 2400 a turn). A summoned Kalut is then also something a second Kalut in hand can boost.
-                    bool otherBlackwing = ourFaceUp.Any(m => IsBlackwing(m) && !m.IsCode(BlackwingCardId.BlackwingKalutTheMoonShadow)) ||
-                                          hand.Any(h => IsBlackwing(h) && h.HasType(CardType.Monster) && !h.IsCode(BlackwingCardId.BlackwingKalutTheMoonShadow));
+                    bool otherBlackwing = ourFaceUp.Any(m => IsBlackwing(m) && !m.IsCode(CardId.BlackwingKalutTheMoonShadow)) ||
+                                          hand.Any(h => IsBlackwing(h) && h.HasType(CardType.Monster) && !h.IsCode(CardId.BlackwingKalutTheMoonShadow));
                     if (!otherBlackwing)
                         Note(context, "Kalut isn't kept in hand: no other Blackwing on the field or in hand for its +1400, so it's judged as a monster");
                     if (newLevels.Count > 0 || lethal || whirlwindHeld && onlySummon || !otherBlackwing || !Rule(BlackwingRules.KalutStaysInHand))
@@ -2931,7 +2942,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 if (Rule(BlackwingRules.NoPointlessSummon))
                 {
                     Note(context, $"don't summon {CardNames.Get(card.ID)}: it can't hit anything this turn and starts no play" +
-                                  (card.IsCode(BlackwingCardId.BlackwingKalutTheMoonShadow) ? " (Kalut is worth +1400 from the hand)" : ""));
+                                  (card.IsCode(CardId.BlackwingKalutTheMoonShadow) ? " (Kalut is worth +1400 from the hand)" : ""));
                     Hold(card.ID, MainAction.Summon, BlackwingRules.NoPointlessSummon);
                 }
                 else
@@ -2939,7 +2950,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             }
             // Vayu may be set: it works from the graveyard, so being destroyed face-down feeds its synchro (user, 2026-11-10).
             var sets = (state.MonsterSetableCards ?? Array.Empty<DynamicCard>())
-                .Where(card => !IsBlackwing(card) || card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)).ToArray();
+                .Where(card => !IsBlackwing(card) || card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)).ToArray();
             var filtered = state;
             filtered.SummonableCards = keep.ToArray();
             filtered.MonsterSetableCards = sets;
@@ -2980,26 +2991,26 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
         /// damage even through a face-down defender). Not Gale: it's for cutting a big monster down (user, 2026-11-10).
         /// </summary>
         protected override DynamicCard? PreferredFaceDownAttacker(List<DynamicCard> attackers) =>
-            attackers.FirstOrDefault(card => card.IsCode(BlackwingCardId.BlackwingShuraTheBlueFlame)) is { ID: > 0 } shura ? shura
-            : attackers.FirstOrDefault(card => card.IsCode(BlackwingCardId.BlackwingBoraTheSpear)) is { ID: > 0 } bora ? bora
+            attackers.FirstOrDefault(card => card.IsCode(CardId.BlackwingShuraTheBlueFlame)) is { ID: > 0 } shura ? shura
+            : attackers.FirstOrDefault(card => card.IsCode(CardId.BlackwingBoraTheSpear)) is { ID: > 0 } bora ? bora
             : null;
 
         protected override string PreferredFaceDownWhy(DynamicCard attacker) =>
-            attacker.IsCode(BlackwingCardId.BlackwingShuraTheBlueFlame)
+            attacker.IsCode(CardId.BlackwingShuraTheBlueFlame)
                 ? "destroying it summons a Blackwing from the deck"
                 : "piercing: it deals damage even through a face-down defender";
 
         // Icarus Attack's tribute: our least useful Blackwing (Vayu / Blizzard / Kalut / Gale first, then the smallest).
         private DynamicCard IcarusTribute(List<DynamicCard> botMonsters) =>
             botMonsters.Where(card => card.ID > 0 && card.IsFaceup() && IsBlackwing(card))
-                .OrderBy(card => card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor, BlackwingCardId.BlackwingBlizzardTheFarNorth,
-                    BlackwingCardId.BlackwingKalutTheMoonShadow, BlackwingCardId.BlackwingGaleTheWhirlwind) ? 0 : 1)
+                .OrderBy(card => card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor, CardId.BlackwingBlizzardTheFarNorth,
+                    CardId.BlackwingKalutTheMoonShadow, CardId.BlackwingGaleTheWhirlwind) ? 0 : 1)
                 .ThenBy(card => card.Attack).FirstOrDefault();
 
         protected override double TributeCost(DynamicCard card) =>
             IsStolen(card) ? 0
-            : card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor) ? TributeVayu
-            : card.IsCode(BlackwingCardId.BlackwingBlizzardTheFarNorth, BlackwingCardId.BlackwingKalutTheMoonShadow, BlackwingCardId.BlackwingGaleTheWhirlwind) ? TributeSmallBlackwing
+            : card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor) ? TributeVayu
+            : card.IsCode(CardId.BlackwingBlizzardTheFarNorth, CardId.BlackwingKalutTheMoonShadow, CardId.BlackwingGaleTheWhirlwind) ? TributeSmallBlackwing
             : base.TributeCost(card);
 
         // ------------------------------------------------------------------ chains
@@ -3018,7 +3029,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             int Index(int id) => Array.FindIndex(options, card => card.IsCode(id) && card.CurrentCoordinates.Controller == 0);
             // Black Whirlwind's trigger on our Blackwing's Normal Summon: a free search, every copy (seen 2026-11-10: both
             // passed on Sirocco's summon).
-            int whirlwind = Array.FindIndex(options, card => card.IsCode(BlackwingCardId.BlackWhirlwind) && card.CurrentCoordinates.Controller == 0 &&
+            int whirlwind = Array.FindIndex(options, card => card.IsCode(CardId.BlackWhirlwind) && card.CurrentCoordinates.Controller == 0 &&
                                                              card.CurrentCoordinates.Location == (byte)CardLocation.SpellZone);
             if (whirlwind >= 0 && Rule(BlackwingRules.BlackWhirlwind))
             {
@@ -3027,7 +3038,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             }
             // Blizzard's revive on its Normal Summon: always (user, 2026-11-11). Alone it comes as a yes/no; with Black
             // Whirlwind triggering at the same time it comes as a chain prompt, which used to fall through to "pass".
-            int blizzard = Array.FindIndex(options, card => card.IsCode(BlackwingCardId.BlackwingBlizzardTheFarNorth) &&
+            int blizzard = Array.FindIndex(options, card => card.IsCode(CardId.BlackwingBlizzardTheFarNorth) &&
                                                             card.CurrentCoordinates.Controller == 0 &&
                                                             card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone);
             if (blizzard >= 0 && Rule(BlackwingRules.BlizzardRevive))
@@ -3041,7 +3052,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             // Kalut: +1400 to our battling Blackwing when that wins (or stops a loss / tie), or the hit is lethal.
             // (Omega reports the attack's chain windows as BattleStart too: seen 2026-11-12, Blizzard attacked a 1500 counting on
             // Kalut, then Kalut was passed in a "BattleStart" window and Blizzard died. A battling monster of ours is required.)
-            if (Index(BlackwingCardId.BlackwingKalutTheMoonShadow) is int kalut and >= 0 && ours.ID > 0 && IsBlackwing(ours) &&
+            if (Index(CardId.BlackwingKalutTheMoonShadow) is int kalut and >= 0 && ours.ID > 0 && IsBlackwing(ours) &&
                 phase is DuelPhase.Damage or DuelPhase.DamageCal or DuelPhase.BattleStep or DuelPhase.BattleStart or DuelPhase.Battle)
             {
                 // Kaluts we already chained on this battle that haven't resolved yet (round-robin 18: a second Kalut went on
@@ -3071,7 +3082,7 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
             }
 
             // Icarus Attack on their turn: free when our Blackwing dies anyway (attacked by a bigger monster).
-            if (!botTurn && Index(BlackwingCardId.IcarusAttack) is int icarus and >= 0)
+            if (!botTurn && Index(CardId.IcarusAttack) is int icarus and >= 0)
             {
                 var enemyCards = (await GetEnemyMonsterCardsAsync()).Count + (await GetEnemySpellCardsAsync()).Count;
                 // Their chain targets one of our Blackwings: tribute that one, it's going anyway (user, 2026-11-11).
@@ -3147,40 +3158,40 @@ place == Search.CardPlace.Hand && Search.SearchHost.Is(code, BlackwingCardId.Bla
                 int ourBest = (await GetBotMonsterCardsAsync()).Where(card => card.IsFaceup() && card.IsAttack()).Select(card => card.Attack).DefaultIfEmpty(0).Max();
                 var wall = (await GetEnemyMonsterCardsAsync()).Where(card => card.IsFaceup() && Power(card) >= ourBest)
                     .OrderBy(Power).FirstOrDefault();
-                bool blizzardOwned = hand.Any(card => card.IsCode(BlackwingCardId.BlackwingBlizzardTheFarNorth)) ||
-                                     (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(BlackwingCardId.BlackwingBlizzardTheFarNorth));
+                bool blizzardOwned = hand.Any(card => card.IsCode(CardId.BlackwingBlizzardTheFarNorth)) ||
+                                     (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(CardId.BlackwingBlizzardTheFarNorth));
                 int[] order;
                 string why;
                 if (wall.ID > 0 && ourBest > 0 && ourBest > wall.Attack / 2 && wall.IsAttack())
-                    (order, why) = (new[] { BlackwingCardId.BlackwingGaleTheWhirlwind, BlackwingCardId.BlackwingKalutTheMoonShadow },
+                    (order, why) = (new[] { CardId.BlackwingGaleTheWhirlwind, CardId.BlackwingKalutTheMoonShadow },
                         $"Gale halves {CardNames.Get(wall.ID)} ({wall.Attack}) so our {ourBest} gets over it");
                 else if (wall.ID > 0 && ourBest > 0 && ourBest + 1400 > Power(wall))
-                    (order, why) = (new[] { BlackwingCardId.BlackwingKalutTheMoonShadow, BlackwingCardId.BlackwingGaleTheWhirlwind },
+                    (order, why) = (new[] { CardId.BlackwingKalutTheMoonShadow, CardId.BlackwingGaleTheWhirlwind },
                         $"Kalut (+1400 in battle) takes our {ourBest} over {CardNames.Get(wall.ID)} ({Power(wall)})");
                 else if (!blizzardOwned)
-                    (order, why) = (new[] { BlackwingCardId.BlackwingBlizzardTheFarNorth, BlackwingCardId.BlackwingKalutTheMoonShadow },
+                    (order, why) = (new[] { CardId.BlackwingBlizzardTheFarNorth, CardId.BlackwingKalutTheMoonShadow },
                         "Blizzard: next turn it revives a Blackwing for a synchro");
                 else
-                    (order, why) = (new[] { BlackwingCardId.BlackwingKalutTheMoonShadow, BlackwingCardId.BlackwingBoraTheSpear }, "a body or a battle boost");
+                    (order, why) = (new[] { CardId.BlackwingKalutTheMoonShadow, CardId.BlackwingBoraTheSpear }, "a body or a battle boost");
                 // When the wanted card isn't in the deck: Blizzard (a synchro next turn) before Kalut / Bora as plain bodies, unless
                 // we already have one (seen 2026-11-13: Gale and Kalut gone, Bora searched over Blizzard).
-                var fallback = (blizzardOwned ? Array.Empty<int>() : new[] { BlackwingCardId.BlackwingBlizzardTheFarNorth })
-                    .Concat(new[] { BlackwingCardId.BlackwingKalutTheMoonShadow, BlackwingCardId.BlackwingBoraTheSpear, BlackwingCardId.BlackwingGaleTheWhirlwind,
-                        BlackwingCardId.BlackwingBlizzardTheFarNorth, BlackwingCardId.BlackwingVayuTheEmblemOfHonor });
+                var fallback = (blizzardOwned ? Array.Empty<int>() : new[] { CardId.BlackwingBlizzardTheFarNorth })
+                    .Concat(new[] { CardId.BlackwingKalutTheMoonShadow, CardId.BlackwingBoraTheSpear, CardId.BlackwingGaleTheWhirlwind,
+                        CardId.BlackwingBlizzardTheFarNorth, CardId.BlackwingVayuTheEmblemOfHonor });
                 var wanted = order;
                 order = order.Concat(fallback).Distinct().ToArray();
                 var chosen = indexed.OrderBy(x => StaplePriorityIndex(order, x.Card)).First();
                 // The note says what was actually taken, and why the first choice wasn't.
                 if (!chosen.Card.IsCode(wanted))
                     why = $"wanted {string.Join(" / ", wanted.Select(CardNames.Get))} ({why}), not in the deck; " +
-                          (chosen.Card.IsCode(BlackwingCardId.BlackwingBlizzardTheFarNorth) ? "Blizzard: next turn it revives a Blackwing for a synchro" : "the best body left");
+                          (chosen.Card.IsCode(CardId.BlackwingBlizzardTheFarNorth) ? "Blizzard: next turn it revives a Blackwing for a synchro" : "the best body left");
                 return Pick(chosen, $"Black Whirlwind searches ({why})");
             }
             // Shura's summon from the deck: Vayu first (user, 2026-11-12: "vayu is particularly useful to get for free as it has a
             // graveyard effect. most of the time shura should go for vayu first"), else the biggest attacker.
             if (hint == DHint.SPSUMMON && From(CardLocation.Deck) && indexed.All(x => IsBlackwing(x.Card)) &&
-                indexed.Any(x => x.Card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)) && Rule(BlackwingRules.ShuraTakesVayu))
-                return Pick(indexed.First(x => x.Card.IsCode(BlackwingCardId.BlackwingVayuTheEmblemOfHonor)), "Shura summons from the deck (Vayu: free, and it works from the graveyard)");
+                indexed.Any(x => x.Card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)) && Rule(BlackwingRules.ShuraTakesVayu))
+                return Pick(indexed.First(x => x.Card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor)), "Shura summons from the deck (Vayu: free, and it works from the graveyard)");
             // Shura's summon from the deck / Blizzard's revive from the graveyard: the biggest attacker.
             if (hint == DHint.SPSUMMON && (From(CardLocation.Deck) || From(CardLocation.Grave)) && indexed.All(x => IsBlackwing(x.Card)))
                 // A non-Tuner first: with Blizzard (a Tuner) it makes a synchro.

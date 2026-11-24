@@ -30,6 +30,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         public const string ProdigyFodder = "herofrog.prodigy-fodder";
         public const string PressureSummon = "herofrog.pressure-summon";
         public const string SwapBounce = "herofrog.swap-bounce";
+        /// <summary>Swap Frog returns a Monarch to the hand only with Treeborn set up, and then in Main Phase 2 after it attacked unless their
+        /// backrow or a monster is set (user, 2026-11-24: return it so it removes the best card they bring out next turn); MonarchReturnValue
+        /// rewards the line that does.</summary>
+        [HoldCost(HoldCosts.Strong)]
+        public const string MonarchReturnInMain2 = "herofrog.monarch-return-in-main2";
         /// <summary>Swap Frog's trigger sends Treeborn Frog, always (user, 2026-11-18).</summary>
         [HoldCost(HoldCosts.Strong)]
         public const string SwapSendsTreeborn = "herofrog.swap-sends-treeborn";

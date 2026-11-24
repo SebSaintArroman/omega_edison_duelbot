@@ -75,3 +75,11 @@ HeroFrogBotBrain.HoldCost.herofrog.aoi-set-needs-water = 3
 HeroFrogBotBrain.HoldCost.herofrog.swap-send-order = 0.75
 HeroFrogBotBrain.HoldCost.herofrog.swap-sends-treeborn = 3
 HeroFrogBotBrain.HoldCost.herofrog.treeborn-setup-first = 1.5
+
+# added 2026-11-24 13:28 (new in the code since the file was written)
+# --- HeroFrogBotBrain
+HeroFrogBotBrain.MonarchReturnValue = 3.5   # A Monarch returned to hand after using its effect this turn, with no other Monarch in hand, is worth this at the end of a line (card units): it removes their best card next turn. Caius on the field (2400 ATK) is ~4.1 against ~1.1 in hand, so this has to cover ~3 for the bounce to win. User, 2026-11-24.
+
+# added 2026-11-24 13:30 (new in the code since the file was written)
+# --- HeroFrogBotBrain
+HeroFrogBotBrain.HoldCost.herofrog.monarch-return-in-main2 = 3

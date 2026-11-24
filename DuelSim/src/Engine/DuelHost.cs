@@ -1,3 +1,4 @@
+using BotTest.Game.AI.Brains;
 using DuelSim.Data;
 using DuelSim.Native;
 using OmegaBotWrapper.Enum;
@@ -19,12 +20,14 @@ public sealed record DuelResult(int Winner, string Reason, int Turns, int[] Life
 internal sealed partial class DuelHost : IDisposable
 {
     public const int MaxTurns = 150;
-    /// <summary>Loop guard: the same player activating the same card this many times in a row cancels the duel.</summary>
+    /// <summary>Loop guard: the same player activating the same card this many times in a row, with its deck the same size each time, cancels
+    /// the duel. (A deck that shrinks is progress, not a loop: Substitoad tributing into a Frog from the deck again and again ends when the
+    /// Frogs run out; user, 2026-11-24: "using substitoad again and again though is very legitimate and should stay in as an option".)</summary>
     public const int MaxSameActivationsInARow = 5;
     /// <summary>Loop guard backstop: decisions (including automatic ones) allowed in a single turn.</summary>
     public const int MaxDecisionsPerTurn = 400;
 
-    private (int Player, int Code, ulong Desc) _lastActivation = (-1, 0, 0);
+    private (int Player, int Code, ulong Desc, uint Deck) _lastActivation = (-1, 0, 0, 0);
     private int _sameActivations;
     private int _decisionsThisTurn;
 
@@ -134,6 +137,9 @@ internal sealed partial class DuelHost : IDisposable
     public int RandomEvents { get; private set; }
     internal int OurCardsDrawn { get; private set; }
     internal int OurCardsDrawnAtTurnStart { get; private set; }
+    private readonly List<int> _opponentNormalDraws = new();
+    internal IReadOnlyList<int> OpponentNormalDraws => _opponentNormalDraws;
+    private int _opponentNormalDrawTurn = -1;
     /// <summary>Problems worth surfacing: engine script errors, rejected bot answers, fallbacks.</summary>
     public event Action<string>? Warning;
 
@@ -474,7 +480,7 @@ internal sealed partial class DuelHost : IDisposable
                 PreviousTurnSummonedAndAttackedWithThreat = _summonedAndAttackedWithThreat;
                 _summonedAndAttackedWithThreat = false;
                 _decisionsThisTurn = 0;
-                _lastActivation = (-1, 0, 0);
+                _lastActivation = (-1, 0, 0, 0);
                 _sameActivations = 0;
                 Event?.Invoke($"--- Turn {Turn}: player {TurnPlayer} ({Decks[TurnPlayer].Name}) | LP {_lp[0]} / {_lp[1]}");
                 TurnStarted?.Invoke(Turn, TurnPlayer, _lp[0], _lp[1]);
@@ -521,8 +527,9 @@ internal sealed partial class DuelHost : IDisposable
                 // Loop guard: same player, same card, same effect, N activations with no other activation in between. (By effect:
                 // Indomitable Gladiator Beast from the hand, then its recycle from the GY, alternating, is a plan, not a loop;
                 // round-robin 13 was ended as a draw by this guard.)
-                _sameActivations = _lastActivation == (triggerController, code, desc) ? _sameActivations + 1 : 1;
-                _lastActivation = (triggerController, code, desc);
+                uint deck = triggerController < 2 ? _duel.QueryCount((byte)triggerController, Ocg.LocDeck) : 0;
+                _sameActivations = _lastActivation == (triggerController, code, desc, deck) ? _sameActivations + 1 : 1;
+                _lastActivation = (triggerController, code, desc, deck);
                 if (_sameActivations >= MaxSameActivationsInARow)
                     Finish(-1, $"stalled: player {triggerController} activated {CardName(code)} {MaxSameActivationsInARow} times in a row in turn {Turn} (probably a loop)", error: "loop");
                 return null;
@@ -653,6 +660,13 @@ internal sealed partial class DuelHost : IDisposable
                 int count = (int)r.U32();
                 if (player == 0)
                     OurCardsDrawn += count;
+                else if (!_ownsDuel && player == 1 && TurnPlayer == 1 && Phase == (int)DuelPhase.Draw &&
+                    count > 0 && _opponentNormalDrawTurn != Turn && ResolvingChainEffect == null)
+                {
+                    // One baseline draw per turn. Extra draws caused by effects still count.
+                    _opponentNormalDrawTurn = Turn;
+                    _opponentNormalDraws.Add(r.I32());
+                }
                 return null;
             }
             // Chance: a coin toss, a dice roll, a card picked at random. Counted for the play search (a random outcome the plan

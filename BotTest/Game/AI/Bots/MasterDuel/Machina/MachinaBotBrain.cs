@@ -5,6 +5,7 @@ using OmegaBotWrapper.Heuristics;
 using OmegaBotWrapper.Logging;
 using OmegaBotWrapper.States;
 using OmegaBotWrapper.Struct;
+using static BotTest.Game.AI.CardId;
 
 namespace BotTest.Game.AI.Bots.MasterDuel.Machina
 {
@@ -31,15 +32,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         // ------------------------------------------------------------------ tunable numbers (bot-tuning-Machina.txt, user 2026-11-16)
 
         [Tunable("The search's value for Jinzo in our graveyard (Machina Jinzo list: Jinzo - Returner revives it), card units.")]
-        public static double GraveJinzoValue = 0.4;
+        public static readonly Tuned<double> GraveJinzoValue = new(0.4);
         [Tunable("The search's setup value for Machina Force with 8+ Levels of Machine fodder ready.")]
-        public static double ForceReadySetupValue = 1.0;
+        public static readonly Tuned<double> ForceReadySetupValue = new(1.0);
         [Tunable("Machina Fortress (or Machina Force with a Fortress to revive) in hand, in rough card points.")]
-        public static double FortressHandValue = 3.5;
+        public static readonly Tuned<double> FortressHandValue = new(3.5);
         [Tunable("Machina Force in hand with no Fortress in the graveyard (only fodder), in rough card points.")]
-        public static double ForceFodderHandValue = 1;
+        public static readonly Tuned<double> ForceFodderHandValue = new(1);
         [Tunable("Machina Fortress destroyed by battle: what it gains, the killer's threat + this share of its own (it comes back).")]
-        public static double FortressDeathOwnShare = 0.5;
+        public static readonly Tuned<double> FortressDeathOwnShare = new(0.5);
 
         // XX-Saber Gottoms is in the Extra Deck for one card: Tytannial, Princess of Camellias (user, 2026-11-10: "it should only go
         // for gottoms if the opponent has tytannial on the field, that's the only reason it's in there"; then: "this isn't a hard
@@ -48,7 +49,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         // Whether Future Fusion would be a finishing push at the last main-phase decision (for the planner's suggestion cost).
         private bool _futureFusionFinishes;
 
-        private bool TytannialOut => OpponentMonsters.Any(m => m.IsFaceup() && m.IsCode(MachinaCardId.TytannialPrincessOfCamellias));
+        private bool TytannialOut => OpponentMonsters.Any(m => m.IsFaceup() && m.IsCode(CardId.FairyCheerGirl));
 
         // Or to get over a monster none of ours beats, that Gottoms' 3100 does (user, 2026-11-10: "you could pick gottoms for
         // example to get over a monster with between 2600-3000 atk").
@@ -60,101 +61,101 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             base.PlanSuggestions(steps, index, offered, theirs) +
             ReturnerSuggestion(steps, index) +
             // Future Fusion outside a finishing push (see the main phase).
-            (steps[index].Key.StartsWith($"{(int)MainAction.Activate}:") && KeyCardId(steps[index].Key) == MachinaCardId.FutureFusion && !_futureFusionFinishes
+            (steps[index].Key.StartsWith($"{(int)MainAction.Activate}:") && KeyCardId(steps[index].Key) == CardId.FutureFusion && !_futureFusionFinishes
                 ? SuggestionCost : 0) +
-            (steps[index].Key.StartsWith($"{(int)MainAction.SpSummon}:") && KeyCardId(steps[index].Key) == MachinaCardId.XXSaberGottoms &&
-             !theirs.Monsters.Any(m => m.FaceUp && (m.Code == MachinaCardId.TytannialPrincessOfCamellias || Search.SearchHost.CanonicalId(m.Code) == MachinaCardId.TytannialPrincessOfCamellias))
+            (steps[index].Key.StartsWith($"{(int)MainAction.SpSummon}:") && KeyCardId(steps[index].Key) == CardId.XXSaberGottoms &&
+             !theirs.Monsters.Any(m => m.FaceUp && (m.Code == CardId.FairyCheerGirl || Search.SearchHost.CanonicalId(m.Code) == CardId.FairyCheerGirl))
                 ? SuggestionCost : 0);
 
         // A hand Fortress discards itself + one of these (cheapest first). Machina Force only if nothing else.
         private static readonly int[] FortressFodder =
         {
-            MachinaCardId.Mechanicalchaser,
-            MachinaCardId.CyberDragon,
-            MachinaCardId.MachinaPeacekeeper,
-            MachinaCardId.CyberPhoenix,
-            MachinaCardId.JinzoReturner, // an ordinary discard: its trigger doesn't activate when discarded for Fortress
-            MachinaCardId.CardTrooper,
-            MachinaCardId.MachinaGearframe,
-            MachinaCardId.Jinzo,         // first only when it sets up Returner (no Jinzo in the GY yet; see JinzoSetUp)
-            MachinaCardId.MachinaFortress,
-            MachinaCardId.MachinaForce
+            CardId.Mechanicalchaser,
+            CardId.CyberDragon,
+            CardId.MachinaPeacekeeper,
+            CardId.CyberPhoenix,
+            CardId.JinzoReturner, // an ordinary discard: its trigger doesn't activate when discarded for Fortress
+            CardId.CardTrooper,
+            CardId.MachinaGearframe,
+            CardId.Jinzo,         // first only when it sets up Returner (no Jinzo in the GY yet; see JinzoSetUp)
+            CardId.MachinaFortress,
+            CardId.MachinaForce
         };
 
         // Fodder Machines: summoned only when nothing better is on (and never the last discard a hand Fortress needs).
         private static readonly int[] HeldFodder =
         {
-            MachinaCardId.Mechanicalchaser,
-            MachinaCardId.CyberPhoenix,
-            MachinaCardId.MachinaPeacekeeper
+            CardId.Mechanicalchaser,
+            CardId.CyberPhoenix,
+            CardId.MachinaPeacekeeper
         };
 
         // Pot of Avarice: graveyard monsters to shuffle back, best first (Force and Gearframe to find Force again). Cards
         // that work from the graveyard (Plaguespreader, Fortress) can go back too, but last.
         private static readonly int[] AvariceReturn =
         {
-            MachinaCardId.MachinaForce,
-            MachinaCardId.MachinaGearframe,
-            MachinaCardId.RykoLightswornHunter,
-            MachinaCardId.SuperNimbleMegaHamster,
-            MachinaCardId.LylaLightswornSorceress,
-            MachinaCardId.CardTrooper,
-            MachinaCardId.Mechanicalchaser,
-            MachinaCardId.CyberPhoenix,
-            MachinaCardId.MachinaPeacekeeper,
-            MachinaCardId.GorzTheEmissaryOfDarkness,
-            MachinaCardId.DDCrow,
-            MachinaCardId.CyberDragon,
-            MachinaCardId.PlaguespreaderZombie,
-            MachinaCardId.MachinaFortress
+            CardId.MachinaForce,
+            CardId.MachinaGearframe,
+            CardId.RykoLightswornHunter,
+            CardId.SuperNimbleMegaHamster,
+            CardId.LylaLightswornSorceress,
+            CardId.CardTrooper,
+            CardId.Mechanicalchaser,
+            CardId.CyberPhoenix,
+            CardId.MachinaPeacekeeper,
+            CardId.GorzTheEmissaryOfDarkness,
+            CardId.DDCrow,
+            CardId.CyberDragon,
+            CardId.PlaguespreaderZombie,
+            CardId.MachinaFortress
         };
 
         // Overload Fusion: Machines cheapest to banish first (Force and Gearframe are Pot of Avarice's best returns, so late).
         private static readonly int[] OverloadBanish =
         {
-            MachinaCardId.ChimeratechFortressDragon,
-            MachinaCardId.ChimeratechOverdragon,
-            MachinaCardId.Mechanicalchaser,
-            MachinaCardId.CyberPhoenix,
-            MachinaCardId.MachinaPeacekeeper,
-            MachinaCardId.CardTrooper,
-            MachinaCardId.CyberDragon,
-            MachinaCardId.MachinaGearframe,
-            MachinaCardId.MachinaForce
+            CardId.ChimeratechFortressDragon,
+            CardId.ChimeratechOverdragon,
+            CardId.Mechanicalchaser,
+            CardId.CyberPhoenix,
+            CardId.MachinaPeacekeeper,
+            CardId.CardTrooper,
+            CardId.CyberDragon,
+            CardId.MachinaGearframe,
+            CardId.MachinaForce
         };
 
         private static readonly int[] OwnTriggers =
         {
-            MachinaCardId.MachinaGearframe,
-            MachinaCardId.MachinaPeacekeeper,
-            MachinaCardId.SuperNimbleMegaHamster,
-            MachinaCardId.RykoLightswornHunter,
+            CardId.MachinaGearframe,
+            CardId.MachinaPeacekeeper,
+            CardId.SuperNimbleMegaHamster,
+            CardId.RykoLightswornHunter,
             // MachinaJinzo: Armageddon Knight's send, Jinzo - Returner's revival (both on summon / when sent).
-            MachinaCardId.ArmageddonKnight,
-            MachinaCardId.JinzoReturner
+            CardId.ArmageddonKnight,
+            CardId.JinzoReturner
         };
 
         private static readonly int[] ChainCandidates =
         {
-            MachinaCardId.GorzTheEmissaryOfDarkness,
-            MachinaCardId.MirrorForce,
-            MachinaCardId.DimensionalPrison,
-            MachinaCardId.BottomlessTrapHole,
-            MachinaCardId.TorrentialTribute,
-            MachinaCardId.TrapDustshoot,
-            MachinaCardId.DDCrow,
-            MachinaCardId.MysticalSpaceTyphoon,
-            MachinaCardId.CardTrooper,
-            MachinaCardId.SolemnJudgment,
-            MachinaCardId.CompulsoryEvacuationDevice
+            CardId.GorzTheEmissaryOfDarkness,
+            CardId.MirrorForce,
+            CardId.DimensionalPrison,
+            CardId.BottomlessTrapHole,
+            CardId.TorrentialTribute,
+            CardId.TrapDustshoot,
+            CardId.DDCrow,
+            CardId.MysticalSpaceTyphoon,
+            CardId.CardTrooper,
+            CardId.SolemnJudgment,
+            CardId.CompulsoryEvacuationDevice
         };
 
         // Set monsters that gain when flipped or destroyed: Hamster (sets Ryko), Ryko, then the floaters, lower priority:
         // Peacekeeper (searches Gearframe when destroyed). Not Cyber Phoenix: its effects only work face-up (never set).
         private static readonly int[] ValueSets =
         {
-            MachinaCardId.SuperNimbleMegaHamster, MachinaCardId.RykoLightswornHunter,
-            MachinaCardId.MachinaPeacekeeper
+            CardId.SuperNimbleMegaHamster, CardId.RykoLightswornHunter,
+            CardId.MachinaPeacekeeper
         };
 
         private int _madePlayTurn = -1;
@@ -192,7 +193,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
 
         /// <summary>Fire rate of the rules under test (see ExplorationRules).</summary>
         [Tunable("Fire rate of the rules under test (see ExplorationRules).")]
-        private static double ExplorationRate = 0.75;
+        private static readonly Tuned<double> ExplorationRate = new(0.75);
 
         // Version history (DuelSim records it per duel): 1 = 2026-11-09 first versioned build (after the 2,000-duel rerun
         // batch: exploration rules, Phoenix / Gearframe / Catastor / Crow / Gorz fixes, side-aware planned targets).
@@ -206,16 +207,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         /// </summary>
         // The MCTS's card values for this deck (user, 2026-11-11): a Fortress in the graveyard comes back (discarding, or Force),
         // and in the Jinzo list a Jinzo in the graveyard is what Jinzo - Returner revives.
-        internal override double SearchCardBonus(int code, Search.CardPlace place) =>
-            place != Search.CardPlace.Grave ? 0
-            : Variant == MachinaVariant.Jinzo && Search.SearchHost.Is(code, MachinaCardId.Jinzo) ? GraveJinzoValue
+        internal override double SearchCardBonus(int code, BotTest.Game.AI.Brains.CardPlace place) =>
+            place != BotTest.Game.AI.Brains.CardPlace.Grave ? 0
+            : Variant == MachinaVariant.Jinzo && Search.SearchHost.Is(code, CardId.Jinzo) ? GraveJinzoValue
             : 0;
 
         internal override double SearchSetupValue(DuelSim.Engine.SideSummary own)
         {
-            if (!own.HandCodes.Any(code => Search.SearchHost.Is(code, MachinaCardId.MachinaFortress)))
+            if (!own.HandCodes.Any(code => Search.SearchHost.Is(code, CardId.MachinaFortress)))
                 return 0;
-            int fodderLevels = own.HandCodes.Where(code => !Search.SearchHost.Is(code, MachinaCardId.MachinaFortress) &&
+            int fodderLevels = own.HandCodes.Where(code => !Search.SearchHost.Is(code, CardId.MachinaFortress) &&
                                                            (Search.SearchHost.Type(code) & 0x1) != 0 && (Search.SearchHost.Race(code) & 0x20) != 0)
                 .Sum(code => Search.SearchHost.Cards.Get(code)?.Level ?? 0);
             return fodderLevels >= 8 ? ForceReadySetupValue : 0;
@@ -244,11 +245,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         /// Returner (its tribute and reviver) the very last.</summary>
         protected override double AllureBanishRank(DynamicCard card, AllureView v) =>
             v.Hand.Count(other => other.IsCode(card.ID)) > 1 ? 0
-            : card.IsCode(MachinaCardId.Jinzo) ? 4
-            : card.IsCode(MachinaCardId.JinzoReturner) ? 5
+            : card.IsCode(CardId.Jinzo) ? 4
+            : card.IsCode(CardId.JinzoReturner) ? 5
             : base.AllureBanishRank(card, v);
 
-        private static readonly int[] ValueSetsWithReturner = ValueSets.Append(MachinaCardId.JinzoReturner).ToArray();
+        private static readonly int[] ValueSetsWithReturner = ValueSets.Append(CardId.JinzoReturner).ToArray();
 
         // ------------------------------------------------------------------ main phase
 
@@ -263,9 +264,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             var state = WithoutNeverSummons(context.StateData);
             // Gottoms: the brain summons it only against Tytannial (a strong suggestion; see PlanSuggestions).
             if (!TytannialOut && !GottomsGetsOver(await GetBotMonsterCardsAsync()))
-                state.SpecialSummonableCards = (state.SpecialSummonableCards ?? Array.Empty<DynamicCard>()).Where(card => !card.IsCode(MachinaCardId.XXSaberGottoms)).ToArray();
+                state.SpecialSummonableCards = (state.SpecialSummonableCards ?? Array.Empty<DynamicCard>()).Where(card => !card.IsCode(CardId.XXSaberGottoms)).ToArray();
             // Cyber Phoenix only works face-up in attack position (its draw and its protection): never set it.
-            state.MonsterSetableCards = (state.MonsterSetableCards ?? Array.Empty<DynamicCard>()).Where(card => !card.IsCode(MachinaCardId.CyberPhoenix)).ToArray();
+            state.MonsterSetableCards = (state.MonsterSetableCards ?? Array.Empty<DynamicCard>()).Where(card => !card.IsCode(CardId.CyberPhoenix)).ToArray();
             // Our lasting Jinzo negates our own traps: none are set under it (one Returner brought back this turn doesn't count).
             state = WithoutTrapsUnderJinzo(context, state);
             int turn = context.Header.CurrentTurn;
@@ -280,7 +281,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             // a Fortress or two to the graveyard for a huge push; its second summons Chimeratech Overdragon, which sends all our
             // other cards (and so itself) to the graveyard. So only when the push over the next two turns should end the game:
             // their life points within reach, or their board and hand nearly empty. Otherwise it's held (the search may still).
-            if (TryGetActivable(state, MachinaCardId.FutureFusion, out var futureFusion))
+            if (TryGetActivable(state, CardId.FutureFusion, out var futureFusion))
             {
                 int oppLp = await CurrentField.GetBotLifePoints(isOwnSide: false);
                 int theirField = (await GetEnemyMonsterCardsAsync()).Count + (await GetEnemySpellCardsAsync()).Count;
@@ -298,12 +299,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                     Note(context, $"activate Future Fusion as the finishing push: {finish} (Overdragon clears our own field in two turns)");
                     return futureFusion.MainActivateFromIndex();
                 }
-                state.ActivableCards = state.ActivableCards!.Where(card => !card.IsCode(MachinaCardId.FutureFusion)).ToArray();
+                state.ActivableCards = state.ActivableCards!.Where(card => !card.IsCode(CardId.FutureFusion)).ToArray();
             }
 
             // Dark Armed Dragon, live (exactly 3 DARKs in the GY): 2800, and its effect destroys a card per DARK banished.
             // The window closes as soon as the DARK count moves, so it goes first.
-            if (TryGetSpecialSummon(state, MachinaCardId.DarkArmedDragon, out var dad) && Rule(MachinaRules.DarkArmedDragon))
+            if (TryGetSpecialSummon(state, CardId.DarkArmedDragon, out var dad) && Rule(MachinaRules.DarkArmedDragon))
             {
                 Note(context, "special summon Dark Armed Dragon: exactly 3 DARKs in the graveyard (the window closes when the count moves)");
                 return dad.SpecialSummon();
@@ -324,7 +325,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
 
             // 1b. Dark Armed Dragon's effect: banish a spare DARK from the graveyard, destroy one of their cards. Always with a
             // spare one (user, 2026-11-10: "this should always be used really if you have any expendable darks in grave").
-            if (TryGetActivable(state, MachinaCardId.DarkArmedDragon, out var dadEffect) &&
+            if (TryGetActivable(state, CardId.DarkArmedDragon, out var dadEffect) &&
                 dadEffect.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone &&
                 await DadSpareWhyAsync() is string dadWhy && Rule(MachinaRules.DadEffect))
             {
@@ -341,7 +342,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
 
             // 4. Backrow removal (Heavy Storm, Lyla, MST for a big play: shared).
             if (await TryBackrowRemovalAsync(context, state, enemySpells.Count,
-                    botSpells.Count(card => card.ID > 0 && !card.IsCode(MachinaCardId.HeavyStorm))) is IdleCmdResponse backrow)
+                    botSpells.Count(card => card.ID > 0 && !card.IsCode(CardId.HeavyStorm))) is IdleCmdResponse backrow)
                 return Played(backrow);
             // Shared monster staples (Smashing Ground, Brain Control; round-robin 36, 47).
             if (await TryMonsterStaplesAsync(context) is IdleCmdResponse monsterStaple)
@@ -428,9 +429,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         // (they're lower priority: see SafeSummonPriority / ValueSets), except the last discard a Fortress in hand needs.
         private IdleCmdData HoldFodder(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> hand)
         {
-            if (!hand.Any(card => card.IsCode(MachinaCardId.MachinaFortress)))
+            if (!hand.Any(card => card.IsCode(CardId.MachinaFortress)))
                 return state;
-            var fodder = hand.Where(card => IsMachine(card) && !card.IsCode(MachinaCardId.MachinaFortress, MachinaCardId.MachinaForce)).ToList();
+            var fodder = hand.Where(card => IsMachine(card) && !card.IsCode(CardId.MachinaFortress, CardId.MachinaForce)).ToList();
             if (fodder.Count != 1 || !fodder[0].IsCode(HeldFodder) || !Rule(MachinaRules.HoldFodder))
                 return state;
             int last = fodder[0].ID;
@@ -452,7 +453,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         private async Task<IdleCmdResponse?> TryFortressAsync(DecisionContext<IdleCmdData> context, IdleCmdData state,
             List<DynamicCard> hand, List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters)
         {
-            var options = (state.SpecialSummonableCards ?? Array.Empty<DynamicCard>()).Where(card => card.IsCode(MachinaCardId.MachinaFortress)).ToList();
+            var options = (state.SpecialSummonableCards ?? Array.Empty<DynamicCard>()).Where(card => card.IsCode(CardId.MachinaFortress)).ToList();
             var fromHand = options.Where(card => card.CurrentCoordinates.Location == (byte)CardLocation.Hand).ToList();
             var fromGrave = options.Where(card => card.CurrentCoordinates.Location == (byte)CardLocation.Grave).ToList();
             if (options.Count == 0)
@@ -461,21 +462,21 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 Rule(DeckRules.NoChimeratechExposure))
             {
                 Note(context, $"hold Machina Fortress: {exposed}");
-                Hold(MachinaCardId.MachinaFortress, MainAction.SpSummon, DeckRules.NoChimeratechExposure);
+                Hold(CardId.MachinaFortress, MainAction.SpSummon, DeckRules.NoChimeratechExposure);
                 return null;
             }
 
             // Gearframe first when the Normal Summon is free: it searches another Fortress (or Force), which the Fortress
             // can then discard, instead of Gearframe itself being discarded (user rule, 2026-11-09). Fortress still comes
             // this turn, after it.
-            if (!NormalSummonUsed(context.Header) && TryGetSummonable(state, MachinaCardId.MachinaGearframe, out _))
+            if (!NormalSummonUsed(context.Header) && TryGetSummonable(state, CardId.MachinaGearframe, out _))
             {
                 Note(context, "Machina Fortress waits: Normal Summon Gearframe first (it searches; then Fortress discards the search)");
                 return null;
             }
 
             // MachinaJinzo: a hand Fortress discarding Jinzo (or Returner, with a Jinzo already there) sets the Jinzo engine up.
-            bool jinzoInGrave = (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(MachinaCardId.Jinzo));
+            bool jinzoInGrave = (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(CardId.Jinzo));
             var handMachines = hand.Where(IsMachine).ToList();
             DynamicCard summon = default;
             int fodder = 0;
@@ -487,19 +488,19 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 var others = handMachines.Where(card => card.CurrentCoordinates.Sequence != self.CurrentCoordinates.Sequence).ToList();
                 // Any other Machine first, then Machina Force, Gearframe last (user, 2026-11-12: "any other machine discard
                 // would've been better than force ... except gearframe, force was preferable to gearframe").
-                var cheap = others.Where(card => !card.IsCode(MachinaCardId.MachinaForce) && !card.IsCode(MachinaCardId.MachinaGearframe))
+                var cheap = others.Where(card => !card.IsCode(CardId.MachinaForce) && !card.IsCode(CardId.MachinaGearframe))
                     .OrderBy(card => JinzoSetUp(card, jinzoInGrave) != null ? -1 : StaplePriorityIndex(FortressFodder, card)).FirstOrDefault();
-                var gearframe = others.FirstOrDefault(card => card.IsCode(MachinaCardId.MachinaGearframe));
+                var gearframe = others.FirstOrDefault(card => card.IsCode(CardId.MachinaGearframe));
                 if (cheap.ID > 0)
                     (summon, fodder, plan) = (self, cheap.ID, $"from hand, discarding itself + {CardNames.Get(cheap.ID)}");
-                else if (fromGrave.Count == 0 && others.Any(card => card.IsCode(MachinaCardId.MachinaForce)))
-                    (summon, fodder, plan) = (self, MachinaCardId.MachinaForce, "from hand, discarding itself + Machina Force (no other discard)");
+                else if (fromGrave.Count == 0 && others.Any(card => card.IsCode(CardId.MachinaForce)))
+                    (summon, fodder, plan) = (self, CardId.MachinaForce, "from hand, discarding itself + Machina Force (no other discard)");
                 else if (gearframe.ID > 0)
                     (summon, fodder, plan) = (self, gearframe.ID, "from hand, discarding itself + Machina Gearframe (no other discard)");
             }
-            if (summon.ID <= 0 && fromGrave.Count > 0 && handMachines.Any(card => card.IsCode(MachinaCardId.MachinaForce)))
+            if (summon.ID <= 0 && fromGrave.Count > 0 && handMachines.Any(card => card.IsCode(CardId.MachinaForce)))
             {
-                (summon, fodder, plan) = (fromGrave[0], MachinaCardId.MachinaForce, "from the graveyard, discarding Machina Force");
+                (summon, fodder, plan) = (fromGrave[0], CardId.MachinaForce, "from the graveyard, discarding Machina Force");
                 rule = MachinaRules.FortressFromGrave;
             }
             bool lastResort = false;
@@ -522,7 +523,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             string? answer = bigger.ID > 0 && crashThisTurn
                 ? $"it crashes into {CardNames.Get(bigger.ID)} ({bigger.Attack}) and its trigger destroys it"
                 : null;
-            int spares = hand.Count(card => card.IsCode(MachinaCardId.MachinaFortress)) + (await GetBotGraveyardCardsAsync()).Count(card => card.IsCode(MachinaCardId.MachinaFortress)) - 1;
+            int spares = hand.Count(card => card.IsCode(CardId.MachinaFortress)) + (await GetBotGraveyardCardsAsync()).Count(card => card.IsCode(CardId.MachinaFortress)) - 1;
             // With no attacker of ours out at all, building a board beats holding (LP and tempo: an empty field just stalls).
             // Not just whenever it can attack. But when our turn would otherwise only be a Ryko / Hamster set (no attacker
             // of ours out) and they have pressure on us (attack-position monsters putting us on a clock), Fortress comes
@@ -558,7 +559,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             // should be used in preference of a fortress with a costly discard"), Cyber Dragon's free special summon, or a
             // Normal Summon that beats their attacker (user, 2026-11-12: "didnt need to discard jinzo and cydra - could've just
             // summoned cydra and attacked with it"). Not when Fortress answers a big monster, or holding loses.
-            bool costlyDiscard = lastResort || fodder == MachinaCardId.MachinaForce || fodder == MachinaCardId.MachinaGearframe;
+            bool costlyDiscard = lastResort || fodder == CardId.MachinaForce || fodder == CardId.MachinaGearframe;
             string? cheaper = null;
             bool cheaperAnswers = false; // it beats their attacker too: as good an answer, even when we would lose otherwise
             if (costlyDiscard && answer == null)
@@ -568,9 +569,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                     ? (state.SummonableCards ?? Array.Empty<DynamicCard>()).Where(card => card.Level <= 4 && (pressure.ID <= 0 || card.Attack > pressure.Attack))
                         .OrderByDescending(card => card.Attack).FirstOrDefault()
                     : default;
-                if (summonFree && TryGetSummonable(state, MachinaCardId.ArmageddonKnight, out _))
+                if (summonFree && TryGetSummonable(state, CardId.ArmageddonKnight, out _))
                     cheaper = "Normal Summon Armageddon Knight";
-                else if (TryGetSpecialSummon(state, MachinaCardId.CyberDragon, out _) && (pressure.ID <= 0 || 2100 > pressure.Attack))
+                else if (TryGetSpecialSummon(state, CardId.CyberDragon, out _) && (pressure.ID <= 0 || 2100 > pressure.Attack))
                     { cheaper = "special summon Cyber Dragon (free)" + (pressure.ID > 0 ? $": it beats {CardNames.Get(pressure.ID)}" : ""); cheaperAnswers = pressure.ID > 0; }
                 else if (beater.ID > 0)
                 { cheaper = $"Normal Summon {CardNames.Get(beater.ID)}" + (pressure.ID > 0 ? $": it beats {CardNames.Get(pressure.ID)}" : ""); cheaperAnswers = pressure.ID > 0; }
@@ -578,17 +579,17 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             if (cheaper != null && (cheaperAnswers || !await WeLoseNextTurnAsync()) && Rule(MachinaRules.KnightBeforeCostlyFortress))
             {
                 Note(context, $"Machina Fortress waits: its discard is costly ({plan}); {cheaper} instead");
-                Hold(MachinaCardId.MachinaFortress, MainAction.SpSummon, MachinaRules.KnightBeforeCostlyFortress);
+                Hold(CardId.MachinaFortress, MainAction.SpSummon, MachinaRules.KnightBeforeCostlyFortress);
                 return null;
             }
             var why = await JustifySpendAsync(context, $"Machina Fortress ({plan})", newAtk: 2500, fieldMaterials: null, removal: false,
-                cardId: MachinaCardId.MachinaFortress, allowPush: true, effectAnswer: answer, refundedBy: developing, spares: Math.Max(0, spares));
+                cardId: CardId.MachinaFortress, allowPush: true, effectAnswer: answer, refundedBy: developing, spares: Math.Max(0, spares));
             if (why == null)
                 return null;
             if (lastResort && !why.Contains("lethal") && !await WeLoseNextTurnAsync())
             {
                 Note(context, "hold Machina Fortress: only several non-Fortress discards would pay for it, a last resort for winning now or not losing");
-                Hold(MachinaCardId.MachinaFortress, MainAction.SpSummon, MachinaRules.FortressLastResort);
+                Hold(CardId.MachinaFortress, MainAction.SpSummon, MachinaRules.FortressLastResort);
                 return null;
             }
             // A banished Fortress is gone for good (3 copies, nothing gets them back): a likely Bottomless Trap Hole on the
@@ -601,7 +602,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             {
                 Note(context, $"hold Machina Fortress: {riskWhy} ({banishRisk:P0}, our limit {riskLimit:P0} with {fortressesLeft} Fortress(es) not banished): " +
                               "a banished Fortress is gone for good");
-                Hold(MachinaCardId.MachinaFortress, MainAction.SpSummon, MachinaRules.FortressBanishRisk);
+                Hold(CardId.MachinaFortress, MainAction.SpSummon, MachinaRules.FortressBanishRisk);
                 return null;
             }
             if (!Rule(rule))
@@ -613,7 +614,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             Note(context, $"special summon Machina Fortress {plan}: {why}");
             // Summoned to crash into their monster: that attack is the plan (round-robin 1: it went into Lyla instead).
             if (answer != null && why.Contains(answer) && canAttackNow)
-                CommitAttack(context.Header.CurrentTurn, MachinaCardId.MachinaFortress, bigger, $"Machina Fortress was summoned to crash into {CardNames.Get(bigger.ID)}");
+                CommitAttack(context.Header.CurrentTurn, CardId.MachinaFortress, bigger, $"Machina Fortress was summoned to crash into {CardNames.Get(bigger.ID)}");
             return summon.SpecialSummon();
         }
 
@@ -629,7 +630,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             if (set.Count == 0)
                 return (0, "no set cards");
             double none = set.Aggregate(1.0, (acc, card) =>
-                acc * (1 - (OpponentDeck.SetZoneChance(card.CurrentCoordinates.Sequence, BottomlessTrapHoleId) ?? SetCardIsBottomlessChance)));
+                acc * (1 - (OpponentDeck.SetZoneChance(card.CurrentCoordinates.Sequence, BottomlessTrapHole) ?? SetCardIsBottomlessChance)));
             return (1 - none, $"{set.Count} set card(s) could be Bottomless Trap Hole");
         }
 
@@ -664,9 +665,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             {
                 if (fp.FromHand)
                 {
-                    int self = Array.FindIndex(cards, card => card.IsCode(MachinaCardId.MachinaFortress) && card.CurrentCoordinates.Sequence == fp.Sequence);
+                    int self = Array.FindIndex(cards, card => card.IsCode(CardId.MachinaFortress) && card.CurrentCoordinates.Sequence == fp.Sequence);
                     if (self < 0)
-                        self = Array.FindIndex(cards, card => card.IsCode(MachinaCardId.MachinaFortress));
+                        self = Array.FindIndex(cards, card => card.IsCode(CardId.MachinaFortress));
                     if (self >= 0)
                         picks.Add(self);
                 }
@@ -674,7 +675,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 if (fodder >= 0)
                     picks.Add(fodder);
             }
-            else if (Array.FindIndex(cards, card => card.IsCode(MachinaCardId.MachinaFortress)) is int handFortress and >= 0)
+            else if (Array.FindIndex(cards, card => card.IsCode(CardId.MachinaFortress)) is int handFortress and >= 0)
             {
                 // No plan (the summon didn't come through TryFortressAsync): a Fortress summoned from hand always discards
                 // itself + one other Machine, never several other monsters (seen 2026-11-09: three discards, no Fortress).
@@ -745,9 +746,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             if (!_fortressSelfPicked && (plan == null || plan.Value.FromHand))
             {
                 // Fortress itself first (from hand it discards itself and comes back from the graveyard).
-                pick = plan is { } fp ? Array.FindIndex(cards, card => card.IsCode(MachinaCardId.MachinaFortress) && card.CurrentCoordinates.Sequence == fp.Sequence) : -1;
+                pick = plan is { } fp ? Array.FindIndex(cards, card => card.IsCode(CardId.MachinaFortress) && card.CurrentCoordinates.Sequence == fp.Sequence) : -1;
                 if (pick < 0)
-                    pick = Array.FindIndex(cards, card => card.IsCode(MachinaCardId.MachinaFortress));
+                    pick = Array.FindIndex(cards, card => card.IsCode(CardId.MachinaFortress));
                 if (pick >= 0)
                     _fortressSelfPicked = true;
             }
@@ -779,27 +780,27 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             List<DynamicCard> enemyMonsters, bool battleAhead)
         {
             // Gearframe is the best card: it always gets the Normal Summon first.
-            if (NormalSummonUsed(context.Header) || TryGetSummonable(state, MachinaCardId.MachinaGearframe, out _))
+            if (NormalSummonUsed(context.Header) || TryGetSummonable(state, CardId.MachinaGearframe, out _))
                 return (null, false);
             var setters = (state.MonsterSetableCards ?? Array.Empty<DynamicCard>())
-                .Where(card => card.IsCode(MachinaCardId.SuperNimbleMegaHamster, MachinaCardId.RykoLightswornHunter)).ToList();
+                .Where(card => card.IsCode(CardId.SuperNimbleMegaHamster, CardId.RykoLightswornHunter)).ToList();
             // Hamster's flip is a Special Summon: worth nothing while Kristya (or any lock) is up (user, 2026-11-13).
-            if (SpecialSummonLockedBy is string lockedBy && setters.RemoveAll(card => card.IsCode(MachinaCardId.SuperNimbleMegaHamster)) > 0)
+            if (SpecialSummonLockedBy is string lockedBy && setters.RemoveAll(card => card.IsCode(CardId.SuperNimbleMegaHamster)) > 0)
                 Note(context, $"not Super-Nimble Mega Hamster: its flip summons, and {lockedBy} stops Special Summons");
             // Not our Ryko into a face-down that may be theirs: it flips first and destroys ours (user, 2026-11-13).
             // (The same bar as playing around Ryko: LikelyRyko.)
             var maybeRyko = enemyMonsters.FirstOrDefault(card => !card.IsFaceup() && card.CurrentCoordinates.Location != 0 && LikelyRyko(card));
-            if (maybeRyko.CurrentCoordinates.Location != 0 && setters.RemoveAll(card => card.IsCode(MachinaCardId.RykoLightswornHunter)) > 0)
+            if (maybeRyko.CurrentCoordinates.Location != 0 && setters.RemoveAll(card => card.IsCode(CardId.RykoLightswornHunter)) > 0)
             {
                 Note(context, $"not Ryko: their face-down may be their own Ryko ({FaceDownRykoChance(maybeRyko):P0}), which flips first and destroys ours");
-                Hold(MachinaCardId.RykoLightswornHunter, MainAction.SetMonster, DeckRules.NoRykoIntoFaceDown);
+                Hold(CardId.RykoLightswornHunter, MainAction.SetMonster, DeckRules.NoRykoIntoFaceDown);
             }
             if (setters.Count == 0 || await KeepGorzLiveAsync(context, enemyMonsters) || SetIntoBouncerHold(context) != null)
                 return (null, false);
             if (await SetsWaitForMainPhase2Async(context))
                 return (null, true);
             // Hamster first (its flip sets another Ryko), and always into their face-down (their Ryko would counter ours).
-            var pick = setters.OrderBy(card => card.IsCode(MachinaCardId.SuperNimbleMegaHamster) ? 0 : 1).First();
+            var pick = setters.OrderBy(card => card.IsCode(CardId.SuperNimbleMegaHamster) ? 0 : 1).First();
             if (!Rule(MachinaRules.SetFlipEveryTurn))
                 return (null, false);
             Note(context, $"set {CardNames.Get(pick.ID)}: a flip monster with the Normal Summon (no Gearframe) while Fortress / Cyber Dragon attack");
@@ -810,16 +811,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
 
         // Brionac's discard: what we lose least by (Force without a Fortress in the graveyard is just fodder).
         private int DiscardRank(DynamicCard card) =>
-            card.IsCode(MachinaCardId.MachinaForce) && !_fortressInGrave ? 0
-            : card.IsCode(MachinaCardId.Mechanicalchaser) ? 1
-            : card.IsCode(MachinaCardId.CyberPhoenix) ? 2
-            : card.IsCode(MachinaCardId.MachinaPeacekeeper) ? 3
-            : card.IsCode(MachinaCardId.CyberDragon) ? 4
-            : card.IsCode(MachinaCardId.PlaguespreaderZombie) ? 5
-            : card.IsCode(MachinaCardId.CardTrooper) ? 6
+            card.IsCode(CardId.MachinaForce) && !_fortressInGrave ? 0
+            : card.IsCode(CardId.Mechanicalchaser) ? 1
+            : card.IsCode(CardId.CyberPhoenix) ? 2
+            : card.IsCode(CardId.MachinaPeacekeeper) ? 3
+            : card.IsCode(CardId.CyberDragon) ? 4
+            : card.IsCode(CardId.PlaguespreaderZombie) ? 5
+            : card.IsCode(CardId.CardTrooper) ? 6
             : card.HasType(CardType.Spell) ? 7
-            : card.IsCode(MachinaCardId.MachinaGearframe) ? 9
-            : card.IsCode(MachinaCardId.MachinaForce, MachinaCardId.MachinaFortress, MachinaCardId.GorzTheEmissaryOfDarkness) ? 11
+            : card.IsCode(CardId.MachinaGearframe) ? 9
+            : card.IsCode(CardId.MachinaForce, CardId.MachinaFortress, CardId.GorzTheEmissaryOfDarkness) ? 11
             : card.HasType(CardType.Trap) ? 10
             : 8;
 
@@ -833,7 +834,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         {
             var response = await TryBrionacBounceAsync(context, state, MachinaRules.BrionacBounce);
             if (response != null)
-                MarkActivated(context, MachinaCardId.BrionacDragonOfTheIceBarrier);
+                MarkActivated(context, CardId.BrionacDragonOfTheIceBarrier);
             return response;
         }
 
@@ -846,15 +847,15 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters)
         {
             if (NormalSummonUsed(context.Header) || (DuelPhase)context.Header.CurrentPhase != DuelPhase.Main1 ||
-                !TryGetActivable(state, MachinaCardId.CompulsoryEvacuationDevice, out var compulsory))
+                !TryGetActivable(state, CardId.CompulsoryEvacuationDevice, out var compulsory))
                 return null;
-            var gearframe = botMonsters.FirstOrDefault(card => card.IsFaceup() && card.IsCode(MachinaCardId.MachinaGearframe));
+            var gearframe = botMonsters.FirstOrDefault(card => card.IsFaceup() && card.IsCode(CardId.MachinaGearframe));
             if (gearframe.ID <= 0 || enemyMonsters.Any(card => card.IsFaceup() && BounceRemoves(card)) ||
                 !Rule(MachinaRules.CompulsoryGearframe))
                 return null;
             PlanTarget(context.Header.CurrentTurn, gearframe, theirs: false);
             Note(context, "activate Compulsory Evacuation Device on our own Machina Gearframe: Normal Summon it again to search again");
-            MarkActivated(context, MachinaCardId.CompulsoryEvacuationDevice);
+            MarkActivated(context, CardId.CompulsoryEvacuationDevice);
             return compulsory.MainActivateFromIndex();
         }
 
@@ -868,7 +869,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             if (!KnownDPrisonInOpponentHand || !enemySpells.Any(card => !card.IsFaceup()) ||
                 (DuelPhase)context.Header.CurrentPhase != DuelPhase.Main1 || !state.CanBattlePhase ||
                 !botMonsters.Any(card => card.IsFaceup() && card.IsAttack() && IsMachine(card)) ||
-                !TryGetSummonable(state, MachinaCardId.CyberPhoenix, out var phoenix) ||
+                !TryGetSummonable(state, CardId.CyberPhoenix, out var phoenix) ||
                 SummonExposesChimeratech(phoenix, botMonsters) != null || !Rule(MachinaRules.PhoenixAgainstDPrison))
                 return null;
             Note(context, "normal summon Cyber Phoenix: they hold Dimensional Prison (seen) and have a set card; in attack position it " +
@@ -886,16 +887,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         private async Task<IdleCmdResponse?> TryOverloadLethalAsync(DecisionContext<IdleCmdData> context, IdleCmdData state,
             List<DynamicCard> enemyMonsters, List<DynamicCard> botMonsters, List<DynamicCard> botSpells)
         {
-            if (!TryGetActivable(state, MachinaCardId.OverloadFusion, out var overload) ||
+            if (!TryGetActivable(state, CardId.OverloadFusion, out var overload) ||
                 (DuelPhase)context.Header.CurrentPhase != DuelPhase.Main1 || !state.CanBattlePhase)
                 return null;
             var grave = await GetBotGraveyardCardsAsync();
             var pool = grave.Concat(botMonsters.Where(card => card.IsFaceup()))
-                .Where(card => card.ID > 0 && IsMachine(card) && !card.IsCode(MachinaCardId.MachinaFortress)).ToList();
-            var cyber = pool.FirstOrDefault(card => card.IsCode(MachinaCardId.CyberDragon));
+                .Where(card => card.ID > 0 && IsMachine(card) && !card.IsCode(CardId.MachinaFortress)).ToList();
+            var cyber = pool.FirstOrDefault(card => card.IsCode(CardId.CyberDragon));
             if (cyber.ID <= 0)
                 return null;
-            var others = pool.Where(card => !(card.IsCode(MachinaCardId.CyberDragon) && card.CurrentCoordinates.Location == cyber.CurrentCoordinates.Location &&
+            var others = pool.Where(card => !(card.IsCode(CardId.CyberDragon) && card.CurrentCoordinates.Location == cyber.CurrentCoordinates.Location &&
                                               card.CurrentCoordinates.Sequence == cyber.CurrentCoordinates.Sequence))
                 .OrderBy(card => StaplePriorityIndex(OverloadBanish, card)).ToList();
             int oppLp = await CurrentField.GetBotLifePoints(isOwnSide: false);
@@ -930,7 +931,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             if (through < 1 && !await WeLoseNextTurnAsync() && !await PushRollAsync(context.Header, through))
             {
                 Note(context, $"hold Overload Fusion: Chimeratech Overdragon ({800 * materials}) would be lethal, but {throughWhy}; rolled to hold");
-                Hold(MachinaCardId.OverloadFusion, MainAction.Activate, MachinaRules.OverloadForLethal);
+                Hold(CardId.OverloadFusion, MainAction.Activate, MachinaRules.OverloadForLethal);
                 return null;
             }
             if (!Rule(MachinaRules.OverloadForLethal))
@@ -940,7 +941,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             PlanFusionMaterials(context.Header.CurrentTurn, picked, "Overload Fusion");
             int ourLoss = botMonsters.Count(card => !picked.Any(m => m.CurrentCoordinates.Location == card.CurrentCoordinates.Location &&
                                                                   m.CurrentCoordinates.Sequence == card.CurrentCoordinates.Sequence)) +
-                          botSpells.Count(card => card.ID != 0 && !card.IsCode(MachinaCardId.OverloadFusion));
+                          botSpells.Count(card => card.ID != 0 && !card.IsCode(CardId.OverloadFusion));
             Note(context, $"activate Overload Fusion: Chimeratech Overdragon with {materials} materials ({800 * materials} ATK) is lethal " +
                           $"against {oppLp} LP; banish only {string.Join(", ", picked.Select(card => CardNames.Get(card.ID)))} " +
                           $"(it sends our {ourLoss} other card(s) to the graveyard; {throughWhy})");
@@ -956,12 +957,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         /// </summary>
         private async Task<IdleCmdResponse?> TryAvariceAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, bool noPlay)
         {
-            if (!TryGetActivable(state, MachinaCardId.PotOfAvarice, out var avarice))
+            if (!TryGetActivable(state, CardId.PotOfAvarice, out var avarice))
                 return null;
             var picks = await AvariceReturnsAsync();
             if (picks.Count < 5)
                 return null;
-            bool returnsEngine = picks.Any(card => card.IsCode(MachinaCardId.MachinaFortress, MachinaCardId.PlaguespreaderZombie));
+            bool returnsEngine = picks.Any(card => card.IsCode(CardId.MachinaFortress, CardId.PlaguespreaderZombie));
             string what = string.Join(", ", picks.Select(card => CardNames.Get(card.ID)));
             if (!noPlay && returnsEngine)
                 return null;
@@ -970,16 +971,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             Note(context, noPlay
                 ? $"activate Pot of Avarice: no play this turn, draw 2 to find one (returns {what})"
                 : $"activate Pot of Avarice: draw 2, returning {what}");
-            MarkActivated(context, MachinaCardId.PotOfAvarice);
+            MarkActivated(context, CardId.PotOfAvarice);
             return avarice.MainActivateFromIndex();
         }
 
         // The five graveyard monsters Pot of Avarice returns, best first.
         private async Task<List<DynamicCard>> AvariceReturnsAsync()
         {
-            bool overloadInHand = (await GetBotHandCardsAsync()).Any(card => card.IsCode(MachinaCardId.OverloadFusion));
+            bool overloadInHand = (await GetBotHandCardsAsync()).Any(card => card.IsCode(CardId.OverloadFusion));
             int Rank(DynamicCard card) =>
-                card.IsCode(MachinaCardId.CyberDragon) && overloadInHand ? AvariceReturn.Length + 1
+                card.IsCode(CardId.CyberDragon) && overloadInHand ? AvariceReturn.Length + 1
                 : card.HasType(CardType.Fusion) || card.HasType(CardType.Synchro) ? 6 // back to the Extra Deck: fine
                 : StaplePriorityIndex(AvariceReturn, card);
             return (await GetBotGraveyardCardsAsync()).Where(card => card.ID > 0 && card.HasType(CardType.Monster))
@@ -992,16 +993,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         {
             // (Special Summonable only while just the opponent controls a monster, so nothing of ours is out: no
             // Chimeratech exposure.) Pressure: it attacks this turn, and a Ryko / Hamster set after battle sets up the mills.
-            if (!TryGetSpecialSummon(state, MachinaCardId.CyberDragon, out var cyber))
+            if (!TryGetSpecialSummon(state, CardId.CyberDragon, out var cyber))
                 return null;
             bool canAttackNow = (DuelPhase)context.Header.CurrentPhase == DuelPhase.Main1 && state.CanBattlePhase && context.Header.CurrentTurn > 1;
             var setter = NormalSummonUsed(context.Header) ? default : (state.MonsterSetableCards ?? Array.Empty<DynamicCard>())
-                .FirstOrDefault(card => card.IsCode(MachinaCardId.SuperNimbleMegaHamster, MachinaCardId.RykoLightswornHunter));
+                .FirstOrDefault(card => card.IsCode(CardId.SuperNimbleMegaHamster, CardId.RykoLightswornHunter));
             if (!canAttackNow && setter.ID <= 0)
                 return null;
             // The only discard for a Fortress in hand stays in hand (Fortress is the bigger attacker).
-            bool fortressInHand = hand.Any(card => card.IsCode(MachinaCardId.MachinaFortress));
-            int otherFodder = hand.Count(card => IsMachine(card) && !card.IsCode(MachinaCardId.MachinaFortress, MachinaCardId.MachinaForce, MachinaCardId.CyberDragon));
+            bool fortressInHand = hand.Any(card => card.IsCode(CardId.MachinaFortress));
+            int otherFodder = hand.Count(card => IsMachine(card) && !card.IsCode(CardId.MachinaFortress, CardId.MachinaForce, CardId.CyberDragon));
             if (fortressInHand && otherFodder == 0)
                 return null;
             if (!Rule(MachinaRules.CyberDragonPressure))
@@ -1022,16 +1023,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             List<DynamicCard> enemyMonsters, List<DynamicCard> enemySpells, bool battleAhead)
         {
             var unions = (state.ActivableCards ?? Array.Empty<DynamicCard>())
-                .Where(card => card.IsCode(MachinaCardId.MachinaGearframe, MachinaCardId.MachinaPeacekeeper) &&
+                .Where(card => card.IsCode(CardId.MachinaGearframe, CardId.MachinaPeacekeeper) &&
                                card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone).ToList();
             // Our face-up Cyber Phoenix negates the effects of spells/traps that target a Machine, the union's equip
             // included (user, 2026-11-13: "never equip gearframe while you have cyber phoenix on field"). An equipped union
             // comes off instead: back as a monster it can attack, where equipped it does nothing.
-            var phoenix = botMonsters.FirstOrDefault(card => card.IsFaceup() && card.IsCode(MachinaCardId.CyberPhoenix));
+            var phoenix = botMonsters.FirstOrDefault(card => card.IsFaceup() && card.IsCode(CardId.CyberPhoenix));
             if (phoenix.ID > 0)
             {
                 var equipped = (state.ActivableCards ?? Array.Empty<DynamicCard>())
-                    .FirstOrDefault(card => card.IsCode(MachinaCardId.MachinaGearframe, MachinaCardId.MachinaPeacekeeper) &&
+                    .FirstOrDefault(card => card.IsCode(CardId.MachinaGearframe, CardId.MachinaPeacekeeper) &&
                                             card.CurrentCoordinates.Location == (byte)CardLocation.SpellZone);
                 if (equipped.ID > 0 && phoenix.IsAttack() && Rule(MachinaRules.UnionUnequipForPhoenix))
                 {
@@ -1054,7 +1055,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 // you want to get destroyed!").
                 var host = botMonsters
                     .Where(card => card.ID > 0 && card.IsFaceup() && IsMachine(card) && card.CurrentCoordinates.Sequence != union.CurrentCoordinates.Sequence &&
-                                   !card.IsCode(MachinaCardId.MachinaFortress, MachinaCardId.MachinaGearframe, MachinaCardId.MachinaPeacekeeper) &&
+                                   !card.IsCode(CardId.MachinaFortress, CardId.MachinaGearframe, CardId.MachinaPeacekeeper) &&
                                    !IsExpendable(card) && BattleDeathPayoff(card) == null)
                     .OrderByDescending(card => card.Attack).FirstOrDefault();
                 string? why = null;
@@ -1088,7 +1089,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 {
                     // Fortress as the host: not when it means to crash this turn (the union would die instead, no pop), but
                     // against likely effect destruction it doesn't get anything from: Mirror Force, Torrential, a flipped Ryko.
-                    var fortress = botMonsters.FirstOrDefault(card => card.IsFaceup() && card.IsCode(MachinaCardId.MachinaFortress));
+                    var fortress = botMonsters.FirstOrDefault(card => card.IsFaceup() && card.IsCode(CardId.MachinaFortress));
                     if (fortress.ID > 0 && FortressEquipWhy(fortress, enemyMonsters, enemySpells, battleAhead, out double fortressThreat) is string fortressWhy &&
                         Rule(MachinaRules.UnionEquipFortress))
                         (host, why, threat) = (fortress, fortressWhy, fortressThreat);
@@ -1153,7 +1154,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             var twin = botMonsters.FirstOrDefault(card => card.ID > 0 && card.IsFaceup() && !IsExpendable(card) &&
                                                           card.CurrentCoordinates.Sequence != host.CurrentCoordinates.Sequence &&
                                                           card.CurrentCoordinates.Sequence != union.CurrentCoordinates.Sequence &&
-                                                          !card.IsCode(MachinaCardId.MachinaGearframe, MachinaCardId.MachinaPeacekeeper) &&
+                                                          !card.IsCode(CardId.MachinaGearframe, CardId.MachinaPeacekeeper) &&
                                                           (card.IsCode(host.ID) || card.Attack >= host.Attack));
             if (twin.ID > 0)
                 return $"our {CardNames.Get(twin.ID)} stays unprotected either way, so we're no safer (it's not our one key monster)";
@@ -1189,24 +1190,24 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         // Gearframe first; the fodder Machines (Mechanicalchaser, Cyber Phoenix, Peacekeeper) last: still summoned for
         // pressure when nothing better is on.
         protected override int SafeSummonPriority(DynamicCard card, List<DynamicCard> hand) =>
-            card.IsCode(MachinaCardId.MachinaGearframe) ? 0 : card.IsCode(HeldFodder) ? 2 : 1;
+            card.IsCode(CardId.MachinaGearframe) ? 0 : card.IsCode(HeldFodder) ? 2 : 1;
 
         /// <summary>Machina Gearframe: Normal Summon it for its search (Fortress, or Force for a Fortress in the graveyard).</summary>
         protected override async Task<IdleCmdResponse?> DeckSummonAsync(DecisionContext<IdleCmdData> context, IdleCmdData state,
             List<DynamicCard> developers, List<DynamicCard> hand, bool danger, int botLp)
         {
-            if (developers.TryGetByID(MachinaCardId.MachinaGearframe, out var gearframe) && Rule(MachinaRules.SummonGearframe))
+            if (developers.TryGetByID(CardId.MachinaGearframe, out var gearframe) && Rule(MachinaRules.SummonGearframe))
             {
                 Note(context, $"normal summon Machina Gearframe to search a Machina (LP {botLp})");
                 return gearframe.NormalSummon();
             }
-            if (developers.TryGetByID(MachinaCardId.JinzoReturner, out var returner) && await ReturnerCrashTargetAsync(context, state) is { ID: > 0 } target &&
+            if (developers.TryGetByID(CardId.JinzoReturner, out var returner) && await ReturnerCrashTargetAsync(context, state) is { ID: > 0 } target &&
                 Rule(MachinaRules.ReturnerCrash))
             {
                 Note(context, $"normal summon Jinzo - Returner to crash into {CardNames.Get(target.ID)} ({target.Attack}): destroyed, it revives " +
                               $"the Jinzo in the graveyard, which (2400) then kills {CardNames.Get(target.ID)}");
                 // Committed: the Battle Phase isn't skipped and the crash is made (an inconsistency otherwise; seen 2026-11-12).
-                CommitAttack(context.Header.CurrentTurn, MachinaCardId.JinzoReturner, target,
+                CommitAttack(context.Header.CurrentTurn, CardId.JinzoReturner, target,
                     $"Jinzo - Returner was summoned to crash into {CardNames.Get(target.ID)} and revive Jinzo");
                 return returner.NormalSummon();
             }
@@ -1223,12 +1224,12 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         {
             var grave = await GetBotGraveyardCardsAsync();
             var darks = grave.Where(card => card.HasType(CardType.Monster) && (card.Attribute & (int)CardAttribute.Dark) != 0).ToList();
-            int jinzos = darks.Count(card => card.IsCode(MachinaCardId.Jinzo));
-            int returnersSeen = grave.Count(card => card.IsCode(MachinaCardId.JinzoReturner)) +
-                                (await CurrentField.GetCardsInLocation(CardLocation.Removed)).Count(card => card.CurrentCoordinates.Controller == 0 && card.IsCode(MachinaCardId.JinzoReturner));
+            int jinzos = darks.Count(card => card.IsCode(CardId.Jinzo));
+            int returnersSeen = grave.Count(card => card.IsCode(CardId.JinzoReturner)) +
+                                (await CurrentField.GetCardsInLocation(CardLocation.Removed)).Count(card => card.CurrentCoordinates.Controller == 0 && card.IsCode(CardId.JinzoReturner));
             bool returnerLeft = returnersSeen < 3;
-            return darks.Where(card => !card.IsCode(MachinaCardId.PlaguespreaderZombie) &&
-                                       !(card.IsCode(MachinaCardId.Jinzo) && returnerLeft && jinzos <= 1)).ToList();
+            return darks.Where(card => !card.IsCode(CardId.PlaguespreaderZombie) &&
+                                       !(card.IsCode(CardId.Jinzo) && returnerLeft && jinzos <= 1)).ToList();
         }
 
         /// <summary>Why Dark Armed Dragon's effect fires now (a spare DARK to banish and a card of theirs to destroy), or null.</summary>
@@ -1254,8 +1255,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             var spare = await SpareGraveDarksAsync();
             int Rank(DynamicCard card) =>
                 !spare.Any(s => s.IsCode(card.ID)) ? 10
-                : card.IsCode(MachinaCardId.JinzoReturner, MachinaCardId.GorzTheEmissaryOfDarkness, MachinaCardId.ArmageddonKnight) ? 0
-                : card.IsCode(MachinaCardId.Jinzo) ? 2
+                : card.IsCode(CardId.JinzoReturner, CardId.GorzTheEmissaryOfDarkness, CardId.ArmageddonKnight) ? 0
+                : card.IsCode(CardId.Jinzo) ? 2
                 : 1;
             var pick = cards.Select((card, i) => (Card: card, Index: i)).OrderBy(x => Rank(x.Card)).First();
             Note(context, $"Dark Armed Dragon banishes {CardNames.Get(pick.Card.ID)}");
@@ -1284,13 +1285,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         private static double ReturnerSuggestion(IReadOnlyList<Search.PlanStep> steps, int index)
         {
             string key = steps[index].Key;
-            if (KeyCardId(key) != MachinaCardId.JinzoReturner)
+            if (KeyCardId(key) != CardId.JinzoReturner)
                 return 0;
             if (key.StartsWith($"{(int)MainAction.SetMonster}:"))
                 return SuggestionCost / 2;
             if (!key.StartsWith($"{(int)MainAction.Summon}:"))
                 return 0;
-            bool crashes = steps.Skip(index + 1).Any(step => step.Key.StartsWith("attack:") && KeyCardId(step.Key) == MachinaCardId.JinzoReturner);
+            bool crashes = steps.Skip(index + 1).Any(step => step.Key.StartsWith("attack:") && KeyCardId(step.Key) == CardId.JinzoReturner);
             return crashes ? 0 : SuggestionCost;
         }
 
@@ -1302,16 +1303,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         protected override async Task<string?> OtherAnswerToAsync(DynamicCard threat)
         {
             var ours = await GetBotMonsterCardsAsync();
-            if (ours.Any(card => card.IsFaceup() && card.IsCode(MachinaCardId.BrionacDragonOfTheIceBarrier)))
+            if (ours.Any(card => card.IsFaceup() && card.IsCode(CardId.BrionacDragonOfTheIceBarrier)))
                 return "Brionac can bounce it";
             if (threat.Attack >= 2500)
             {
-                if (ours.Any(card => card.IsFaceup() && card.IsCode(MachinaCardId.MachinaFortress)))
+                if (ours.Any(card => card.IsFaceup() && card.IsCode(CardId.MachinaFortress)))
                     return "our Machina Fortress crashes into it and its trigger destroys it";
                 var hand = await GetBotHandCardsAsync();
-                bool handFortress = hand.Any(card => card.IsCode(MachinaCardId.MachinaFortress)) &&
+                bool handFortress = hand.Any(card => card.IsCode(CardId.MachinaFortress)) &&
                                     hand.Count(IsMachine) >= 2;
-                bool graveFortress = _fortressInGrave && hand.Any(card => card.IsCode(MachinaCardId.MachinaForce));
+                bool graveFortress = _fortressInGrave && hand.Any(card => card.IsCode(CardId.MachinaForce));
                 if (handFortress || graveFortress)
                     return "a Machina Fortress we can summon crashes into it and its trigger destroys it";
             }
@@ -1329,8 +1330,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         // D-Prison; or it destroys and there's no Force in hand to revive it from the graveyard).
         // A banished Fortress is gone for good (3 copies, nothing gets them back): always worth saving from a banish.
         protected override bool WorthSavingToHand(DynamicCard card, bool removalBanishes) =>
-            card.IsCode(MachinaCardId.MachinaGearframe) ||
-            (card.IsCode(MachinaCardId.MachinaFortress)
+            card.IsCode(CardId.MachinaGearframe) ||
+            (card.IsCode(CardId.MachinaFortress)
                 ? removalBanishes || _spareFodderInHand > 0 && !_forceInHand
                 : base.WorthSavingToHand(card, removalBanishes));
 
@@ -1340,7 +1341,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         /// </summary>
         protected override double SolemnToProtectChance(DynamicCard ours, bool removalBanishes)
         {
-            if (!ours.IsCode(MachinaCardId.MachinaFortress) || !removalBanishes)
+            if (!ours.IsCode(CardId.MachinaFortress) || !removalBanishes)
                 return 0;
             return Math.Min(1, SolemnSavesFortressChance + SolemnPerBanishedFortress * _fortressesBanished);
         }
@@ -1357,9 +1358,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
 
         // Fortress destroyed by battle destroys a card (and comes back from the graveyard).
         protected override string? BattleDeathPayoff(DynamicCard card) =>
-            card.IsCode(MachinaCardId.MachinaFortress)
+            card.IsCode(CardId.MachinaFortress)
                 ? "Machina Fortress destroyed by battle destroys a card of theirs (normally the one that killed it), and comes back from the graveyard"
-                : card.IsCode(MachinaCardId.JinzoReturner) && _jinzoInGrave
+                : card.IsCode(CardId.JinzoReturner) && _jinzoInGrave
                     ? "Jinzo - Returner destroyed by battle revives the Jinzo in the graveyard, which can still attack"
                     : base.BattleDeathPayoff(card);
 
@@ -1368,8 +1369,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         /// isn't lost). Jinzo - Returner: the Jinzo it revives (2400, its trap lock).
         /// </summary>
         protected override double BattleDeathGain(DynamicCard card, DynamicCard killer, List<DynamicCard> theirMonsters) =>
-            card.IsCode(MachinaCardId.MachinaFortress) ? TargetThreat(killer) + TargetThreat(card) * FortressDeathOwnShare
-            : card.IsCode(MachinaCardId.JinzoReturner) && _jinzoInGrave ? 2900
+            card.IsCode(CardId.MachinaFortress) ? TargetThreat(killer) + TargetThreat(card) * FortressDeathOwnShare
+            : card.IsCode(CardId.JinzoReturner) && _jinzoInGrave ? 2900
             : base.BattleDeathGain(card, killer, theirMonsters);
 
         // A Jinzo in our graveyard (Jinzo - Returner revives it when destroyed by battle).
@@ -1381,23 +1382,23 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         /// </summary>
         protected override bool IsExpendable(DynamicCard card) =>
             base.IsExpendable(card) ||
-            card.IsCode(MachinaCardId.MachinaPeacekeeper, MachinaCardId.CyberPhoenix) ||
-            card.IsCode(MachinaCardId.SuperNimbleMegaHamster) && card.IsFaceup() || // flipped: its job is done (still an 1100 hit)
-            card.IsCode(MachinaCardId.CardTrooper) && _fortressInGrave;
+            card.IsCode(CardId.MachinaPeacekeeper, CardId.CyberPhoenix) ||
+            card.IsCode(CardId.SuperNimbleMegaHamster) && card.IsFaceup() || // flipped: its job is done (still an 1100 hit)
+            card.IsCode(CardId.CardTrooper) && _fortressInGrave;
 
         protected override void OnFieldRefreshed(FieldInfo field)
         {
-            _fortressInGrave = (field.OwnSide.Grave ?? Array.Empty<int>()).Contains(MachinaCardId.MachinaFortress);
-            _jinzoInGrave = (field.OwnSide.Grave ?? Array.Empty<int>()).Any(id => id == MachinaCardId.Jinzo || id == MachinaCardId.Jinzo + 20);
+            _fortressInGrave = (field.OwnSide.Grave ?? Array.Empty<int>()).Contains(CardId.MachinaFortress);
+            _jinzoInGrave = (field.OwnSide.Grave ?? Array.Empty<int>()).Any(id => id == CardId.Jinzo || id == CardId.Jinzo + 20);
             var hand = field.OwnSide.Hand ?? Array.Empty<int>();
-            _forceInHand = hand.Contains(MachinaCardId.MachinaForce);
+            _forceInHand = hand.Contains(CardId.MachinaForce);
             // Machines in hand that could be discarded for a Fortress besides Fortress / Force themselves.
-            _spareFodderInHand = hand.Count(id => FortressFodder.Contains(id) && id != MachinaCardId.MachinaFortress && id != MachinaCardId.MachinaForce);
-            _fortressesBanished = (field.OwnSide.Banish ?? Array.Empty<int>()).Count(id => id == MachinaCardId.MachinaFortress);
+            _spareFodderInHand = hand.Count(id => FortressFodder.Contains(id) && id != CardId.MachinaFortress && id != CardId.MachinaForce);
+            _fortressesBanished = (field.OwnSide.Banish ?? Array.Empty<int>()).Count(id => id == CardId.MachinaFortress);
 
             // Jinzos on our field, and those back from the GY this turn (Jinzo - Returner's revival: destroyed in our End
             // Phase, so it doesn't lock our traps for their turn).
-            static bool IsJinzo(int id) => id == MachinaCardId.Jinzo || id == MachinaCardId.Jinzo + 20;
+            static bool IsJinzo(int id) => id == CardId.Jinzo || id == CardId.Jinzo + 20;
             int onField = (field.OwnSide.MonsterZones ?? Array.Empty<CardArray>()).Count(zone => zone.Cards?.Any(IsJinzo) == true);
             int inGrave = (field.OwnSide.Grave ?? Array.Empty<int>()).Count(IsJinzo);
             int turn = CurrentTurnNumber;
@@ -1432,14 +1433,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         /// trigger doesn't activate, user 2026-11-10; it's an ordinary discard.)
         /// </summary>
         private string? JinzoSetUp(DynamicCard discard, bool jinzoInGrave) =>
-            Variant == MachinaVariant.Jinzo && discard.IsCode(MachinaCardId.Jinzo) && !jinzoInGrave
+            Variant == MachinaVariant.Jinzo && discard.IsCode(CardId.Jinzo) && !jinzoInGrave
                 ? "the discard puts Jinzo in the graveyard for Jinzo - Returner"
                 : null;
 
         // A Returner-revived Jinzo is destroyed in our End Phase: it's no Chimeratech material on their turn (when every
         // Jinzo out is one of those; a lasting one can't be told apart from a revived one, so then none counts as gone).
         protected override bool GoneByTheirTurn(DynamicCard card) =>
-            card.IsCode(MachinaCardId.Jinzo) && _temporaryJinzos > 0 && _temporaryJinzos >= _lastFieldJinzos;
+            card.IsCode(CardId.Jinzo) && _temporaryJinzos > 0 && _temporaryJinzos >= _lastFieldJinzos;
 
         // Under our lasting Jinzo, traps are worth less (dead until they remove it), not nothing (user, 2026-11-10: "you can still
         // set traps ... your opponent might remove it"): one a turn at most, so the hand isn't dumped into a dead backrow.
@@ -1465,8 +1466,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         {
             var picks = new List<int>();
             for (int i = 0; i < cards.Count; i++)
-                if (cards[i].IsCode(MachinaCardId.CyberDragon, MachinaCardId.Jinzo,
-                    MachinaCardId.JinzoReturner, MachinaCardId.MachinaFortress))
+                if (cards[i].IsCode(CardId.CyberDragon, CardId.Jinzo,
+                    CardId.JinzoReturner, CardId.MachinaFortress))
                     picks.Add(i);
             return picks;
         }
@@ -1496,9 +1497,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         /// <summary>Machina Force is a one-card Fortress revive with a Fortress in the graveyard, otherwise just fodder.</summary>
         protected override async Task<(double Value, string Why)> HandCardValueAsync(DynamicCard card, List<DynamicCard> botMonsters)
         {
-            if (card.IsCode(MachinaCardId.MachinaForce))
+            if (card.IsCode(CardId.MachinaForce))
                 return _fortressInGrave ? (FortressHandValue,"Machina Force (revives the Fortress in the graveyard)") : (ForceFodderHandValue, "Machina Force (only fodder: no Fortress in the graveyard)");
-            if (card.IsCode(MachinaCardId.MachinaFortress))
+            if (card.IsCode(CardId.MachinaFortress))
                 return (FortressHandValue, "Machina Fortress");
             return await base.HandCardValueAsync(card, botMonsters);
         }
@@ -1523,10 +1524,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             // (Not a union's equip: Gearframe / Peacekeeper on the field offered in a chain window is their equip, not a
             // trigger. Equipping is TryUnionEquip's call, and not before attacking: seen 2026-11-12, Gearframe equipped to
             // Fortress in Main Phase 1 here and the lethal attack lost an attacker.)
-            bool UnionEquip(DynamicCard card) => card.IsCode(MachinaCardId.MachinaGearframe, MachinaCardId.MachinaPeacekeeper) &&
+            bool UnionEquip(DynamicCard card) => card.IsCode(CardId.MachinaGearframe, CardId.MachinaPeacekeeper) &&
                                                  card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone;
             int trigger = Array.FindIndex(options, card => card.IsCode(OwnTriggers) && card.CurrentCoordinates.Controller == 0 && !UnionEquip(card) &&
-                                                           (theirCards || !card.IsCode(MachinaCardId.RykoLightswornHunter)));
+                                                           (theirCards || !card.IsCode(CardId.RykoLightswornHunter)));
             if (trigger >= 0)
             {
                 Note(context, $"use {CardNames.Get(options[trigger].ID)}'s effect");
@@ -1534,7 +1535,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             }
             // Dark Armed Dragon's effect in the priority window right after its summon (before they can answer it), and again
             // whenever it's offered with a spare DARK in the graveyard.
-            int dadIndex = Array.FindIndex(options, card => card.IsCode(MachinaCardId.DarkArmedDragon) && card.CurrentCoordinates.Controller == 0 &&
+            int dadIndex = Array.FindIndex(options, card => card.IsCode(CardId.DarkArmedDragon) && card.CurrentCoordinates.Controller == 0 &&
                                                             card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone);
             if (dadIndex >= 0 && theirCards && await DadSpareWhyAsync() is string dadWhy && Rule(MachinaRules.DadEffect))
             {
@@ -1547,10 +1548,10 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 return dadIndex;
             }
             // Card Trooper mills in the priority window after its summon.
-            if (botTurn && options.Any(card => card.IsCode(MachinaCardId.CardTrooper)) && await TrooperCanMillAsync(context) &&
-                TryChainStaple(context, options, MachinaCardId.CardTrooper, "mill in the priority window", out int trooperIndex, rule: DeckRules.TrooperMill))
+            if (botTurn && options.Any(card => card.IsCode(CardId.CardTrooper)) && await TrooperCanMillAsync(context) &&
+                TryChainStaple(context, options, CardId.CardTrooper, "mill in the priority window", out int trooperIndex, rule: DeckRules.TrooperMill))
             {
-                MarkStapleActivated(MachinaCardId.CardTrooper);
+                MarkStapleActivated(CardId.CardTrooper);
                 return trooperIndex;
             }
             // A set Jar of Greed / MST / Yata chained when the opponent's removal would hit it (shared bait rule). Before the
@@ -1570,23 +1571,23 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         {
             await PrepareContextAsync(context, ct);
             var card = context.StateData.EffectCard;
-            if (card.IsCode(MachinaCardId.GorzTheEmissaryOfDarkness))
+            if (card.IsCode(CardId.GorzTheEmissaryOfDarkness))
                 return await GorzNowAsync(context, await GetEnemyMonsterCardsAsync()) != null;
-            if (card.IsCode(MachinaCardId.BlackRoseDragon))
+            if (card.IsCode(CardId.BlackRoseDragon))
             {
                 int enemyCards = (await GetEnemyMonsterCardsAsync()).Count + (await GetEnemySpellCardsAsync()).Count;
                 int botCards = (await GetBotMonsterCardsAsync()).Count + (await CurrentField.GetCardsInSpellZone()).Count(c => c.ID != 0);
-                bool wipe = enemyCards > botCards && await DestructionNegatedAsync(context, MachinaCardId.BlackRoseDragon) == null;
+                bool wipe = enemyCards > botCards && await DestructionNegatedAsync(context, CardId.BlackRoseDragon) == null;
                 Note(context, $"Black Rose wipe? opponent {enemyCards} vs our {botCards} -> {(wipe ? "yes" : "no")}");
                 return wipe;
             }
-            if (card.IsCode(MachinaCardId.RykoLightswornHunter) && (await GetEnemyMonsterCardsAsync()).Count + (await GetEnemySpellCardsAsync()).Count == 0)
+            if (card.IsCode(CardId.RykoLightswornHunter) && (await GetEnemyMonsterCardsAsync()).Count + (await GetEnemySpellCardsAsync()).Count == 0)
             {
                 Note(context, "don't use Ryko's flip: they have no card on the field (it would destroy our own)");
                 return false;
             }
-            if (card.IsCode(MachinaCardId.MachinaGearframe, MachinaCardId.MachinaPeacekeeper, MachinaCardId.SuperNimbleMegaHamster,
-                    MachinaCardId.RykoLightswornHunter, MachinaCardId.MachinaFortress))
+            if (card.IsCode(CardId.MachinaGearframe, CardId.MachinaPeacekeeper, CardId.SuperNimbleMegaHamster,
+                    CardId.RykoLightswornHunter, CardId.MachinaFortress))
             {
                 Note(context, $"use optional effect of {CardNames.Get(card.ID)}");
                 return true;
@@ -1644,37 +1645,37 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
 
             // Armageddon Knight's send (a DARK from the deck): Jinzo - Returner when a Jinzo is in the GY (it revives that Jinzo
             // straight away), otherwise Jinzo (Returner's revive target later).
-            if (hint == DHint.TOGRAVE && fromDeck && indexed.Any(x => x.Card.IsCode(MachinaCardId.Jinzo, MachinaCardId.JinzoReturner)) &&
+            if (hint == DHint.TOGRAVE && fromDeck && indexed.Any(x => x.Card.IsCode(CardId.Jinzo, CardId.JinzoReturner)) &&
                 Rule(MachinaRules.ArmageddonSend))
             {
-                bool jinzoInGrave = (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(MachinaCardId.Jinzo));
+                bool jinzoInGrave = (await GetBotGraveyardCardsAsync()).Any(card => card.IsCode(CardId.Jinzo));
                 int[] order = jinzoInGrave
-                    ? new[] { MachinaCardId.JinzoReturner, MachinaCardId.Jinzo }
-                    : new[] { MachinaCardId.Jinzo, MachinaCardId.JinzoReturner };
+                    ? new[] { CardId.JinzoReturner, CardId.Jinzo }
+                    : new[] { CardId.Jinzo, CardId.JinzoReturner };
                 var pick = indexed.OrderBy(x => StaplePriorityIndex(order, x.Card)).First();
                 Note(context, $"Armageddon Knight sends {CardNames.Get(pick.Card.ID)}" +
-                              (pick.Card.IsCode(MachinaCardId.JinzoReturner) ? ": it revives the Jinzo in the graveyard" : ": Jinzo - Returner's revive target"));
+                              (pick.Card.IsCode(CardId.JinzoReturner) ? ": it revives the Jinzo in the graveyard" : ": Jinzo - Returner's revive target"));
                 return new List<byte> { (byte)pick.Index };
             }
 
             // Searches from the deck: Gearframe (a Machina), Peacekeeper (a union), Charge (Ryko / Lyla).
             if (hint == DHint.ATOHAND && fromDeck)
             {
-                if (indexed.Any(x => x.Card.IsCode(MachinaCardId.MachinaFortress, MachinaCardId.MachinaForce)))
+                if (indexed.Any(x => x.Card.IsCode(CardId.MachinaFortress, CardId.MachinaForce)))
                 {
                     // User, 2026-11-17: "the only time you should ever search anything that's not fortress is when you already have
                     // a fortress on field or in graveyard in which case you should search force ... or two fortress already in hand,
                     // in which case still get force"; "peacekeeper is never the right search from gearframe". The other cards are
                     // held, so the search's lines pay to pick them.
                     var hand = await GetBotHandCardsAsync();
-                    int fortressesInHand = hand.Count(card => card.IsCode(MachinaCardId.MachinaFortress));
-                    bool fortressOnField = (await GetBotMonsterCardsAsync()).Any(card => card.IsCode(MachinaCardId.MachinaFortress));
+                    int fortressesInHand = hand.Count(card => card.IsCode(CardId.MachinaFortress));
+                    bool fortressOnField = (await GetBotMonsterCardsAsync()).Any(card => card.IsCode(CardId.MachinaFortress));
                     bool forForce = fortressOnField || _fortressInGrave || fortressesInHand >= 2;
-                    int want = forForce ? MachinaCardId.MachinaForce : MachinaCardId.MachinaFortress;
+                    int want = forForce ? CardId.MachinaForce : CardId.MachinaFortress;
                     string why = forForce
                         ? fortressOnField ? "a Fortress is on the field" : _fortressInGrave ? "a Fortress is in the graveyard" : "two Fortresses are already in hand"
                         : "Fortress first";
-                    var order = new[] { want, MachinaCardId.MachinaFortress, MachinaCardId.MachinaForce, MachinaCardId.MachinaPeacekeeper };
+                    var order = new[] { want, CardId.MachinaFortress, CardId.MachinaForce, CardId.MachinaPeacekeeper };
                     var pick = indexed.OrderBy(x => StaplePriorityIndex(order, x.Card)).First();
                     if (Rule(MachinaRules.GearframeSearch))
                         foreach (var other in indexed.Select(x => x.Card.ID).Distinct().Where(id => !pick.Card.IsCode(id)))
@@ -1682,9 +1683,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                     Note(context, $"Machina Gearframe searches {CardNames.Get(pick.Card.ID)}" + (pick.Card.IsCode(want) ? $": {why}" : ""));
                     return new List<byte> { (byte)pick.Index };
                 }
-                if (indexed.Any(x => x.Card.IsCode(MachinaCardId.MachinaGearframe)))
+                if (indexed.Any(x => x.Card.IsCode(CardId.MachinaGearframe)))
                 {
-                    var pick = indexed.First(x => x.Card.IsCode(MachinaCardId.MachinaGearframe));
+                    var pick = indexed.First(x => x.Card.IsCode(CardId.MachinaGearframe));
                     Note(context, "search Machina Gearframe (it searches in turn)");
                     return new List<byte> { (byte)pick.Index };
                 }
@@ -1739,8 +1740,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
                 // The End Phase hand-limit discard: a Fortress first (user, 2026-11-13: "discarded a fortress for bringing back
                 // from the grave later"): from the graveyard it still comes back with its own effect.
                 bool handLimit = hint == DHint.DISCARD && (DuelPhase)context.Header.CurrentPhase == DuelPhase.End && context.Header.CurrentPlayer == 0;
-                var picks = indexed.OrderBy(x => handLimit && x.Card.IsCode(MachinaCardId.MachinaFortress) ? -1 : DiscardRank(x.Card)).Take(count).ToList();
-                if (handLimit && picks.Any(x => x.Card.IsCode(MachinaCardId.MachinaFortress)))
+                var picks = indexed.OrderBy(x => handLimit && x.Card.IsCode(CardId.MachinaFortress) ? -1 : DiscardRank(x.Card)).Take(count).ToList();
+                if (handLimit && picks.Any(x => x.Card.IsCode(CardId.MachinaFortress)))
                     Note(context, "hand-limit discard: Machina Fortress (it comes back from the graveyard with its own effect)");
                 Note(context, $"{hint}: {string.Join(", ", picks.Select(x => CardNames.Get(x.Card.ID)))}");
                 return picks.Select(x => (byte)x.Index).ToList();
