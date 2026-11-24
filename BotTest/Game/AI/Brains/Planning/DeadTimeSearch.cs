@@ -148,6 +148,18 @@ namespace BotTest.Game.AI.Brains
                 attackerOdds = OpponentDeck.AttackerChances(BoardEvaluator.AttackerThresholds, unknownForAttack, AttackerStats);
             }
             attackerOdds ??= BoardEvaluator.GenericAttackerOdds(unknownForAttack);
+            // Threats in their unknown cards, for set traps (user, 2026-11-24): as attackerOdds, but bouncers and strong effects
+            // (IsBigThreatAsync's StrongEffectScore) count at any ATK. Without a deck read: the attacker odds alone.
+            var values = new CardValues(view.OwnGrave, view.EnemyGrave);
+            // Threat-tagged monsters (Machina Fortress, Archlord Kristya) count at any level: they're special summoned.
+            static bool TaggedThreat(int id) => CardRuleRegistry.AnyCardWithTag(new[] { id }, TagRules.Tag.Threat);
+            bool EffectThreat(int id) =>
+                BoardAssessment.KnownAttackerBouncers.ContainsKey(id) ||
+                SearchHost.Cards.Get(id) is { } c && values.Get(id, 1).Field + BoardEvaluator.AtkValue(c.Attack) >= StrongEffectScore;
+            double[]? threatOdds;
+            lock (OpponentDeck)
+                threatOdds = OpponentDeck.ThreatChances(BoardEvaluator.AttackerThresholds, unknownForAttack, AttackerStats, EffectThreat, TaggedThreat);
+            threatOdds ??= attackerOdds;
             // Their hand monsters that stop a lethal battle (a win's chance): known in their hand = 1, else the deck read's chance. Honest
             // only with an attack-position LIGHT monster of theirs out, Kalut only with a Blackwing (user, 2026-11-17).
             var knownHand = KnownEnemyHand();
@@ -172,9 +184,11 @@ namespace BotTest.Game.AI.Brains
                     System.Text.RegularExpressions.Regex.Match(text, @"gains? (\d+) ATK", System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } gain)
                     knownBoost = Math.Max(knownBoost, int.Parse(gain.Groups[1].Value));
             bool honestKnown = knownHand.Any(k => k == Honest || SearchHost.CanonicalId(k) == Honest);
-            return new(new CardValues(view.OwnGrave, view.EnemyGrave), SearchCardBonus, unknownHand, explosiveness)
+            return new(values, SearchCardBonus, unknownHand, explosiveness)
             {
                 AttackerOdds = attackerOdds,
+                ThreatOdds = threatOdds,
+                OwnLargestNormalAttack = OwnLargestNormalAttack(_trackedBot),
                 OwnDeck = view.OwnDeck, OwnHand = view.OwnHand, OwnGrave = view.OwnGrave, OwnBanished = view.OwnBanished, OwnMonsters = view.OwnMonsters.Select(c => c.Code).Where(c => c > 0).ToList(),
                 GraveSetup = SearchGraveSetup,
                 RewardGladiatorBattles = RewardGladiatorBattles,

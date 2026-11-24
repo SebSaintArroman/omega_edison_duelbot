@@ -616,6 +616,30 @@ namespace BotTest.Game.AI.Brains
         private static bool _searchProblemLogged;
         private DeckList? _ownDeckList;
 
+        private int? _ownLargestNormalAttack;
+
+        /// <summary>
+        /// The biggest ATK among the Level 4-or-lower main-deck monsters of our deck list (what we can Normal Summon), or null without a
+        /// list. The threat bar starts here (user, 2026-11-24: a threat is "bigger than our largest normal summon in deck").
+        /// </summary>
+        protected int? OwnLargestNormalAttack(DuelBotWrapper? bot)
+        {
+            if (_ownLargestNormalAttack is { } known)
+                return known;
+            if (bot == null || !SearchHost.Available)
+                return null;
+            _ownDeckList ??= string.IsNullOrEmpty(bot.DeckHash) ? null :
+                DeckCode.Decode(bot.DeckName ?? "own", bot.DeckHash, SearchHost.Cards, SearchHost.Scripts);
+            if (_ownDeckList == null)
+                return null;
+            int best = 0;
+            foreach (int id in _ownDeckList.Main.Distinct())
+                if (SearchHost.Cards.Get(id) is { } card && (card.Type & 0x1) != 0 && !card.IsExtraDeckMonster && card.Level <= 4)
+                    best = Math.Max(best, card.Attack);
+            _ownLargestNormalAttack = best;
+            return best;
+        }
+
         private List<int> RemainingOwnDeck(DuelBotWrapper bot, IEnumerable<int> seen)
         {
             _ownDeckList ??= string.IsNullOrEmpty(bot.DeckHash) ? null :

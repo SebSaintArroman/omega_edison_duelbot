@@ -23,7 +23,9 @@ namespace BotTest.Game.AI.Brains
 
         /// <summary>
         /// A big threat is worth spending resources (removal, an Extra Deck summon, a trap) on:
-        ///  - 2000+ ATK, an Extra Deck monster, or a bouncer (Grand Mole),
+        ///  - the Threat tag (CardRules: Archlord Kristya, Machina Fortress),
+        ///  - ATK above <see cref="ThreatAttackBarAsync"/> (our biggest Normal Summon in our deck, or our biggest face-up monster if
+        ///    higher), an Extra Deck monster, or a bouncer (Grand Mole),
         ///  - it beats a monster of ours that isn't expendable,
         ///  - or its effect is strong (score at least <see cref="StrongEffectScore"/>, e.g. Thought Ruler Archfiend).
         /// Everything else is a small threat (Giant Rat, Kinka-byo, a 1600 beater): handled by the clock, not by spending
@@ -34,7 +36,10 @@ namespace BotTest.Game.AI.Brains
         {
             if (id <= 0)
                 return false;
-            if (power >= StrongMonsterAttack)
+            // The Threat tag (Archlord Kristya, Machina Fortress): always a threat (user, 2026-11-24).
+            if (CardRuleRegistry.AnyCardWithTag(new[] { id }, TagRules.Tag.Threat))
+                return true;
+            if (power > await ThreatAttackBarAsync())
                 return true;
             if (_bouncesAttacker.Contains(id) || BoardAssessment.KnownAttackerBouncers.ContainsKey(id))
                 return true;
@@ -52,6 +57,20 @@ namespace BotTest.Game.AI.Brains
                 return false;
             var grave = (await CurrentField.GetBotField()).EnemySide.Grave ?? Array.Empty<int>();
             return (await EffectEvaluator.ScoreOnFieldAsync(id, grave)).Score >= StrongEffectScore;
+        }
+
+        /// <summary>
+        /// The ATK a monster of theirs must beat to be a big threat on its ATK alone (user, 2026-11-24): "bigger than our largest normal
+        /// summon in deck", raised to our biggest face-up monster when that's higher (a 2300 isn't a threat next to our 2500). Without
+        /// our deck list: just under StrongMonsterAttack (2000+ is a threat, as before).
+        /// </summary>
+        protected async Task<int> ThreatAttackBarAsync()
+        {
+            int bar = OwnLargestNormalAttack(_trackedBot) ?? StrongMonsterAttack - 1;
+            foreach (var card in await GetBotMonsterCardsAsync())
+                if (card.IsFaceup())
+                    bar = Math.Max(bar, card.Attack);
+            return bar;
         }
 
         protected Task<bool> IsBigThreatAsync(DynamicCard enemy) => IsBigThreatAsync(enemy.ID, enemy.GetRealPower());

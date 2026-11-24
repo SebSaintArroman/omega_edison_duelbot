@@ -256,6 +256,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             var botMonsters = await GetBotMonsterCardsAsync();
             var botSpells = (await CurrentField.GetCardsInSpellZone()).ToList();
             var hand = await GetBotHandCardsAsync();
+            // Black Whirlwind's holds, whichever play the brain makes first, over every move on offer (before the summon filter).
+            WhirlwindHolds(context, state, hand, botSpells);
             // No pointless small-Blackwing summons and no Blackwing sets, whichever step would pick them.
             state = await WithoutPointlessSummonsAsync(context, state, hand, botMonsters, enemyMonsters);
             context = context with { StateData = state };
@@ -2463,6 +2465,12 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
             RememberOwnTurn(context.Header);
             await PrepareContextAsync(context, ct);
             _battleHand = await GetBotHandCardsAsync();
+            // Ending the turn from the Battle Phase skips Main Phase 2's Normal Summon: held with Black Whirlwind in hand or face-up (user, 2026-11-24).
+            if (!NormalSummonUsed(context.Header) &&
+                (_battleHand.Any(card => card.IsCode(CardId.BlackWhirlwind)) ||
+                 (await CurrentField.GetCardsInSpellZone()).Any(card => card.IsFaceup() && card.IsCode(CardId.BlackWhirlwind))) &&
+                Rule(BlackwingRules.NoSummonWithWhirlwindInHand))
+                HoldPhaseMove("end", BlackwingRules.NoSummonWithWhirlwindInHand);
             return await base.OnBattleCmdAsync(context, ct);
         }
 
@@ -2567,6 +2575,58 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
                 Hold(CardId.BlackwingBoraTheSpear, MainAction.SpSummon, BlackwingRules.BodyNeedsPurpose);
         }
 
+        // A Normal Summon that triggers Black Whirlwind: any Blackwing but Vayu (its summon doesn't trigger it: user, 2026-11-10).
+        private static bool TriggersWhirlwind(DynamicCard card) => IsBlackwing(card) && !card.IsCode(CardId.BlackwingVayuTheEmblemOfHonor);
+
+        /// <summary>
+        /// Black Whirlwind's holds (user, 2026-11-24), the Normal Summon not made yet:
+        /// <list type="number">
+        /// <item>Whirlwind activated this turn, a Blackwing summon on offer: every other move is held (BlackwingRules.WhirlwindWaitsForSummon),
+        /// so a line pays that cost once per move between Whirlwind and the summon ("whirlwind should be held until *right* before the summon";
+        /// seen: Whirlwind, then Brain Control Solemned, then the summon).</item>
+        /// <item>Whirlwind in hand (also with one face-up: both are played): a Blackwing's Normal Summon is held (BlackwingRules.SummonWithWhirlwindInHand).</item>
+        /// <item>Whirlwind in hand or face-up: ending the turn is held (BlackwingRules.NoSummonWithWhirlwindInHand; the Battle Phase's end in OnBattleCmdAsync).</item>
+        /// </list>
+        /// </summary>
+        private void WhirlwindHolds(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> hand, List<DynamicCard> botSpells)
+        {
+            if (NormalSummonUsed(context.Header))
+                return;
+            var none = Array.Empty<DynamicCard>();
+            var summons = state.SummonableCards ?? none;
+            bool faceUp = botSpells.Any(card => card.IsFaceup() && card.IsCode(CardId.BlackWhirlwind));
+            bool inHand = hand.Any(card => card.IsCode(CardId.BlackWhirlwind));
+
+            if (faceUp && WasCardActivatedThisTurn(CardId.BlackWhirlwind) && summons.Any(TriggersWhirlwind) &&
+                Rule(BlackwingRules.WhirlwindWaitsForSummon))
+            {
+                const string rule = BlackwingRules.WhirlwindWaitsForSummon;
+                foreach (var card in summons.Where(card => !TriggersWhirlwind(card)))
+                    Hold(card.ID, MainAction.Summon, rule);
+                foreach (var card in state.SpecialSummonableCards ?? none)
+                    Hold(card.ID, MainAction.SpSummon, rule);
+                foreach (var card in state.ReposableCards ?? none)
+                    Hold(card.ID, MainAction.Repos, rule);
+                foreach (var card in state.MonsterSetableCards ?? none)
+                    Hold(card.ID, MainAction.SetMonster, rule);
+                foreach (var card in state.SpellSetableCards ?? none)
+                    Hold(card.ID, MainAction.SetSpell, rule);
+                // A second Whirlwind isn't a gap: both are played right before the summon (user, 2026-11-24).
+                foreach (var card in (state.ActivableCards ?? none).Where(card => !card.IsCode(CardId.BlackWhirlwind)))
+                    Hold(card.ID, MainAction.Activate, rule);
+                HoldPhaseMove("battle", rule);
+                HoldPhaseMove("end", rule);
+            }
+
+            // Also with one face-up: two Whirlwinds search twice, so both are played (user, 2026-11-24).
+            if (inHand && Rule(BlackwingRules.SummonWithWhirlwindInHand))
+                foreach (var card in summons.Where(TriggersWhirlwind))
+                    Hold(card.ID, MainAction.Summon, BlackwingRules.SummonWithWhirlwindInHand);
+
+            if ((inHand || faceUp) && Rule(BlackwingRules.NoSummonWithWhirlwindInHand))
+                HoldPhaseMove("end", BlackwingRules.NoSummonWithWhirlwindInHand);
+        }
+
         private async Task<IdleCmdResponse?> TryBlackwingPlaysAsync(DecisionContext<IdleCmdData> context, IdleCmdData state, List<DynamicCard> hand,
             List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters, List<DynamicCard> enemySpells)
         {
@@ -2577,8 +2637,8 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
             // Allure of Darkness is a shared staple (TryFreeCardAdvantageAsync: with a DARK to banish, or as the last-resort gamble).
 
             // Black Whirlwind face-up before the Normal Summon (each Blackwing Normal Summon then searches a smaller one).
+            // Also with one face-up: two Whirlwinds search twice (user, 2026-11-24: "if you have two both should be played").
             if (!NormalSummonUsed(context.Header) && TryGetActivable(state, CardId.BlackWhirlwind, out var whirlwind) &&
-                !(await CurrentField.GetCardsInSpellZone()).Any(card => card.IsFaceup() && card.IsCode(CardId.BlackWhirlwind)) &&
                 // Only when a Blackwing Normal Summon is actually coming (one still on offer after the summon filter): otherwise
                 // Whirlwind waits (user, 2026-11-10).
                 // Not Vayu: its summon doesn't trigger Whirlwind (user, 2026-11-10).

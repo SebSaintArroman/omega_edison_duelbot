@@ -793,7 +793,18 @@ namespace BotTest.Game.AI.Brains
 
         private readonly System.Collections.Concurrent.ConcurrentDictionary<(int[] Thresholds, int Unknown, int MaxLevel), double[]?> _frozenAttackers = new();
 
-        private double[]? AttackerChancesCore(int[] thresholds, int unknownCards, Func<int, (int Attack, int Level)?> stats, int maxLevel)
+        /// <summary>
+        /// As <see cref="AttackerChances"/>, but a monster that's a threat on its effect (<paramref name="effectThreat"/>: a bouncer, a
+        /// strong effect) counts at every threshold whatever its ATK: the chance their unknown cards hold a threat (user, 2026-11-24).
+        /// A tagged threat (<paramref name="taggedThreat"/>: the Threat tag, Machina Fortress, Archlord Kristya) counts at any level too:
+        /// those are special summoned (user, 2026-11-24: "main deck threat-tag monsters should count").
+        /// </summary>
+        public double[]? ThreatChances(int[] thresholds, int unknownCards, Func<int, (int Attack, int Level)?> stats, Func<int, bool> effectThreat,
+            Func<int, bool> taggedThreat) =>
+            AttackerChancesCore(thresholds, unknownCards, stats, 4, effectThreat, taggedThreat);
+
+        private double[]? AttackerChancesCore(int[] thresholds, int unknownCards, Func<int, (int Attack, int Level)?> stats, int maxLevel,
+            Func<int, bool>? effectThreat = null, Func<int, bool>? taggedThreat = null)
         {
             if (!HasListData || unknownCards <= 0)
                 return null;
@@ -812,11 +823,14 @@ namespace BotTest.Game.AI.Brains
                 {
                     if (!Data.Value.Kinds.TryGetValue(id, out char k) || k is not ('M' or 'F' or 'f'))
                         continue;
-                    if (stats(id) is not { } s || s.Level > maxLevel)
+                    if (stats(id) is not { } s)
+                        continue;
+                    bool tagged = taggedThreat != null && taggedThreat(id);
+                    if (s.Level > maxLevel && !tagged)
                         continue;
                     int left = Remaining(deck, id);
                     if (left > 0)
-                        attackers.Add((s.Attack, left));
+                        attackers.Add((tagged || effectThreat != null && effectThreat(id) ? int.MaxValue : s.Attack, left));
                 }
                 for (int t = 0; t < thresholds.Length; t++)
                 {

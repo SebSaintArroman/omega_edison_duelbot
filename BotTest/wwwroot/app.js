@@ -770,8 +770,17 @@ function resetTerminal() {
   jumpButton.hidden = true;
 }
 
+// The launcher (desktop shortcut) asks an open page to reload instead of opening a new tab: a new reload token.
+let knownReloadToken = null;
+
 async function refreshTerminal() {
   const chunk = await fetchJson(`/api/terminal?after=${terminalLast}`);
+  if (knownReloadToken === null) {
+    knownReloadToken = chunk.reload || "";
+  } else if (chunk.reload && chunk.reload !== knownReloadToken) {
+    window.location.reload();
+    return;
+  }
   if (chunk.last < terminalLast) {
     // The buffer was cleared on the server: start over.
     resetTerminal();

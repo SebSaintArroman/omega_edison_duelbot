@@ -153,7 +153,8 @@ namespace BotTest.Game.AI.Brains
             // Archlord Kristya
             // Correction: stops every Special Summon (ours included) on top of a 2800 body (user, 2026-11-13: "increase the
             // threat rating of archlord krystia by something huge - maybe 5"; Solemn should have stopped it on its summon).
-            new(new[] { ArchlordKristya }, TagRules.Tag.None, Correction: new(General: 5)),
+            // Threat: always a threat, whatever its ATK against ours (user, 2026-11-24).
+            new(new[] { ArchlordKristya }, TagRules.Tag.Threat, Correction: new(General: 5)),
 
             // Jar of Greed and Legacy of Yata-Garasu
             // About to be removed anyway: DoNotActivate lifts, and the doomed-card logic uses it.
@@ -202,7 +203,8 @@ namespace BotTest.Game.AI.Brains
             new(new[] { BlackwingElphinTheRaven }, TagRules.Tag.GoodDiscard),
 
             // Machina Fortress
-            new(new[] { CardId.MachinaFortress }, TagRules.Tag.GoodDiscard | TagRules.Tag.AnswersAnyThreat | TagRules.Tag.NeverSummonInDefence,
+            // Threat: always a threat on their side, whatever its ATK against ours (user, 2026-11-24).
+            new(new[] { CardId.MachinaFortress }, TagRules.Tag.GoodDiscard | TagRules.Tag.AnswersAnyThreat | TagRules.Tag.NeverSummonInDefence | TagRules.Tag.Threat,
                 TagsToDisableWhen: context => !context.ThreatAttackPosition
                     ? TagRules.Tag.AnswersAnyThreat
                     : TagRules.Tag.None),

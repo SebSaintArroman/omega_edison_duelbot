@@ -407,6 +407,8 @@ BoardEvaluator.ProtectBodyShare = 0.5   # How much of a monster's body counts to
 BoardEvaluator.ProtectNeedCap = 2   # The most a monster's protection need counts for (card units).
 BoardEvaluator.ProtectionLpFrom = 4000   # Below this many life points, removal and protection gain value even with no monster to protect.
 BoardEvaluator.ProtectionWeight = 0.5   # A set card that protects (CardValue.Protects) gains this times what our most-at-risk monster needs (ProtectionNeed). Card units; adjust slowly.
+BoardEvaluator.ExtraThreatPerExplosiveness = 0.5   # The chance their next turn brings an Extra Deck monster (a threat) is this times their deck's explosiveness (the deck read's, 0-1). For set traps' TrapCatchWeight. User, 2026-11-24.
+BoardEvaluator.TrapCatchWeight = 0.15   # Our set trap that answers a monster (on its summon / attack, or any time) gains this times the chance their unknown cards (hand + draw) hold a threat it can hit, as the brain counts threats (over our biggest Normal Summon / face-up monster, beats our non-token monster, bouncer / strong effect, Extra Deck), the trap's "N or more ATK" still applying; from every list they're likely on. Card units. User, 2026-11-24: for all traps.
 BoardEvaluator.RemoveThreatWeight = 0.3   # A set card that can remove a card of theirs already on the field gains this times that card's worth (card units).
 BoardEvaluator.ReserveWeight = 0.5   # Held monsters count at this share of their field worth: safe from the removal, but they accomplish nothing this turn (user, 2026-11-15: Fortress and Gearframe both out must beat Fortress alone with Gearframe held).
 BoardEvaluator.RiskDiscountMax = 0.6   # How much the fear of their cards drops at full pressure (risk tolerance at its top): 0.6 = to 40%.

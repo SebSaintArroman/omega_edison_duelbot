@@ -94,3 +94,8 @@ BlackwingBotBrain.HoldCost.blackwing.sirocco-boost-into-honest = 1.5
 # --- BlackwingBotBrain
 BlackwingBotBrain.WhirlwindGoodSummonAtk = 1700   # The ATK from which a Blackwing in hand is a good Normal Summon for Black Whirlwind next turn (it searches a smaller Blackwing).
 BlackwingBotBrain.WhirlwindNextSummonValue = 0.5   # Black Whirlwind ours and triggered this turn: a Level 4-or-lower Blackwing of at least WhirlwindGoodSummonAtk ATK kept in hand for next turn is worth this (card units). User, 2026-11-18.
+
+# added 2026-11-24 (user: Black Whirlwind in hand, 2 each)
+# --- BlackwingBotBrain
+BlackwingBotBrain.HoldCost.blackwing.summon-with-whirlwind-in-hand = 2
+BlackwingBotBrain.HoldCost.blackwing.no-summon-with-whirlwind-in-hand = 2

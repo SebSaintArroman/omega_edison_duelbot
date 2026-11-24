@@ -1223,7 +1223,7 @@ namespace BotTest.Game.AI.Brains
         }
 
         /// <summary>A set card's situational worth beyond its own effect value (card units): see SideScore.</summary>
-        private double SetCardSituational(int code, CardValue card, double protectNeed, double lpNeed, List<int> ourSets, SideSummary? other, Action<string, double>? into)
+        private double SetCardSituational(int code, CardValue card, double protectNeed, double lpNeed, List<int> ourSets, SideSummary ours, SideSummary? other, Action<string, double>? into)
         {
             double extra = 0;
             void Add(string rule, double value)
@@ -1240,6 +1240,31 @@ namespace BotTest.Game.AI.Brains
             // Protects a monster worth protecting; with our LP low, any card that stops or removes an attacker.
             Add("Set cards protecting monsters", ProtectionWeight * card.Protects * Math.Min(protectNeed, ProtectNeedCap));
             Add("Set cards protecting low LP", LowLpRemovalWeight * lpNeed * Math.Max(card.Protects, (card.Removes & Removes.Monster) != 0 ? 1 : 0));
+            // A trap that answers a monster (on its summon or attack, or at any time) waits for their next one. Their unknown hand is inert
+            // in the lines, so the lines alone rate such a trap a dead card (seen 2026-11-24: Bottomless not set, only Sangan's searches,
+            // all 1500 or less, were ever summoned; then X-Saber Airbellum hit us). User, 2026-11-24: for all traps, threats only, as the
+            // brain counts them (DeckBotBrain.IsBigThreatAsync): the chance their unknown cards (hand + draw) hold one it can hit.
+            if ((setCard.Type & 0x4) != 0 && (card.Protects > 0 || (card.Removes & Removes.Monster) != 0) && ThreatOdds is { } odds)
+            {
+                int minAttack = TrapMinAttack.GetOrAdd(code, _ =>
+                    System.Text.RegularExpressions.Regex.Match(setCard.Text ?? "", @"(\d+) or more ATK", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                        is { Success: true } m ? int.Parse(m.Groups[1].Value) : 0);
+                // 1. ATK over the bar: our biggest Normal Summon in our deck, or our biggest face-up monster as the line ends if higher.
+                int bar = OwnLargestNormalAttack ?? StrongMonsterAttack - 1;
+                foreach (var mon in ours.Monsters.Where(mon => mon.FaceUp))
+                    bar = Math.Max(bar, mon.Attack);
+                int threat = bar + 1;
+                // 2. Or it beats a monster of ours that isn't expendable (here: not a token; the brain's full expendability isn't in the lines).
+                foreach (var mon in ours.Monsters.Where(mon => mon.FaceUp && (mon.Type & 0x4000) == 0))
+                    threat = Math.Min(threat, mon.AttackPosition ? mon.Attack : mon.Defense);
+                // (3. Bouncers and strong effects count at any ATK: in ThreatOdds.) The trap's own floor ("1500 or more ATK") still applies.
+                threat = Math.Max(threat, minAttack);
+                int index = Math.Min(odds.Length - 1, (threat + AttackerOddsStep - 1) / AttackerOddsStep);
+                // 4. Or an Extra Deck monster: by how explosive their deck is.
+                double extraThreat = Math.Clamp(ExtraThreatPerExplosiveness * _explosiveness, 0, 1);
+                double chance = 1 - (1 - odds[index]) * (1 - extraThreat);
+                Add("Set traps: their next threat to answer", TrapCatchWeight * chance);
+            }
             // Removes a card of theirs already on the field: by the best one it can hit.
             if (card.Removes != Removes.None && other is { } theirs)
             {
@@ -1280,6 +1305,21 @@ namespace BotTest.Game.AI.Brains
         public static readonly Tuned<int> LowLpFullAt = new(100);
         [Tunable("How fast that value falls as our LP rise above LowLpFullAt: exp(-(LP - LowLpFullAt) / this). 3000: about 74% at 1000 LP, 53% at 2000, 27% at 4000, 7% at 8000.")]
         public static readonly Tuned<double> LowLpScale = new(3000);
+        /// <summary>Our set trap that answers a monster gains this times the chance their unknown cards (hand + draw) hold one it can hit
+        /// (threats as the brain counts them: ThreatOdds, ExtraThreatPerExplosiveness). Card units.</summary>
+        [Tunable("Our set trap that answers a monster (on its summon / attack, or any time) gains this times the chance their unknown cards (hand + draw) hold a threat it can hit, as the brain counts threats (over our biggest Normal Summon / face-up monster, beats our non-token monster, bouncer / strong effect, Extra Deck), the trap's \"N or more ATK\" still applying; from every list they're likely on. Card units. User, 2026-11-24: for all traps.")]
+        public static readonly Tuned<double> TrapCatchWeight = new(0.15); // user, 2026-11-24: a small change (was 0.5)
+        [Tunable("The chance their next turn brings an Extra Deck monster (a threat) is this times their deck's explosiveness (the deck read's, 0-1). For set traps' TrapCatchWeight. User, 2026-11-24.")]
+        public static readonly Tuned<double> ExtraThreatPerExplosiveness = new(0.5);
+
+        /// <summary>The chance their unknown cards (hand + draw) hold a threat, by ATK threshold as AttackerOdds; bouncers and strong
+        /// effects count at every threshold (OpponentDeckPredictor.ThreatChances; without a deck read, AttackerOdds). Null: no trap term.</summary>
+        public double[]? ThreatOdds { get; init; }
+        /// <summary>Our biggest Normal Summon in our deck list (DeckBotBrain.OwnLargestNormalAttack): the threat bar. Null: StrongMonsterAttack.</summary>
+        public int? OwnLargestNormalAttack { get; init; }
+
+        // A trap's ATK floor from its text ("1500 or more ATK": Bottomless), 0 for any monster; per card code.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> TrapMinAttack = new();
         /// <summary>A set card that can remove a card of theirs already on the field gains this times that card's worth (card units).</summary>
         [Tunable("A set card that can remove a card of theirs already on the field gains this times that card's worth (card units).")]
         public static readonly Tuned<double> RemoveThreatWeight = new(0.3);
@@ -1378,7 +1418,7 @@ namespace BotTest.Game.AI.Brains
                 else
                     AddPair("Set spells: base value", SetBase(code), "Set spells: effects", Effect(card.Held, HeldEffectWeight));
                 if (!faceUp && side == 0)
-                    value += SetCardSituational(code, card, protectNeed, lpNeed, ourSets, other, into);
+                    value += SetCardSituational(code, card, protectNeed, lpNeed, ourSets, s, other, into);
                 if (!setTrap)
                     Add(SideOverrides, Bonus(code, faceUp ? CardPlace.Field : CardPlace.Set, side));
             }

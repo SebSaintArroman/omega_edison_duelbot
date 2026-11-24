@@ -1,4 +1,5 @@
-# Starts YGO Omega (if it isn't running), the bot (if it isn't running), then opens the AI Room page.
+# Starts YGO Omega fullscreen (if it isn't running), the bot (if it isn't running), then opens the AI Room page (or
+# reloads it if one is open already).
 # The bot runs in its own console window; close that window to stop it.
 
 $ErrorActionPreference = 'Stop'
@@ -41,7 +42,9 @@ if ((Test-Path $tagPath) -and -not $botRunning) {
 # 1. YGO Omega.
 if (-not (Get-Process -Name 'YGO Omega' -ErrorAction SilentlyContinue)) {
     if ($settings -and $settings.OmegaPath -and (Test-Path $settings.OmegaPath)) {
-        Start-Process -FilePath $settings.OmegaPath -WorkingDirectory (Split-Path $settings.OmegaPath)
+        # Omega is a Unity game: these open it as a borderless fullscreen window.
+        Start-Process -FilePath $settings.OmegaPath -ArgumentList '-screen-fullscreen', '1', '-window-mode', 'borderless' `
+            -WorkingDirectory (Split-Path $settings.OmegaPath)
     } else {
         [System.Windows.Forms.MessageBox]::Show('YGO Omega isn''t set up: run Setup.bat in the Duel Bot folder, or start Omega yourself.', 'Duel Bot') | Out-Null
     }
@@ -62,5 +65,22 @@ if (-not (Test-Page)) {
     }
 }
 
-# 3. The AI Room page.
-Start-Process $pageUrl
+# 3. The AI Room page: an open page (it polls the bot every second; a background tab can be throttled to about once a
+#    minute) is asked to reload instead of opening another tab.
+function Test-PageOpen($withinMs) {
+    try { [bool](Invoke-RestMethod -Uri "http://127.0.0.1:58966/api/page-open?withinMs=$withinMs" -TimeoutSec 3).open } catch { $false }
+}
+$open = Test-PageOpen 70000
+if (-not $open) {
+    # A page left open while the bot was down reconnects within a few seconds.
+    $deadline = (Get-Date).AddSeconds(6)
+    while (-not $open -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+        $open = Test-PageOpen 5000
+    }
+}
+if ($open) {
+    try { Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:58966/api/page-reload' -TimeoutSec 3 | Out-Null } catch { Start-Process $pageUrl }
+} else {
+    Start-Process $pageUrl
+}

@@ -40,8 +40,16 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         public const string SiroccoBoostPointless = "blackwing.sirocco-boost-pointless";
         /// <summary>Sirocco's boost with Honest suspected in their hand and a LIGHT (or face-down) monster of theirs out (user, 2026-11-17).</summary>
         public const string SiroccoBoostIntoHonest = "blackwing.sirocco-boost-into-honest";
-        /// <summary>Black Whirlwind stays in hand until a Blackwing Normal Summon follows (user, 2026-11-17).</summary>
+        /// <summary>Black Whirlwind stays in hand until a Blackwing Normal Summon follows (user, 2026-11-17). Also: Whirlwind activated this turn with the Normal Summon still to come holds every other move before the summon, so a line
+        /// pays this cost once per move between them (user, 2026-11-24: "increase the whirlwind waits for summon hold by how far apart the
+        /// whirlwind and summon are").</summary>
         public const string WhirlwindWaitsForSummon = "blackwing.whirlwind-waits-for-summon";
+        /// <summary>A Blackwing Normal Summoned with Black Whirlwind in hand, also with one face-up (two search twice): its search is lost (user, 2026-11-24).</summary>
+        [HoldCost(2)]
+        public const string SummonWithWhirlwindInHand = "blackwing.summon-with-whirlwind-in-hand";
+        /// <summary>Ending the turn without a Normal Summon while Black Whirlwind is in hand or face-up (user, 2026-11-24).</summary>
+        [HoldCost(2)]
+        public const string NoSummonWithWhirlwindInHand = "blackwing.no-summon-with-whirlwind-in-hand";
         /// <summary>Bora's free summon only when its attack adds a kill or a direct hit worth making this turn.</summary>
         public const string BodyNeedsPurpose = "blackwing.body-needs-purpose";
         /// <summary>With the Normal Summon still to come, a Blackwing is summoned before Sirocco's boost (it joins the total; after the boost it couldn't attack).</summary>

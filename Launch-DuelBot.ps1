@@ -1,5 +1,6 @@
 # Starts everything for a bot session: YGO Omega (if it isn't running) and the BotTest bot server, restarting the bot if
-# it's already running (so a fresh build is picked up), then opens the AI Room page only if no page is open already.
+# it's already running (so a fresh build is picked up), then opens the AI Room page, or reloads it if one is open already.
+# Omega starts fullscreen.
 # The desktop shortcut "Duel Bot" runs this.
 #   -Build   rebuild first (default: start the last build as is; you rebuild yourself)
 # Every launch writes what it did to launcher.log next to this script.
@@ -12,6 +13,9 @@ $omegaExe = 'C:\Program Files (x86)\YGO Omega\YGO Omega.exe'
 $pageUrl  = 'http://localhost:58966/'
 $probeUrl = 'http://127.0.0.1:58966/api/state'
 $pageOpenUrl = 'http://127.0.0.1:58966/api/page-open'
+$pageReloadUrl = 'http://127.0.0.1:58966/api/page-reload'
+# Omega is a Unity game: these open it as a borderless fullscreen window.
+$omegaArgs = @('-screen-fullscreen', '1', '-window-mode', 'borderless')
 $logFile  = Join-Path $repo 'launcher.log'
 Add-Type -AssemblyName System.Windows.Forms
 
@@ -40,8 +44,8 @@ try {
     if (Get-Process -Name 'YGO Omega' -ErrorAction SilentlyContinue) {
         Log 'Omega already running'
     } elseif (Test-Path $omegaExe) {
-        Start-Process -FilePath $omegaExe -WorkingDirectory (Split-Path $omegaExe)
-        Log 'started Omega'
+        Start-Process -FilePath $omegaExe -ArgumentList $omegaArgs -WorkingDirectory (Split-Path $omegaExe)
+        Log 'started Omega (fullscreen)'
     } else {
         Log "Omega not found at $omegaExe"
     }
@@ -98,7 +102,12 @@ try {
         }
     }
     if ($open) {
-        Log 'a page is already open: not opening another'
+        try {
+            Invoke-RestMethod -Method Post -Uri $pageReloadUrl -TimeoutSec 3 | Out-Null
+            Log 'a page is already open: asked it to reload'
+        } catch {
+            Log "a page is already open; reload request failed: $($_.Exception.Message)"
+        }
     } else {
         Start-Process $pageUrl
         Log "opened $pageUrl"

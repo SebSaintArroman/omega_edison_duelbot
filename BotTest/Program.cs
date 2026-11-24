@@ -63,12 +63,20 @@ app.MapPost("/api/logs/clear", (BotControlService controlService) =>
 });
 
 // The AI Room page polls the terminal every second (nothing else does): the launcher asks whether a page is open
-// (/api/page-open) before opening another one.
+// (/api/page-open) before opening another one, and asks an open page to reload itself (/api/page-reload) instead.
 long lastPagePoll = 0;
+string reloadToken = "";
 app.MapGet("/api/terminal", (long? after) =>
 {
     Interlocked.Exchange(ref lastPagePoll, Environment.TickCount64);
-    return Results.Ok(TerminalCapture.After(after ?? 0));
+    var chunk = TerminalCapture.After(after ?? 0);
+    return Results.Ok(new { lines = chunk.Lines, last = chunk.Last, reload = Volatile.Read(ref reloadToken) });
+});
+// A new token: every open page that has seen a different one reloads on its next terminal poll.
+app.MapPost("/api/page-reload", () =>
+{
+    Volatile.Write(ref reloadToken, Guid.NewGuid().ToString("N"));
+    return Results.Ok(new { ok = true });
 });
 // withinMs: how recent a poll counts (a background tab's timers are throttled, up to a minute between polls).
 app.MapGet("/api/page-open", (long? withinMs) =>
