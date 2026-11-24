@@ -1146,6 +1146,14 @@ namespace BotTest.Game.AI.Search
                                          .Any(m => m.FaceUp && !m.Negated && LineTally.Is(m.Code, new[] { CardId.Jinzo })) ||
                                      host.Summary(0).SpellCodes.Concat(host.Summary(1).SpellCodes)
                                          .Any(s => s.FaceUp && LineTally.Is(s.Code, new[] { CardId.RoyalDecree })),
+                // Our face-up Jinzos next to our face-up Cyber Dragon, and our graveyard's Jinzos (the doomed-Jinzo fuse).
+                OurJinzos = () =>
+                {
+                    var ours = host.Summary(0);
+                    bool cyber = ours.Monsters.Any(m => m.FaceUp && LineTally.Is(m.Code, new[] { CardId.CyberDragon }));
+                    return (cyber ? ours.Monsters.Count(m => m.FaceUp && LineTally.Is(m.Code, new[] { CardId.Jinzo })) : 0,
+                            ours.GraveCodes.Count(c => LineTally.Is(c, new[] { CardId.Jinzo })));
+                },
                 // A DARK monster in our hand (Allure of Darkness banishes one instead of the whole hand).
                 DarkInHand = () => host.Summary(0).HandCodes.Any(c => (SearchHost.Type(c) & 0x1) != 0 && (SearchHost.Attribute(c) & 0x20) != 0),
                 // Our other face-up attack-position monsters, while the Battle Phase is still to come or under way (#135).
@@ -1700,6 +1708,7 @@ namespace BotTest.Game.AI.Search
                             if (held is { } broken)
                             {
                                 penalty += broken.Cost;
+                                tally.OnHoldBroken(broken.Rule, broken.Cost);
                                 Cost($"Brain rule {broken.Rule}", broken.Cost);
                                 Interlocked.Increment(ref HoldsCharged);
                                 trace?.Add($"  (against the brain's hold {broken.Rule}: -{broken.Cost:0.#})");

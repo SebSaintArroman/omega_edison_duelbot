@@ -122,7 +122,10 @@ namespace BotTest.Game.AI.Brains
             _prepareCount++; // a new read of the board: the risk tolerance is recomputed when asked
             // Main-phase and battle prompts only happen on our own turn: remember that turn's parity.
             if (context.StateData is IdleCmdData or BattleCmdData)
+            {
                 _ownTurnParity = header.CurrentTurn % 2;
+                ClearClaimedRevives();
+            }
             ResetForNewDuelOrTurn(header);
 
             // The first prompt of every turn: get the play search ready (cards scored, engines loaded).

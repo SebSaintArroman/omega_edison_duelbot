@@ -978,7 +978,6 @@ namespace BotTest.Game.AI.Brains
             twin.IsSearchTwin = true;
             twin.TurnStartMs = 0;
             twin.Variant = Variant;
-            twin._searchOpponentExtraDeckChance = ReadOpponentExtraDeckChance;
             twin.OpponentDeck.Frozen = true; // a search copy observes nothing: its deck read's chances can be cached
             foreach (var rule in RuleGates.Declared(GetType()))
             {

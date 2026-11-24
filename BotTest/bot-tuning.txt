@@ -32,7 +32,6 @@ DeckBotBrain.BigTurnPerHandCard = 0.35   # Big-turn weight of each card in their
 DeckBotBrain.BigTurnPushMinFactor = 0.8   # The push chance is never damped below this factor by a low big-turn chance. Tune from logs.
 DeckBotBrain.BigTurnPushWeight = 1.5   # How strongly their big-turn chance moves the push chance. Tune from logs.
 DeckBotBrain.CardValueBase = 2   # A monster of ours in rough card points: this + ATK/1000 (+ ExtraDeckMonsterValue for a Synchro/Fusion/Xyz).
-DeckBotBrain.ChimeratechFearChance = 0.25   # Chance their Extra Deck holds Chimeratech Fortress Dragon from which we play around it. Tune from logs.
 DeckBotBrain.CompulsorySaveMinAtk = 2000   # ATK from which our own monster is worth saving with Compulsory Evacuation Device. Tune from logs.
 DeckBotBrain.CrashDangerLp = 1500   # A crash's damage counts in full when it would leave us under this many LP; otherwise at CrashSafeDamageShare.
 DeckBotBrain.CrashSafeDamageShare = 0.25   # The share of a crash's damage that counts while we stay above CrashDangerLp.
@@ -607,3 +606,7 @@ BoardEvaluator.WipeTrapFutureValue = 1   # What a wipe trap (Mirror Force, Torre
 # added 2026-11-24 15:57 (new in the code since the file was written)
 # --- Search
 Search.ReplacedMatchLines = 1000   # The most lines the brain's move needs to match the move replacing it while its score isn't backed by its lines average.
+
+# added 2026-11-24 18:37 (new in the code since the file was written)
+# --- LineRules
+LineRules.LylaBeforeBattleTrapsNegatedCost = 1

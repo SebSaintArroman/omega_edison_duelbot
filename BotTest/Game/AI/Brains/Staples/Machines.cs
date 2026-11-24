@@ -13,7 +13,8 @@ namespace BotTest.Game.AI.Brains
     ///  - Chimeratech Fortress Dragon: everyone plays it, and it's made by sending Cyber Dragon + Machines from EITHER
     ///    field (the opponent's only if face-up). So we never leave our face-up Cyber Dragon next to another face-up
     ///    Machine; if we end up there anyway, at the end of our turn we fuse it ourselves (Cyber Dragon + our weakest
-    ///    Machine, plus any face-up Machines of theirs) so at least they can't.
+    ///    Machine, plus any face-up Machines of theirs) so at least they can't. On a turn Jinzo - Returner revived a Jinzo
+    ///    (destroyed in our End Phase), the rule is relaxed and Cyber Dragon is always fused with every such Jinzo.
     ///  - D.D. Crow is never summoned: it's chained to the opponent's card that targets a card in their graveyard, and
     ///    banishes that target.
     ///  - Fusion material prompts follow the plan made when the fusion was decided.
@@ -52,6 +53,22 @@ namespace BotTest.Game.AI.Brains
         protected virtual bool GoneByTheirTurn(DynamicCard card) => false;
 
         /// <summary>
+        /// A face-up Jinzo that Jinzo - Returner's graveyard effect brought back this turn: destroyed in our End Phase, so it's
+        /// Chimeratech material for us before then (user, 2026-11-24).
+        /// </summary>
+        protected bool DiesThisEndPhase(DynamicCard card) =>
+            card.ID > 0 && card.IsFaceup() && card.IsCode(Jinzo) && (IsReturnerJinzo(card) || GoneByTheirTurn(card));
+
+        /// <summary>
+        /// This turn Jinzo - Returner revived a Jinzo (marked for death in our End Phase) and Chimeratech Fortress Dragon is in our
+        /// Extra Deck: before the End Phase we fuse our Cyber Dragon with that Jinzo, so a Machine next to Cyber Dragon isn't left
+        /// for their Chimeratech (user, 2026-11-24: the "don't summon alongside Cyber Dragon" rule is relaxed on that turn).
+        /// </summary>
+        protected async Task<bool> DoomedJinzoFuseAheadAsync(IEnumerable<DynamicCard> botMonsters) =>
+            botMonsters.Any(DiesThisEndPhase) &&
+            ((await CurrentField.GetBotField()).OwnSide.Extra ?? Array.Empty<int>()).Contains(ChimeratechFortressDragon);
+
+        /// <summary>
         /// Why our board is open to the opponent's Chimeratech Fortress Dragon (our face-up Cyber Dragon next to another
         /// face-up Machine of ours), or null.
         /// </summary>
@@ -84,6 +101,8 @@ namespace BotTest.Game.AI.Brains
         private async Task<List<DynamicCard>> ChimeratechExposingNormalSummonsAsync(
             IEnumerable<DynamicCard> summons, List<DynamicCard> monsters)
         {
+            if (await DoomedJinzoFuseAheadAsync(monsters))
+                return new List<DynamicCard>();
             var exposed = summons.Where(card => card.ID > 0 && SummonExposesChimeratech(card, monsters) != null).ToList();
             if (exposed.Any(card => card.HasType(CardType.Union)) && await UnionHostFreeAsync(monsters))
                 exposed.RemoveAll(card => card.HasType(CardType.Union));
@@ -95,9 +114,11 @@ namespace BotTest.Game.AI.Brains
             var normals = state.SummonableCards ?? Array.Empty<DynamicCard>();
             var specials = state.SpecialSummonableCards ?? Array.Empty<DynamicCard>();
             if ((!normals.Any(IsMachine) && !specials.Any(card => card.IsCode(MachinaFortress))) ||
-                !Rules.Roll(DeckRules.NoChimeratechExposure, out _) || !OpponentMayHaveChimeratech(out _))
+                !Rules.Roll(DeckRules.NoChimeratechExposure, out _))
                 return state;
             var monsters = await GetBotMonsterCardsAsync();
+            if (await DoomedJinzoFuseAheadAsync(monsters))
+                return state;
             var exposed = await ChimeratechExposingNormalSummonsAsync(normals, monsters);
             if (exposed.Count > 0)
                 state.SummonableCards = normals.Where(card => !exposed.Any(other => other.ID == card.ID)).ToArray();
@@ -119,39 +140,6 @@ namespace BotTest.Game.AI.Brains
                                            !equippedZones.Contains(card.CurrentCoordinates.Sequence) &&
                                            (card.EquipCards ?? Array.Empty<CardCoordinate>()).Length == 0);
         }
-
-        /// <summary>
-        /// Whether their Extra Deck may hold Chimeratech Fortress Dragon (the deck-list read: lists their cards fit that
-        /// run it), at least ChimeratechFearChance. Without list data: assumed (most decks play it). Logged when it doesn't.
-        /// </summary>
-        protected Task<bool> OpponentMayHaveChimeratechAsync<T>(DecisionContext<T> context)
-        {
-            if (OpponentMayHaveChimeratech(out double chance))
-                return Task.FromResult(true);
-            StapleNote(context, $"their deck likely has no Chimeratech Fortress Dragon ({chance:P0} from the deck lists): Cyber Dragon next to our Machines is safe");
-            return Task.FromResult(false);
-        }
-
-        private bool OpponentMayHaveChimeratech(out double chance)
-        {
-            var read = ReadOpponentExtraDeckChance(ChimeratechFortressDragon);
-            chance = read.GetValueOrDefault();
-            return read == null || chance >= ChimeratechFearChance;
-        }
-
-        private Func<int, double?>? _searchOpponentExtraDeckChance;
-
-        private double? ReadOpponentExtraDeckChance(int id)
-        {
-            if (_searchOpponentExtraDeckChance != null)
-                return _searchOpponentExtraDeckChance(id);
-            lock (OpponentDeck)
-                return OpponentDeck.ExtraDeckChance(id);
-        }
-
-        /// <summary>Chance their Extra Deck holds Chimeratech Fortress Dragon from which we play around it. Tune from logs.</summary>
-        [Tunable("Chance their Extra Deck holds Chimeratech Fortress Dragon from which we play around it. Tune from logs.")]
-        public double ChimeratechFearChance { get; set; } = 0.25;
 
         /// <summary>The fusion materials we planned when deciding a fusion (matched by controller, location, zone and id).</summary>
         private (int Turn, List<(int Controller, int Location, int Sequence, int Id)> Cards, string What)? _fusionPlan;
@@ -212,22 +200,31 @@ namespace BotTest.Game.AI.Brains
             if (battleAhead || !TryGetSpecialSummon(state, ChimeratechFortressDragon, out var chimeratech))
                 return null;
             var botMonsters = await GetBotMonsterCardsAsync();
-            if (ChimeratechExposure(botMonsters) is not string exposure)
-                return null;
-            if (!await OpponentMayHaveChimeratechAsync(context))
-                return null;
             var faceUp = botMonsters.Where(card => card.ID > 0 && card.IsFaceup()).ToList();
+            // Cyber Dragon and the Jinzo(s) Jinzo - Returner revived this turn, about to be destroyed in our End Phase: always fuse them,
+            // every such Jinzo as material (user, 2026-11-24: "it *must* fuse cyber dragon with jinzo just before moving into end phase";
+            // "use as many jinzo's that are going to die anyway as possible").
+            var doomed = faceUp.Any(card => card.IsCode(CyberDragon)) ? faceUp.Where(DiesThisEndPhase).ToList() : new List<DynamicCard>();
+            string? exposure = null;
+            if (doomed.Count == 0 && (exposure = ChimeratechExposure(botMonsters)) == null)
+                return null;
             var cyber = faceUp.First(card => card.IsCode(CyberDragon));
-            var weakest = faceUp.Where(card => IsMachine(card) && !SameZone(card, cyber)).OrderBy(card => card.Attack).First();
+            var ours = doomed.Count > 0
+                ? doomed
+                : new List<DynamicCard> { faceUp.Where(card => IsMachine(card) && !SameZone(card, cyber)).OrderBy(card => card.Attack).First() };
             var theirs = (await GetEnemyMonsterCardsAsync()).Where(card => card.ID > 0 && card.IsFaceup() && IsMachine(card)).ToList();
             if (!Rule(DeckRules.ChimeratechSafetyFuse))
                 return null;
-            var materials = new List<DynamicCard> { cyber, weakest };
+            var materials = new List<DynamicCard> { cyber };
+            materials.AddRange(ours);
             materials.AddRange(theirs);
             PlanFusionMaterials(context.Header.CurrentTurn, materials, "Chimeratech Fortress Dragon (safety fuse)");
-            StapleNote(context, $"special summon Chimeratech Fortress Dragon ourselves: {exposure}; fuse Cyber Dragon + our weakest Machine " +
-                                $"({CardNames.Get(weakest.ID)}){(theirs.Count > 0 ? $" + their {string.Join(", ", theirs.Select(card => CardNames.Get(card.ID)))}" : "")} " +
-                                $"({materials.Count * 1000} ATK) so they can't");
+            string why = doomed.Count > 0
+                ? $"{doomed.Count} Jinzo revived by Jinzo - Returner dies in our End Phase anyway; fuse Cyber Dragon + {(doomed.Count > 1 ? "those Jinzos" : "that Jinzo")}"
+                : $"{exposure}; fuse Cyber Dragon + our weakest Machine ({CardNames.Get(ours[0].ID)})";
+            StapleNote(context, $"special summon Chimeratech Fortress Dragon ourselves: {why}" +
+                                $"{(theirs.Count > 0 ? $" + their {string.Join(", ", theirs.Select(card => CardNames.Get(card.ID)))}" : "")} " +
+                                $"({materials.Count * 1000} ATK)");
             return chimeratech.SpecialSummon();
         }
 

@@ -305,7 +305,7 @@ namespace BotTest.Game.AI.Brains
             // (A union is fine only if it can equip itself away: some Machine of ours with no union on it yet; a monster
             // holds one union at a time.)
             var exposing = await ChimeratechExposingNormalSummonsAsync(state.SummonableCards ?? Array.Empty<DynamicCard>(), botMonsters);
-            if (exposing.Count > 0 && await OpponentMayHaveChimeratechAsync(context) && Rule(DeckRules.NoChimeratechExposure))
+            if (exposing.Count > 0 && Rule(DeckRules.NoChimeratechExposure))
             {
                 StapleNote(context, $"don't summon {string.Join(", ", exposing.Select(card => CardNames.Get(card.ID)))} face-up: {SummonExposesChimeratech(exposing[0], botMonsters)}");
                 state.SummonableCards = state.SummonableCards!.Where(card => !exposing.Any(e => e.ID == card.ID)).ToArray();

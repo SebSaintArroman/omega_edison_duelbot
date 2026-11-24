@@ -43,12 +43,40 @@ namespace BotTest.Game.AI.Brains
         /// <summary>No trap can be activated now (a face-up, unnegated Jinzo on either side, or a face-up Royal Decree).</summary>
         public Func<bool>? TrapsNegated { get; set; }
 
+        /// <summary>Our face-up Jinzos while our face-up Cyber Dragon is out (else 0), and the Jinzos in our graveyard (set by the search).</summary>
+        public Func<(int FaceUpWithCyber, int InGrave)>? OurJinzos { get; set; }
+
+        // The doomed-Jinzo fuse (LineRules.DoomedJinzoUnfusedCost): Chimeratech offered in this line and not made yet; the fuse was open
+        // at our last chance before the End Phase (graveyard Jinzos then); Returner revived a Jinzo in this line; the no-exposure holds broken.
+        private bool _chimeratechSeen, _fuseOpen, _returnerRevived;
+        private int _graveJinzosAtFuseChance;
+        private double _exposureHolds;
+
+        /// <summary>The line went against a brain hold (charged by the search): the Cyber Dragon exposure ones are remembered for a refund.</summary>
+        public void OnHoldBroken(string rule, double cost)
+        {
+            if (rule == DeckRules.NoChimeratechExposure)
+                _exposureHolds += cost;
+        }
+
+        /// <summary>Our last chance to fuse before the End Phase: whether Cyber Dragon + a Jinzo could be fused, and the Jinzos in the graveyard then.</summary>
+        private void NoteFuseChance(bool chimeratechOffered)
+        {
+            if (OurJinzos?.Invoke() is not { } jinzos)
+                return;
+            _fuseOpen = chimeratechOffered && jinzos.FaceUpWithCyber > 0;
+            _graveJinzosAtFuseChance = jinzos.InGrave;
+        }
+
 
         // Our monsters' effects on offer before the Battle Phase (by card), and whether their board could remove a monster in it then.
         private readonly HashSet<int> _effectsBeforeBattle = new();
         private int _riskAtBattle = -1; // their removal-risk monsters as our Battle Phase began
 
         internal static readonly int[] Allure = { AllureOfDarkness };
+        private static readonly int[] ChimeratechIds = { ChimeratechFortressDragon };
+        private static readonly int[] JinzoIds = { Jinzo };
+        private static readonly int[] ReturnerIds = { JinzoReturner };
 
         /// <summary>
         /// Each cost (positive) or bonus (negative) this tally adds to a line, by the rule's name: the score breakdown in the log (user,
@@ -199,6 +227,10 @@ namespace BotTest.Game.AI.Brains
                     _idleSummons.Remove(Canonical(attacker.ID));
                     return 0;
                 }
+                // Straight from the Battle Phase to the End Phase: the last chance to fuse was this (Returner may have revived its Jinzo in the battle).
+                case BattleCmdData when packet.Length >= 2 && BitConverter.ToUInt16(packet, 0) == (ushort)BattleAction.ToEndPhase:
+                    NoteFuseChance(_chimeratechSeen);
+                    return 0;
                 case SelectChainData chain when packet.Length >= 4:
                 {
                     int index = BitConverter.ToInt32(packet, 0);
@@ -206,6 +238,8 @@ namespace BotTest.Game.AI.Brains
                     if (index < 0 || index >= cards.Length)
                         return 0;
                     _idleSummons.Remove(Canonical(cards[index].ID));
+                    if (Is(cards[index].ID, ReturnerIds) && cards[index].CurrentCoordinates.Location == (byte)OmegaBotWrapper.Enum.CardLocation.Grave)
+                        _returnerRevived = true;
                     // A monster's effect used in the window it gets (the priority window after its summon), not later: almost always
                     // right (user, 2026-11-15), so it wins the ties. Not Lyla (her effect waits for the Battle Phase), not a union
                     // equip (chained to Fortress's summon, a Bottomless takes both).
@@ -236,6 +270,8 @@ namespace BotTest.Game.AI.Brains
                 }
                 case SelectEffectYnData yn when packet[0] != 0:
                     _idleSummons.Remove(Canonical(yn.EffectCard.ID));
+                    if (Is(yn.EffectCard.ID, ReturnerIds))
+                        _returnerRevived = true;
                     return 0;
             }
             return 0;
@@ -274,6 +310,25 @@ namespace BotTest.Game.AI.Brains
             {
                 cost += Charge("Draw effect left for later", LineRules.DrawLaterCost);
                 note?.Invoke($"  (a draw effect was on offer and this move came first: -{LineRules.DrawLaterCost:0.#})");
+            }
+            // The doomed-Jinzo fuse: each main move is a chance to make Chimeratech from Cyber Dragon + Returner's Jinzo; making it closes the chance
+            // and, after Returner's revival in this line, refunds the line's Cyber Dragon exposure holds (that rule is relaxed on such a line).
+            bool chimeratechOffered = (data.SpecialSummonableCards ?? Array.Empty<OmegaBotWrapper.Struct.DynamicCard>())
+                .Any(card => Is(card.ID, ChimeratechIds));
+            if (action == MainAction.SpSummon && Is(code, ChimeratechIds))
+            {
+                _chimeratechSeen = _fuseOpen = false;
+                if (_returnerRevived && _exposureHolds > 0 && (OurJinzos?.Invoke().FaceUpWithCyber ?? 0) > 0)
+                {
+                    cost += Charge("Chimeratech from Returner's Jinzo: Cyber Dragon exposure refunded", -_exposureHolds);
+                    note?.Invoke($"  (Chimeratech from Cyber Dragon + Returner's Jinzo: the Cyber Dragon exposure holds refunded, +{_exposureHolds:0.#})");
+                    _exposureHolds = 0;
+                }
+            }
+            else
+            {
+                _chimeratechSeen |= chimeratechOffered;
+                NoteFuseChance(chimeratechOffered);
             }
             switch (action)
             {
@@ -389,6 +444,12 @@ namespace BotTest.Game.AI.Brains
             {
                 cost += Charge("Brain Control's monster not used", LineRules.BrainControlUnusedCost);
                 note?.Invoke($"  (Brain Control without a tribute, a Synchro or a win: -{LineRules.BrainControlUnusedCost:0.#})");
+            }
+            // Returner's Jinzo destroyed in our End Phase while Cyber Dragon + it could have been fused into Chimeratech.
+            if (_fuseOpen && ours.GraveCodes.Count(code => Is(code, JinzoIds)) - _graveJinzosAtFuseChance is > 0 and var unfused)
+            {
+                cost += Charge("Returner's Jinzo died without Chimeratech", LineRules.DoomedJinzoUnfusedCost * unfused);
+                note?.Invoke($"  ({unfused} Jinzo destroyed in our End Phase, not fused with Cyber Dragon into Chimeratech: -{LineRules.DoomedJinzoUnfusedCost * unfused:0.#})");
             }
             if (_fusion)
             {

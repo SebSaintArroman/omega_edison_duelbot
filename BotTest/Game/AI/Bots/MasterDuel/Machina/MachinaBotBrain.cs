@@ -412,7 +412,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             if (trapSet is IdleCmdResponse setTrap)
                 return setTrap;
 
-            // 12. Cyber Dragon next to a face-up Machine at the end of the turn: fuse it ourselves (shared).
+            // 12. Cyber Dragon next to a face-up Machine, or next to Returner's doomed Jinzo, at the end of the turn: fuse it ourselves (shared).
             if (await TryChimeratechSafetyAsync(context, state, battleAhead) is IdleCmdResponse safety)
                 return safety;
 
@@ -458,7 +458,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             var fromGrave = options.Where(card => card.CurrentCoordinates.Location == (byte)CardLocation.Grave).ToList();
             if (options.Count == 0)
                 return null;
-            if (SummonExposesChimeratech(options[0], botMonsters) is string exposed && await OpponentMayHaveChimeratechAsync(context) &&
+            if (SummonExposesChimeratech(options[0], botMonsters) is string exposed && !await DoomedJinzoFuseAheadAsync(botMonsters) &&
                 Rule(DeckRules.NoChimeratechExposure))
             {
                 Note(context, $"hold Machina Fortress: {exposed}");
