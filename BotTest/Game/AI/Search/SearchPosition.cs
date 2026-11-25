@@ -117,6 +117,33 @@ namespace BotTest.Game.AI.Search
 
             """;
 
+        /// <summary>
+        /// The rebuilt turn's engine hooks (GetTurnID, RandomSelect, Draw, GetBattledGroupCount), loaded once per engine duel with the
+        /// search's setup (PuzzleEngine) instead of in every position (line-time audit 2026-11-25: the same 1.5 KB parsed every line). Each
+        /// position sets the tables they read (_st_turn, _st_cards, _st_draws, _st_random, _st_battled): see ToLua.
+        /// </summary>
+        internal const string RebuildHooksSetup =
+            // GetTurnID: cards that got where they are this turn read as the rebuilt turn's (_st_cards).
+            "if not _st_orig then _st_orig=Card.GetTurnID Card.GetTurnID=function(c) if _st_cards and _st_cards[c] and Duel.GetTurnCount()==_st_turn then return _st_turn end return _st_orig(c) end end\n" +
+            // RandomSelect: a replay's real random picks first (_st_random).
+            "if not _st_rs then _st_rs=Group.RandomSelect Group.RandomSelect=function(g,p,n,...) " +
+            "if _st_random and #_st_random>0 and Duel.GetTurnCount()==_st_turn then local out=Group.CreateGroup() " +
+            "for i=1,#_st_random do if out:GetCount()<n then local tc=g:Filter(function(c) return c:IsCode(_st_random[i]) and not out:IsContains(c) end,nil):GetFirst() " +
+            "if tc then out:AddCard(tc) _st_random[i]=0 end end end " +
+            "if out:GetCount()==n then return out end end return _st_rs(g,p,n,...) end end\n" +
+            // Draw: a replay's draws go on top first (_st_draws); cards no longer in the deck (a search took them first) are dropped, so they
+            // don't hold up the cards behind them; then our unseen draws are blanked (_st_blank_top, BlindRevealSetup).
+            "if not _st_draw then _st_draw=Duel.Draw Duel.Draw=function(p,n,r) " +
+            "if p==0 and _st_draws and #_st_draws>0 and Duel.GetTurnCount()==_st_turn then " +
+            "local keep={} for _,id in ipairs(_st_draws) do if Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_DECK,0,1,nil,id) then table.insert(keep,id) end end _st_draws=keep " +
+            "local k=math.min(n,#_st_draws) for i=k,1,-1 do local tc=Duel.GetMatchingGroup(Card.IsCode,0,LOCATION_DECK,0,nil,_st_draws[i]):GetFirst() " +
+            "if tc then Duel.MoveSequence(tc,0) end end for i=1,k do table.remove(_st_draws,1) end end " +
+            "if _st_hide_new and p==0 and Duel.IsPlayerCanDraw(p,n) then _st_blank_top(p,n) end " +
+            "return _st_draw(p,n,r) end end\n" +
+            // GetBattledGroupCount: our monsters that attacked this turn battled (_st_battled).
+            "if not _st_bgc then _st_bgc=Card.GetBattledGroupCount Card.GetBattledGroupCount=function(c) local n=_st_bgc(c) " +
+            "if n==0 and _st_battled and _st_battled[c] and Duel.GetTurnCount()==_st_turn then return 1 end return n end end\n";
+
         public int[] LifePoints { get; } = { 8000, 8000 };
         public List<PlacedCard> Cards { get; } = new();
         public bool NormalSummonUsed { get; set; }
@@ -261,30 +288,15 @@ namespace BotTest.Game.AI.Search
             // id, so "except the turn it was sent to the GY" (aux.exccon: Skill Successor) and "the turn it was summoned" checks
             // read it as an old card (seen 2026-11-15: a mid-chain replay offered Skill Successor's GY effect the turn it was sent).
             // GetTurnID answers the rebuilt turn for them while the line is in that turn; the engine's own id once it moves on.
-            lua.Append("if not _st_orig then _st_orig=Card.GetTurnID Card.GetTurnID=function(c) if _st_cards and _st_cards[c] and Duel.GetTurnCount()==_st_turn then return _st_turn end return _st_orig(c) end end\n");
+            // (The hooks that read these tables are loaded once per engine: RebuildHooksSetup.)
             lua.Append("_st_cards={}\n");
             // A replay's draws: before each of our draw effects in the rebuilt turn, the card the real game drew goes to the top of the
             // deck (a shuffle first, as Pot of Avarice does, would otherwise draw at random; user, 2026-11-15). Only these cards, once each.
             lua.Append("_st_draws={").Append(string.Join(",", ForcedDraws)).Append("}\n");
             // A replay's random picks (seen 2026-11-18: Thestalos discarded another card of ours in the line): the cards that really went, first.
             lua.Append("_st_random={").Append(string.Join(",", RandomPicks)).Append("}\n");
-            lua.Append("if not _st_rs then _st_rs=Group.RandomSelect Group.RandomSelect=function(g,p,n,...) ")
-                .Append("if _st_random and #_st_random>0 and Duel.GetTurnCount()==_st_turn then local out=Group.CreateGroup() ")
-                .Append("for i=1,#_st_random do if out:GetCount()<n then local tc=g:Filter(function(c) return c:IsCode(_st_random[i]) and not out:IsContains(c) end,nil):GetFirst() ")
-                .Append("if tc then out:AddCard(tc) _st_random[i]=0 end end end ")
-                .Append("if out:GetCount()==n then return out end end return _st_rs(g,p,n,...) end end\n");
-            lua.Append("if not _st_draw then _st_draw=Duel.Draw Duel.Draw=function(p,n,r) ")
-                .Append("if p==0 and _st_draws and #_st_draws>0 and Duel.GetTurnCount()==_st_turn then ")
-                // Cards no longer in the deck (a search took them first) are dropped, so they don't hold up the cards behind them.
-                .Append("local keep={} for _,id in ipairs(_st_draws) do if Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_DECK,0,1,nil,id) then table.insert(keep,id) end end _st_draws=keep ")
-                .Append("local k=math.min(n,#_st_draws) for i=k,1,-1 do local tc=Duel.GetMatchingGroup(Card.IsCode,0,LOCATION_DECK,0,nil,_st_draws[i]):GetFirst() ")
-                .Append("if tc then Duel.MoveSequence(tc,0) end end for i=1,k do table.remove(_st_draws,1) end end ")
-                .Append("if _st_hide_new and p==0 and Duel.IsPlayerCanDraw(p,n) then _st_blank_top(p,n) end ")
-                .Append("return _st_draw(p,n,r) end end\n");
             // Our monsters that attacked this turn battled: a Gladiator Beast's tag-out checks GetBattledGroupCount() > 0, which a
             // rebuilt card reads as 0 (seen 2026-11-15: a mid-chain replay after Laquari's attack never got its tag-out window).
-            lua.Append("if not _st_bgc then _st_bgc=Card.GetBattledGroupCount Card.GetBattledGroupCount=function(c) local n=_st_bgc(c) ")
-                .Append("if n==0 and _st_battled and _st_battled[c] and Duel.GetTurnCount()==_st_turn then return 1 end return n end end\n");
             lua.Append("_st_battled={}\n");
             // A Gladiator Beast summoned by a Gladiator's effect carries its own flag (Laquari: 2100 ATK); the rebuilt one doesn't,
             // so its base stats come out wrong (seen 2026-11-15: Gorz into a 2100 Laquari dealt 600, the lines 900). Restored when

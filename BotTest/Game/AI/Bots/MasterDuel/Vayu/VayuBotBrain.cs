@@ -1205,7 +1205,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Vayu
         // Version history (DuelSim records it per duel): 1 = 2026-11-09 first versioned build. 2 = rules under test for the
         // Vayu round. 3 = round 3 results (see the constructor).
         // 4 = shared fixes from the user's notes: floaters attacked, Ryko's flip not on our own card.
-        public override int BrainVersion => 8; // v8: synchro with a Tuner already on the field (shared)
+        public override int BrainVersion => 9; // v9: turn-start searches send their lines to moves short of them (shared). v8: synchro with a Tuner already on the field (shared)
 
         /// <summary>
         /// Play search setup: Dark Armed Dragon in hand comes out with exactly 3 DARK monsters in our graveyard (2 is one

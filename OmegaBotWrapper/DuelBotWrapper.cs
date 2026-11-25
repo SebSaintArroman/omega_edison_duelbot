@@ -266,6 +266,11 @@ namespace OmegaBotWrapper
             CurrentStateHeader = header;
         }
         /// <summary>
+        /// The next offline decision on a board known to be unchanged (the play search's board version): the field data cached for the
+        /// last decision stays, only the header is the given one.
+        /// </summary>
+        public void ContinueOfflineDecision(BotStateHeader header) => CurrentStateHeader = header;
+        /// <summary>
         /// Main loop of actions from the bot
         /// </summary>
         /// <returns>Will return True everytime the bot finishes one loop without error, or False otherwise</returns>

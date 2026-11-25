@@ -488,7 +488,8 @@ public static class Program
                 if (BotTest.Game.AI.Search.SearchBrain.Decisions + BotTest.Game.AI.Search.SearchBrain.Failures > 0)
                     console.WriteLine($"  our brain in the lines: {BotTest.Game.AI.Search.SearchBrain.Decisions} decisions, " +
                         $"{BotTest.Game.AI.Search.SearchBrain.Ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, BotTest.Game.AI.Search.SearchBrain.Decisions):0.00} ms each, " +
-                        $"{BotTest.Game.AI.Search.SearchBrain.Failures} failed" +
+                        $"{BotTest.Game.AI.Search.SearchBrain.Failures} failed, board reads kept {BotTest.Game.AI.Search.SearchBrain.BoardReadsKept} / " +
+                        $"fresh {BotTest.Game.AI.Search.SearchBrain.BoardReadsFresh}" +
                         (BotTest.Game.AI.Search.SearchBrain.FirstFailure is string firstFailure ? $" (first: {firstFailure})" : ""));
                 console.WriteLine($"  the brain's holds: {BotTest.Game.AI.Brains.DeckBotBrain.HoldsRecorded} recorded in its decisions, " +
                                   $"{BotTest.Game.AI.Search.Mcts.HoldsMatched} matched an answer at a tree node, {BotTest.Game.AI.Search.Mcts.HoldsCharged} charged to our lines' steps");

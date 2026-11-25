@@ -632,7 +632,10 @@ namespace BotTest.Game.AI.Brains
             {
                 outcome = await ThinkUntilSureAsync(bot, async budgetOrNull =>
                 {
-                    var settings = new SearchSettings(BudgetMs: budgetOrNull ?? SearchBudgetMs, Threads: DefaultSearchThreads, Horizon: DefaultSearchHorizon);
+                    // The stopping loop's focus (ThinkUntilSureAsync: moves short of lines get the next run's lines) applies here too
+                    // (line-time audit 2026-11-25: without it, 59 turn-start decisions ran into the 30 s limit with a move starved of lines).
+                    var settings = new SearchSettings(BudgetMs: budgetOrNull ?? SearchBudgetMs, Threads: DefaultSearchThreads, Horizon: DefaultSearchHorizon,
+                        FocusRoots: _focusRoot?.Keys, FocusLines: _focusRoot?.Lines ?? 0);
                     var search = new Mcts(replay.Start, tree, root, rootState, brainKey, Array.Empty<int>(), settings, evaluator, SearchBrains(bot), holds)
                     {
                         MayChoose = PlanMayChoose, Suggestions = PlanSuggestions, FromTurnStart = replay, RootKey = rootKey,

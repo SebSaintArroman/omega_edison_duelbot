@@ -60,18 +60,47 @@ namespace BotTest.Game.AI.Search
             Api.Host = host;
             Api.TurnOffset = turnOffset;
             Api.Reset();
+            _readVersion = -1;
             // Everything the brain reads goes to this line's duel; nothing it says is printed.
             OmegaApiClient.Override.Value = Api;
             ConsoleUtils.Muted = true;
+        }
+
+        /// <summary>The twin's decisions that kept the board reads of the one before (same board), and those that read afresh: for the bench.</summary>
+        public static long BoardReadsKept, BoardReadsFresh;
+
+        // The board version the twin's board reads were made on (DuelHost.BoardVersion), or -1.
+        private long _readVersion = -1;
+
+        /// <summary>
+        /// Starts one of the twin's decisions: its board reads (SearchBrainApi's views, the wrapper's and GameField's caches) are dropped
+        /// only when the line's board has changed since they were made (line-time audit 2026-11-25: the twin re-read the whole board at
+        /// every prompt, twice at a Main Phase prompt, Decide then BlockedIdleMoves). A board changed without the host noticing is caught by
+        /// DuelHost's stale-board check.
+        /// </summary>
+        private BotStateHeader BeginDecision()
+        {
+            var host = Api.Host!;
+            var header = Api.Header();
+            if (host.BoardVersion == _readVersion)
+            {
+                Interlocked.Increment(ref BoardReadsKept);
+                _bot.ContinueOfflineDecision(header);
+                return header;
+            }
+            Interlocked.Increment(ref BoardReadsFresh);
+            Api.Reset();
+            _bot.BeginOfflineDecision(header);
+            _readVersion = host.BoardVersion;
+            _twin.SearchBoardVersion = _readVersion;
+            return header;
         }
 
         public HashSet<(MainAction Action, int Index)> BlockedIdleMoves(Prompt prompt, IdleCmdData data)
         {
             if (_idlePrompt != prompt)
             {
-                Api.Reset();
-                var header = Api.Header();
-                _bot.BeginOfflineDecision(header);
+                var header = BeginDecision();
                 var context = new DecisionContext<IdleCmdData>
                 {
                     Bot = _bot, State = BotState.SelectIdleCmd, Header = header, StateData = data
@@ -98,8 +127,7 @@ namespace BotTest.Game.AI.Search
             long start = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
-                Api.Reset(); // the line moved on since the last decision
-                _bot.BeginOfflineDecision(Api.Header());
+                BeginDecision(); // the line may have moved on since the last decision
                 var packet = (data ?? prompt.Data) switch
                 {
                     IdleCmdData idle => SearchActions.Packet(_adapter.OnIdleCmd(idle).GetAwaiter().GetResult()),

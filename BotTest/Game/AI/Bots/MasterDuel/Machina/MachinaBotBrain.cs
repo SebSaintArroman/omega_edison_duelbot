@@ -199,7 +199,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         // batch: exploration rules, Phoenix / Gearframe / Catastor / Crow / Gorz fixes, side-aware planned targets).
         // 2 = round 1 tuning. 3 = round 2 tuning (above). 4 = user's notes: Fortress from hand always
         // discards itself, Gearframe Normal Summoned before Fortress, Ryko's flip not on our own card; shared: floaters attacked.
-        public override int BrainVersion => 13; // v13: Returners target different Jinzos; Future Fusion's wipe costs our turn-end field (this turn and next). v12: DAD effect with spare DARKs (main phase + priority window); Returner crash/set rules. v11: Jinzo - Returner a value set with a Jinzo in the GY; traps negated under Jinzo (shared)
+        public override int BrainVersion => 14; // v14: turn-start searches send their lines to moves short of them (shared). v13: Returners target different Jinzos; Future Fusion's wipe costs our turn-end field (this turn and next). v12: DAD effect with spare DARKs (main phase + priority window); Returner crash/set rules. v11: Jinzo - Returner a value set with a Jinzo in the GY; traps negated under Jinzo (shared)
 
         /// <summary>
         /// Play search setup: Machina Fortress in hand with other Machines to discard for it (8+ Levels in all) comes out

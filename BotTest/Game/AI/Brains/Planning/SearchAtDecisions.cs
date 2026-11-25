@@ -1267,6 +1267,21 @@ namespace BotTest.Game.AI.Brains
         public static readonly Tuned<int> TaperFloorLines = new(100);
 
         /// <summary>
+        /// The lines' stale-board checks that failed since the last report (DuelHost.CheckBoardVersion: the engine changed the board without a
+        /// message the host counts, so the brain twin and the search read an old board): logged red and flagged in stale-boards.jsonl, to be
+        /// raised at the next comments review (user, 2026-11-25).
+        /// </summary>
+        private void ReportStaleBoards(DuelBotWrapper bot)
+        {
+            if (IsSearchTwin)
+                return;
+            long stale = Interlocked.Exchange(ref DuelSim.Engine.SearchTimings.StaleBoards, 0);
+            string? first = Interlocked.Exchange(ref DuelSim.Engine.SearchTimings.FirstStaleBoard, null);
+            if (stale > 0)
+                FlagForReview(bot, "stale-boards.jsonl", $"search: STALE BOARD in {stale} sampled check(s) of the lines (first: {first})");
+        }
+
+        /// <summary>
         /// The search, then more of it until its best-scoring move has enough lines behind it (user, 2026-11-15: no maximum time; the
         /// requirement tapers instead). Before TaperAfterMs the best move also has to be significantly ahead (not Unsure); after it,
         /// the tapering line count alone decides, so even a true tie ends (by about TaperAfterMs + 10 s at 200 lines). Each extra run
@@ -1452,6 +1467,7 @@ namespace BotTest.Game.AI.Brains
                 };
             }
             _prepared = null; // the next decision reads its own board
+            ReportStaleBoards(bot);
             if (outcome != null && !IsSearchTwin)
             {
                 string finalMove = VerdictKey(outcome);

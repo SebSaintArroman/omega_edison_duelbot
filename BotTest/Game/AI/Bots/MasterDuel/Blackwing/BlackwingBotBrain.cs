@@ -1279,7 +1279,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         // This brain has its own Gorz / Mirror Force / Torrential chain rules (see OnSelectChainAsync).
         // Version history (DuelSim records it per duel): 1 = 2026-11-09 first build (started from the Vayu brain: the
         // Vayu / Sirocco / DAD / synchro logic; the Blackwing aggro play is at the end of this file).
-        public override int BrainVersion => 7; // v7: Blizzard chained beside Whirlwind, Icarus set/timing/tribute, Sirocco with Whirlwind; v6: the BlackwingHybrid list (variant flag), Return from the Different Dimension, Solemn chained
+        public override int BrainVersion => 8; // v8: turn-start searches send their lines to moves short of them (shared). v7: Blizzard chained beside Whirlwind, Icarus set/timing/tribute, Sirocco with Whirlwind; v6: the BlackwingHybrid list (variant flag), Return from the Different Dimension, Solemn chained
 
         /// <summary>
         /// Play search setup: Dark Armed Dragon in hand comes out with exactly 3 DARK monsters in our graveyard (2 is one

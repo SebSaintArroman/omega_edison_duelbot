@@ -56,7 +56,8 @@ internal sealed class PuzzleEngine : IDisposable
     private static readonly string RearmSetup =
         "_st_epoch=1\n" +
         "function Auxiliary.GlobalCheck(s,func) if s.global_check~=_st_epoch then s.global_check=_st_epoch func() end end\n" +
-        BotTest.Game.AI.Search.SearchPosition.BlindRevealSetup;
+        BotTest.Game.AI.Search.SearchPosition.BlindRevealSetup +
+        BotTest.Game.AI.Search.SearchPosition.RebuildHooksSetup;
     private const string Rearm = "_st_epoch=(_st_epoch or 0)+1\n";
 
     private readonly CardStore _cards;
@@ -158,9 +159,8 @@ internal sealed partial class DuelHost
         while (Result == null)
         {
             ct.ThrowIfCancellationRequested();
-            // Queries made while reading a batch also serve the brain's next decision.
-            // Even a batch without a prompt can change the board.
-            InvalidateSearchViews();
+            // The search views (board queries) are dropped when a batch carries a board message (HandleMessages -> BoardChanged), so a
+            // batch with only the next prompt keeps them, and the brain keeps its board reads (SearchBrain, BoardVersion).
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             int status = _duel.Process();
             var messages = _duel.GetSearchMessages();
@@ -182,6 +182,7 @@ internal sealed partial class DuelHost
                     Respond(prompt, prompt.Auto);
                     continue;
                 }
+                CheckBoardVersion(prompt);
                 return prompt;
             }
             if (status != OcgApi.StatusContinue)
@@ -206,7 +207,7 @@ internal sealed partial class DuelHost
     internal void MarkNormalSummonUsed(int player)
     {
         _normalSummonTurn[player] = Turn;
-        Array.Clear(_searchSummaries);
+        BoardChanged();
     }
 
     /// <summary>Answers a prompt with an engine response.</summary>
@@ -215,6 +216,7 @@ internal sealed partial class DuelHost
         if (prompt.State == BotState.SelectIdleCmd && engineResponse.Length >= 4 &&
             (BitConverter.ToInt32(engineResponse) & 0xffff) is (int)MainAction.Summon or (int)MainAction.SetMonster)
         {
+            BoardChanged(); // the side summaries' Normal Summon flag
             if (prompt.Player == 0)
                 _searchNormalSummonOrSetTurn = Turn;
             if (prompt.Player is 0 or 1)
@@ -250,35 +252,92 @@ internal sealed partial class DuelHost
     /// piles, deck and Extra Deck sizes, life points. Zones are left out on purpose: two orders of summons put the same cards in
     /// different zones (no card in these decks cares about columns).
     /// </summary>
-    public string Fingerprint()
+    /// <param name="statusMask">The status bits to keep (all by default; the stale-board check keeps only what the reads report).</param>
+    public string Fingerprint(uint statusMask = uint.MaxValue)
     {
         const uint flags = Ocg.QueryCode | Ocg.QueryPosition | Ocg.QueryType | Ocg.QueryLevel | Ocg.QueryRank | Ocg.QueryAttribute | Ocg.QueryRace |
                            Ocg.QueryAttack | Ocg.QueryDefense | Ocg.QueryBaseAttack | Ocg.QueryBaseDefense | Ocg.QueryEquipCard | Ocg.QueryTargetCard |
                            Ocg.QueryOverlayCard | Ocg.QueryCounters | Ocg.QueryOwner | Ocg.QueryStatus;
-        var field = new Dictionary<(int, uint), List<CardQuery?>>();
-        foreach (int p in new[] { 0, 1 })
-            foreach (uint loc in new[] { Ocg.LocMZone, Ocg.LocSZone })
-                field[(p, loc)] = QueryList(p, loc, flags);
-        string Pointed(LocInfo at) =>
-            field.TryGetValue((at.Controller, at.Location), out var list) && at.Sequence < list.Count && list[(int)at.Sequence] is { } c
-                ? $"{at.Controller}:{c.Code}" : $"{at.Controller}:{at.Location}?";
-        string Card(CardQuery c) =>
-            $"{c.Code}/{c.Position}/{c.Type}/{c.Level}/{c.Rank}/{c.Attribute}/{c.Race}/{c.Attack}/{c.Defense}/{c.BaseAttack}/{c.BaseDefense}/{c.Owner}/{c.Status}" +
-            $"/e{(c.EquipTarget is { } e ? Pointed(e) : "")}/t{(c.Targets.Length == 0 ? "" : string.Join("+", c.Targets.Select(Pointed).OrderBy(x => x, StringComparer.Ordinal)))}" +
-            $"/o{(c.Overlays.Length == 0 ? "" : string.Join("+", c.Overlays.OrderBy(x => x)))}/n{(c.Counters.Length == 0 ? "" : string.Join("+", c.Counters.Select(k => $"{k.Type}x{k.Count}").OrderBy(x => x, StringComparer.Ordinal)))}";
+        // Plain loops (line-time audit 2026-11-25: the LINQ version was ~2% of a line); the text is the same as before.
+        // field[p * 2 + 0] = monster zones, [p * 2 + 1] = spell/trap zones.
+        var field = new List<CardQuery?>[4];
+        for (int p = 0; p < 2; p++)
+        {
+            field[p * 2] = QueryList(p, Ocg.LocMZone, flags);
+            field[p * 2 + 1] = QueryList(p, Ocg.LocSZone, flags);
+        }
+        string Pointed(LocInfo at)
+        {
+            var list = at.Controller < 2 ? at.Location == Ocg.LocMZone ? field[at.Controller * 2] : at.Location == Ocg.LocSZone ? field[at.Controller * 2 + 1] : null : null;
+            return list != null && at.Sequence < list.Count && list[(int)at.Sequence] is { } c ? $"{at.Controller}:{c.Code}" : $"{at.Controller}:{at.Location}?";
+        }
+        var cardText = new System.Text.StringBuilder(128);
+        var parts = new List<string>(8);
+        string Joined(List<string> items, char separator)
+        {
+            items.Sort(StringComparer.Ordinal);
+            return string.Join(separator, items);
+        }
+        string Card(CardQuery c)
+        {
+            cardText.Clear();
+            cardText.Append(c.Code).Append('/').Append(c.Position).Append('/').Append(c.Type).Append('/').Append(c.Level).Append('/').Append(c.Rank)
+                .Append('/').Append(c.Attribute).Append('/').Append(c.Race).Append('/').Append(c.Attack).Append('/').Append(c.Defense)
+                .Append('/').Append(c.BaseAttack).Append('/').Append(c.BaseDefense).Append('/').Append(c.Owner).Append('/').Append(c.Status & statusMask);
+            cardText.Append("/e");
+            if (c.EquipTarget is { } e)
+                cardText.Append(Pointed(e));
+            cardText.Append("/t");
+            if (c.Targets.Length > 0)
+            {
+                var targets = new List<string>(c.Targets.Length);
+                foreach (var t in c.Targets)
+                    targets.Add(Pointed(t));
+                cardText.Append(Joined(targets, '+'));
+            }
+            cardText.Append("/o");
+            if (c.Overlays.Length > 0)
+            {
+                var overlays = (int[])c.Overlays.Clone();
+                Array.Sort(overlays);
+                cardText.Append(string.Join('+', overlays));
+            }
+            cardText.Append("/n");
+            if (c.Counters.Length > 0)
+            {
+                var counters = new List<string>(c.Counters.Length);
+                foreach (var k in c.Counters)
+                    counters.Add($"{k.Type}x{k.Count}");
+                cardText.Append(Joined(counters, '+'));
+            }
+            return cardText.ToString();
+        }
         var sb = new System.Text.StringBuilder(512);
-        foreach (int p in new[] { 0, 1 })
+        for (int p = 0; p < 2; p++)
         {
             sb.Append('P').Append(p).Append(':').Append(_lp[p]);
-            foreach (uint loc in new[] { Ocg.LocMZone, Ocg.LocSZone })
-                sb.Append('|').Append(string.Join(",", field[(p, loc)].Where(c => c != null).Select(c => Card(c!)).OrderBy(x => x, StringComparer.Ordinal)));
-            foreach (uint loc in new[] { Ocg.LocHand, Ocg.LocGrave, Ocg.LocRemoved })
-                sb.Append('|').Append(string.Join(",", QueryList(p, loc, Ocg.QueryCode | Ocg.QueryPosition).Where(c => c != null)
-                    .Select(c => $"{c!.Code}/{c.Position}").OrderBy(x => x, StringComparer.Ordinal)));
+            for (int zone = 0; zone < 2; zone++)
+            {
+                parts.Clear();
+                foreach (var c in field[p * 2 + zone])
+                    if (c != null)
+                        parts.Add(Card(c));
+                sb.Append('|').Append(Joined(parts, ','));
+            }
+            foreach (uint loc in PileLocations)
+            {
+                parts.Clear();
+                foreach (var c in QueryList(p, loc, Ocg.QueryCode | Ocg.QueryPosition))
+                    if (c != null)
+                        parts.Add($"{c.Code}/{c.Position}");
+                sb.Append('|').Append(Joined(parts, ','));
+            }
             sb.Append('|').Append(CountIn(p, Ocg.LocDeck)).Append('/').Append(CountIn(p, Ocg.LocExtra)).Append('#');
         }
         return sb.ToString();
     }
+
+    private static readonly uint[] PileLocations = { Ocg.LocHand, Ocg.LocGrave, Ocg.LocRemoved };
 
     /// <summary>How many cards this player has in a location (cheap: no card queries), e.g. their monsters, to spot a summon.</summary>
     public int CountIn(int player, uint location)
@@ -318,7 +377,7 @@ internal sealed partial class DuelHost
     /// <summary>The position's life points (the puzzle sets them in the engine without a message the host would see).</summary>
     public void SetLifePoints(int first, int second)
     {
-        InvalidateSearchViews();
+        BoardChanged();
         _lp[0] = first;
         _lp[1] = second;
     }
@@ -330,6 +389,65 @@ internal sealed partial class DuelHost
     private Dictionary<(int Controller, uint Location), List<int?>>? _searchCodeQueries;
     private long _searchEngineTicks, _searchMessageTicks;
 
+    private static long s_boardVersions;
+
+    /// <summary>
+    /// The board's version: a new number (unique across all search duels) whenever the board may have changed, i.e. an engine batch
+    /// carried anything but hints and the next prompt (HandleMessages), or the host changed what it reports (life points, a Normal
+    /// Summon). Reads of the board (the search views here, the brain twin's field reads: SearchBrain) stay valid while it's the same.
+    /// </summary>
+    public long BoardVersion { get; private set; } = Interlocked.Increment(ref s_boardVersions);
+
+    private void BoardChanged()
+    {
+        BoardVersion = Interlocked.Increment(ref s_boardVersions);
+        InvalidateSearchViews();
+    }
+
+    // The stale-board check (user, 2026-11-25: flag it in the logs and raise it at comment reviews): a sample of the board versions
+    // records the board as it was read; a later prompt on the same version must still see that board. A difference means the engine
+    // changed the board without a message the host counts, so cached reads were stale (SearchTimings.StaleBoards).
+    private const int StaleCheckEvery = 32; // ~1% of a line at 1 in 8 (two engine reads of the whole board per check)
+    private long _checkedVersion = -1;
+    private string? _checkedBoard;
+    private BotState _checkedState;
+
+    private void CheckBoardVersion(Prompt prompt)
+    {
+        if (BoardVersion != _checkedVersion)
+        {
+            _checkedVersion = BoardVersion;
+            // Sampled by the version's number, not the duel's random numbers (the lines must play as without the check).
+            _checkedBoard = BoardVersion % StaleCheckEvery == 0 ? BoardCheckKey() : null;
+            _checkedState = prompt.State;
+            return;
+        }
+        if (_checkedBoard == null)
+            return;
+        string now = BoardCheckKey();
+        if (now == _checkedBoard)
+            return;
+        Interlocked.Increment(ref SearchTimings.StaleBoards);
+        if (SearchTimings.FirstStaleBoard == null)
+        {
+            int at = 0;
+            while (at < now.Length && at < _checkedBoard.Length && now[at] == _checkedBoard[at])
+                at++;
+            string Around(string s) => s.Substring(Math.Max(0, at - 60), Math.Min(s.Length - Math.Max(0, at - 60), 160));
+            Interlocked.CompareExchange(ref SearchTimings.FirstStaleBoard,
+                $"turn {Turn}, phase 0x{Phase:x}: the board changed between {_checkedState} and {prompt.State} with no board message; " +
+                $"was ...{Around(_checkedBoard)}... now ...{Around(now)}...", null);
+        }
+        _checkedBoard = now; // one report per change
+    }
+
+    /// <summary>What the search's board reads report (the brain's views and the side summaries), read fresh from the engine.</summary>
+    private string BoardCheckKey() =>
+        Fingerprint(statusMask: Ocg.StatusDisabled) +
+        // (Not the phase: no read reports it; the brain's header is read afresh at every decision.)
+        $"|T{Turn}/{TurnPlayer}|a{(_attack is { } a ? $"{a.Attacker.Key}>{a.Target?.Key}" : "")}|at{string.Join(",", _attackedThisTurn.OrderBy(k => k))}" +
+        $"|ct{_chainTargets.Count}|ns{_normalSummonTurn[0]},{_normalSummonTurn[1]}";
+
     private void InvalidateSearchViews()
     {
         Array.Clear(_searchSummaries);
@@ -337,6 +455,16 @@ internal sealed partial class DuelHost
         Array.Clear(_searchExtraCodes);
         _searchCardQueries?.Clear();
         _searchCodeQueries?.Clear();
+    }
+
+    /// <summary>The codes of this player's monsters in zone order (as Summary(player).Monsters lists them), without reading the rest of the side.</summary>
+    internal List<int> MonsterCodes(int player)
+    {
+        var codes = new List<int>(5);
+        foreach (var card in SearchMonsters(player))
+            if (card != null)
+                codes.Add(card.Code);
+        return codes;
     }
 
     private List<CardQuery?> SearchMonsters(int player) =>
@@ -441,13 +569,20 @@ internal sealed record SearchChainLink(int Player, int CardId, int[] TargetCardI
 internal static class SearchTimings
 {
     public static long Create, Puzzle, Deal, GeneratePuzzle, ToRoot, Playout, Evaluate, Dispose, Lines, Prompts, Engine, Messages, Cards;
+    /// <summary>Stale-board checks that failed (DuelHost.CheckBoardVersion), and the first one's description. Read and cleared by the brain.</summary>
+    public static long StaleBoards;
+    public static string? FirstStaleBoard;
     public static bool MeasurePuzzleParse { get; set; }
     public static long PuzzleParse, PuzzleParseFailures;
 
     public static void Add(ref long counter, long value) => Interlocked.Add(ref counter, value);
 
-    public static void Reset() => Create = Puzzle = Deal = GeneratePuzzle = ToRoot = Playout = Evaluate = Dispose =
-        Lines = Prompts = Engine = Messages = Cards = PuzzleParse = PuzzleParseFailures = 0;
+    public static void Reset()
+    {
+        Create = Puzzle = Deal = GeneratePuzzle = ToRoot = Playout = Evaluate = Dispose =
+            Lines = Prompts = Engine = Messages = Cards = PuzzleParse = PuzzleParseFailures = StaleBoards = 0;
+        FirstStaleBoard = null;
+    }
 
     public static string Report()
     {
@@ -457,6 +592,7 @@ internal static class SearchTimings
                $"dispose {Ms(Dispose):0.00} ms; {(double)Prompts / Math.Max(1, Lines):0.0} prompts per line ({Lines} lines)\n" +
                $"  of which: engine resolving {Ms(Engine):0.00} ms, reading its messages into prompts {Ms(Messages):0.00} ms, " +
                $"our code (policy, tree) {Ms(ToRoot + Playout - Engine - Messages):0.00} ms; {(double)Cards / Math.Max(1, Lines):0} cards laid out per line" +
+               $"\n  stale-board checks failed: {StaleBoards}" + (FirstStaleBoard is { } stale ? $" (first: {stale})" : "") +
                (MeasurePuzzleParse ? $"\n  parse-only probe (encoding and compilation, body skipped): {Ms(PuzzleParse):0.00} ms per line, " +
                    $"{PuzzleParseFailures} probe failures; probe time is included in lines/s" : "");
     }

@@ -293,7 +293,7 @@ function addReason(source, text, validator) {
         item.dataset.kind = "override";
         if (currentEntry.dataset.flag !== "unplanned") currentEntry.dataset.flag = "override";
       }
-      if (/UNPLANNED|DESYNC|REPLAY MISS/.test(text)) {
+      if (/UNPLANNED|DESYNC|REPLAY MISS|STALE BOARD/.test(text)) {
         item.dataset.kind = "unplanned";
         currentEntry.dataset.flag = "unplanned"; // shown on the summary line, so it isn't missed while collapsed
       }

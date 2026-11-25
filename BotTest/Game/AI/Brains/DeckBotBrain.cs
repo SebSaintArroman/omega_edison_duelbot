@@ -98,6 +98,7 @@ namespace BotTest.Game.AI.Brains
             _trackedTurn = -1;
             _threatenedState.Clear();
             _assessedStrategicState = TagRules.BotStrategicState.Base;
+            _assessedAtBoardVersion = 0;
             _lastLoggedStrategicState = null;
             _theirAttackedZones = (-1, new());
             _opponentBeforeTheirTurn = (-1, new());
@@ -117,6 +118,10 @@ namespace BotTest.Game.AI.Brains
         /// duel or turn resets what belongs to the old one, the play search warms up, the field is read, and everything we
         /// track is updated from it (ObserveFieldAsync), then Grand Mole.
         /// </summary>
+        /// <summary>The search twin's board version (SearchBrain, DuelHost.BoardVersion): the same number = the same board. 0 = unknown.</summary>
+        internal long SearchBoardVersion { get; set; }
+        private long _assessedAtBoardVersion;
+
         protected async Task<GameField> PrepareContextAsync<TState>(DecisionContext<TState> context, CancellationToken ct = default)
         {
             _rollChance = null; // a former roll's chance belongs to the decision that computed it
@@ -144,10 +149,13 @@ namespace BotTest.Game.AI.Brains
                 await ObserveFieldAsync(context, header, fieldTask.Result);
             // The search twin's strategic state at this position of its line (live, PromptArrivedAsync assesses it): the holds it
             // records scale with it (Conservative: resource holds cost more; user, 2026-11-24).
-            if (IsSearchTwin)
+            // It depends on the board alone: assessed again only when the line's board has changed (SearchBoardVersion; line-time audit
+            // 2026-11-25: consecutive chain windows, yes/no and picks on one board assessed it at every prompt).
+            if (IsSearchTwin && (SearchBoardVersion == 0 || SearchBoardVersion != _assessedAtBoardVersion))
             {
                 try { await AssessStrategicStateAsync(context.Bot); }
                 catch { _assessedStrategicState = TagRules.BotStrategicState.Base; }
+                _assessedAtBoardVersion = SearchBoardVersion;
             }
             // The numbers of this state (StateTuning): the brain's own, and the real bot's static ones.
             ApplyStateTuning();

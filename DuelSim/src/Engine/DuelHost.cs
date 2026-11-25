@@ -437,6 +437,7 @@ internal sealed partial class DuelHost : IDisposable
     {
         Prompt? prompt = null;
         int offset = 0;
+        bool changed = false;
         while (count - offset >= 4)
         {
             int length = BitConverter.ToInt32(buffer, offset);
@@ -446,6 +447,16 @@ internal sealed partial class DuelHost : IDisposable
             var reader = new MessageReader(buffer, offset, length);
             offset += length;
             byte id = reader.U8();
+            // Anything but a hint, a retry or the prompt itself may have changed the board: the search views are dropped before the
+            // first such message is read (its handling and the prompt's may query the board), and the board gets a new version.
+            // A new phase changes nothing the reads report but the attack in progress, which it clears (a stat change tied to the phase
+            // alone would be caught by the stale-board check).
+            bool phaseOnly = id == Msg.NewPhase && _attack == null && !InDamageStep;
+            if (!changed && id != Msg.Hint && id != Msg.Retry && id != Msg.CardHint && id != Msg.PlayerHint && !phaseOnly && !IsPromptMessage(id))
+            {
+                changed = true;
+                BoardChanged();
+            }
             try
             {
                 var p = HandleMessage(id, reader);
@@ -459,6 +470,12 @@ internal sealed partial class DuelHost : IDisposable
         }
         return prompt;
     }
+
+
+    private static bool IsPromptMessage(byte id) => id is Msg.SelectIdleCmd or Msg.SelectBattleCmd or Msg.SelectEffectYn or Msg.SelectYesNo or
+        Msg.SelectOption or Msg.SelectCard or Msg.SelectTribute or Msg.SelectSum or Msg.SelectUnselectCard or Msg.SelectChain or Msg.SelectPlace or
+        Msg.SelectDisfield or Msg.SelectPosition or Msg.SelectCounter or Msg.SortCard or Msg.SortChain or Msg.AnnounceRace or Msg.AnnounceAttrib or
+        Msg.AnnounceCard or Msg.AnnounceNumber or Msg.RockPaperScissors;
 
     private Prompt? HandleMessage(byte id, MessageReader r)
     {

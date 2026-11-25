@@ -1341,7 +1341,7 @@ namespace BotTest.Game.AI.Search
                 // Our monsters that turned up in our Main Phase 2: out of our clock (SearchView.Main2Summoned).
                 if (host.Turn == SearchTurn)
                 {
-                    var codesNow = host.Summary(0).Monsters.Select(m => m.Code).ToList();
+                    var codesNow = host.MonsterCodes(0); // not the whole side summary (its hand, graveyard and deck reads): line-time audit 2026-11-25
                     // (The duel's first turn counts as Main Phase 2: no battle possible; user, 2026-11-18.)
                     if ((host.Phase == (int)DuelPhase.Main2 || _view.FirstTurnOfDuel && host.Phase == (int)DuelPhase.Main1) && lastOwnCodes != null)
                     {

@@ -154,7 +154,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.HeroFrog
         // Normal Summoned + bounces itself in Main Phase 2, Treeborn always the cheapest tribute, Monarchs readily, Battle
         // Fader only vs lethal, Miracle Fusion graveyard-first and held when not needed, no Gorz tribute; shared: floaters
         // attacked.
-        public override int BrainVersion => 8; // v8 (2026-11-11 sims): Fusion is removal + spares Treeborn, steal only past our battle, Dupe lock first when losing, Monarch takes the summon; v7 (2026-11-11 comments): Dupe lock in MP1 / from hand, no redundant backrow, doomed sets, EC for game only, Swap attacks + bounces, no Prodigy body, Fusion waits for battle; v6: turn planner, Dupe lock goal fix, MST bait fixes
+        public override int BrainVersion => 9; // v9: turn-start searches send their lines to moves short of them (shared). v8 (2026-11-11 sims): Fusion is removal + spares Treeborn, steal only past our battle, Dupe lock first when losing, Monarch takes the summon; v7 (2026-11-11 comments): Dupe lock in MP1 / from hand, no redundant backrow, doomed sets, EC for game only, Swap attacks + bounces, no Prodigy body, Fusion waits for battle; v6: turn planner, Dupe lock goal fix, MST bait fixes
 
         /// <summary>
         /// Play search setup: Treeborn Frog in our graveyard comes back every Standby Phase, but only while we control no
