@@ -1,0 +1,26 @@
+// Live 2026-11-25 11:12 Machina Control #010 (turn 2, main1, our first turn): hand Card Trooper, D.D. Crow x2, Machina Force,
+// Compulsory Evacuation Device, Mystical Space Typhoon. Their board: Card Trooper (face-up ATK, M5), two set spells/traps (S1, S2).
+// The search kept "summon Card Trooper" (327 lines), but at #013 (after the summon and a passed summon chain window) its tree had no
+// node for the real board (Trooper face-up ATK with its mill on offer): DESYNC. User: "what happened there?! fix it".
+// Their deck read: X-Saber; MachinaControl stands in.
+{
+  "deck": "MachinaControl",
+  "opponent": "MachinaControl",
+  "lp": [8000, 8000],
+  "turn": 2,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": false,
+  "ours": {
+    "monsters": [],
+    "spells": [],
+    "hand": [ 85087012, 24508238, 24508238, 58054262, 94192409, 5318639 ],
+    "grave": []
+  },
+  "theirs": {
+    "monsters": [ { "id": 85087012, "zone": 4 } ],
+    "spells": [ { "zone": 0, "set": true }, { "zone": 1, "set": true } ],
+    "handCount": 3,
+    "grave": [ 78422252, 60682203, 42737833 ]
+  }
+}

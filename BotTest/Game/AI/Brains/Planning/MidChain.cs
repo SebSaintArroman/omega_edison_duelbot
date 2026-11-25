@@ -614,6 +614,14 @@ namespace BotTest.Game.AI.Brains
             foreach (int id in now.OwnDeck)
                 if (fromDeck.TryGetValue(id, out int n) && n > 0)
                     fromDeck[id] = n - 1;
+            static int CanonOf(int id) => SearchHost.CanonicalId(id) is > 0 and var c ? c : id;
+            bool drewSinceAnchor = _sinceAnchor.Any(s => !s.Key.StartsWith("pick:") && !s.Key.StartsWith("card") &&
+                                                         SearchActions.KeyCardId(s.Key) is > 0 and var played && LineTally.Draws(played));
+            // Our graveyard cards at the anchor that have left it since.
+            var graveLeft = anchor.View.OwnGrave.GroupBy(CanonOf).ToDictionary(g => g.Key, g => g.Count());
+            foreach (int id in now.OwnGrave)
+                if (graveLeft.TryGetValue(CanonOf(id), out int stillThere) && stillThere > 0)
+                    graveLeft[CanonOf(id)] = stillThere - 1;
             var handBefore = anchor.View.OwnHand.GroupBy(id => id).ToDictionary(g => g.Key, g => g.Count());
             foreach (int id in now.OwnHand)
             {
@@ -628,6 +636,14 @@ namespace BotTest.Game.AI.Brains
                 if (fromDeck.TryGetValue(id, out int deckLeft) && deckLeft > 0)
                 {
                     fromDeck[id] = deckLeft - 1;
+                    view.ForcedDraws.Add(id);
+                }
+                // A draw card that shuffles its own cards in first (Pot of Avarice: five monsters from the graveyard, then two drawn): a card
+                // that was in our graveyard at the anchor (live 2026-11-25, Machina #98: Avarice drew Ryko and Card Trooper out of the five it
+                // returned; the lines drew at random and none reached the window).
+                else if (drewSinceAnchor && graveLeft.TryGetValue(canon, out int inGrave) && inGrave > 0)
+                {
+                    graveLeft[canon] = inGrave - 1;
                     view.ForcedDraws.Add(id);
                 }
             }
@@ -692,8 +708,14 @@ namespace BotTest.Game.AI.Brains
             if (extra > 0)
                 bot.LogNote($"search: unsure, thought {extra / 1000.0:0.#} s longer");
             if (misses > 0)
-                FlagReplayIssue(bot, $"search: REPLAY MISS: {misses} line(s) didn't reach this chain window from the last searched decision " +
-                            $"(first: {firstMiss}){(outcome?.Root.Count == 0 ? "; no line reached it, the brain answers" : "")}");
+            {
+                string missNote = $"search: REPLAY MISS: {misses} line(s) didn't reach this chain window from the last searched decision " +
+                                  $"(first: {firstMiss}){(outcome?.Root.Count == 0 ? "; no line reached it, the brain answers" : "")}";
+                // The replan's input, for DuelSim replay-check (user, 2026-11-25: "yes save mid chain replans too").
+                string? saved = SaveMidChainDump(bot, missNote, anchor.Turn, rootState, options,
+                    ReplayDump.MidChainOf(view, script, used, _usedEffects, brainKey));
+                FlagReplayIssue(bot, missNote + (saved != null ? $" [replay saved: {saved}]" : ""));
+            }
             return outcome is { Root.Count: > 0 } ? outcome with { NeverOffered = NeverOffered(start, options) } : null;
         }
 

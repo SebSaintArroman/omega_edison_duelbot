@@ -28,7 +28,16 @@ namespace BotTest.Game.AI.Brains
             bool OwnFutureFusionInDrawPhase = false,
             // An attack on us: fewer set answers (AnswersAnyThreat) than attackers left, and a direct hit with all their
             // attacks together short of our LP.
-            bool AttackAnswersScarce = false, bool NonLethalDirectAttack = false);
+            bool AttackAnswersScarce = false, bool NonLethalDirectAttack = false,
+            // Our face-up attack-position monsters (id, current ATK), and whether our Battle Phase is still ahead this turn (our Main Phase 1
+            // with a Battle Phase on offer). Null / false when the caller doesn't know.
+            IReadOnlyList<(int Id, int Attack)>? OwnFaceUpAttackers = null, bool BattleAhead = false,
+            // Their monsters (id, ATK, DEF, face-up, attack position), their face-down spells/traps (-1 unknown), and the DEF a face-down
+            // monster of theirs is assumed to have against a pierce (-1 unknown). Sirocco's lethal check (user, 2026-11-25).
+            IReadOnlyList<(int Id, int Attack, int Defense, bool FaceUp, bool AttackPosition)>? OpponentMonsters = null,
+            int OpponentSetSpellTraps = -1, int OpponentLikelySetDefense = -1,
+            // Honest known or suspected in their hand (DeckBotBrain.HonestSuspected: the deck read's chance at HonestSuspectChance or more).
+            bool HonestSuspected = false);
 
         internal sealed record Rule(int[] Ids, TagRules.Tag Tags,
             Func<Context, TagRules.Tag>? TagsToDisableWhen = null,

@@ -1,6 +1,6 @@
 # Starts everything for a bot session: YGO Omega (if it isn't running) and the BotTest bot server, restarting the bot if
 # it's already running (so a fresh build is picked up), then opens the AI Room page, or reloads it if one is open already.
-# Omega starts fullscreen.
+# Omega starts in a maximized window.
 # The desktop shortcut "Duel Bot" runs this.
 #   -Build   rebuild first (default: start the last build as is; you rebuild yourself)
 # Every launch writes what it did to launcher.log next to this script.
@@ -14,10 +14,35 @@ $pageUrl  = 'http://localhost:58966/'
 $probeUrl = 'http://127.0.0.1:58966/api/state'
 $pageOpenUrl = 'http://127.0.0.1:58966/api/page-open'
 $pageReloadUrl = 'http://127.0.0.1:58966/api/page-reload'
-# Omega is a Unity game: these open it as a borderless fullscreen window.
-$omegaArgs = @('-screen-fullscreen', '1', '-window-mode', 'borderless')
+# Omega opens windowed (no Unity fullscreen); the launcher then maximizes its window (Windows maximize).
+$omegaArgs = @('-screen-fullscreen', '0')
 $logFile  = Join-Path $repo 'launcher.log'
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -Namespace LaunchDuelBot -Name Win -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
+[DllImport("user32.dll")] public static extern bool IsZoomed(System.IntPtr hWnd);
+'@
+
+# Maximizes Omega's window. Unity can resize the window while it loads, so it re-maximizes until the window has stayed
+# maximized for 5 seconds, giving up after $timeoutSec.
+function Set-OmegaMaximized($timeoutSec) {
+    $deadline = (Get-Date).AddSeconds($timeoutSec)
+    $zoomedSince = $null
+    while ((Get-Date) -lt $deadline) {
+        $p = Get-Process -Name 'YGO Omega' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
+        if ($p) {
+            if ([LaunchDuelBot.Win]::IsZoomed($p.MainWindowHandle)) {
+                if (-not $zoomedSince) { $zoomedSince = Get-Date }
+                elseif (((Get-Date) - $zoomedSince).TotalSeconds -ge 5) { return $true }
+            } else {
+                $zoomedSince = $null
+                [LaunchDuelBot.Win]::ShowWindow($p.MainWindowHandle, 3) | Out-Null   # 3 = SW_MAXIMIZE
+            }
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
+}
 
 function Log($text) { "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff')  $text" | Add-Content $logFile -Encoding utf8 }
 function Fail($text) {
@@ -40,12 +65,14 @@ function Test-PageOpen($withinMs) {
 try {
     Log '--- launch'
 
-    # 1. Omega
+    # 1. Omega (maximized at the end, once its window is up)
+    $startedOmega = $false
     if (Get-Process -Name 'YGO Omega' -ErrorAction SilentlyContinue) {
         Log 'Omega already running'
     } elseif (Test-Path $omegaExe) {
         Start-Process -FilePath $omegaExe -ArgumentList $omegaArgs -WorkingDirectory (Split-Path $omegaExe)
-        Log 'started Omega (fullscreen)'
+        $startedOmega = $true
+        Log 'started Omega'
     } else {
         Log "Omega not found at $omegaExe"
     }
@@ -111,6 +138,12 @@ try {
     } else {
         Start-Process $pageUrl
         Log "opened $pageUrl"
+    }
+
+    # 5. Maximize the Omega window we started (after the bot and page, so they aren't held up by Omega loading).
+    if ($startedOmega) {
+        if (Set-OmegaMaximized 90) { Log 'Omega window maximized' }
+        else { Log 'Omega window did not stay maximized within 90 seconds' }
     }
 } catch {
     Fail "Launcher error: $($_.Exception.Message)"

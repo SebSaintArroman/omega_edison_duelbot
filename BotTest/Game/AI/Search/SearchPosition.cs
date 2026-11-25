@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using static BotTest.Game.AI.CardId;
 
@@ -45,6 +45,8 @@ namespace BotTest.Game.AI.Search
         public bool DestroyAtOwnersEnd;
         /// <summary>End Phases (counting this turn's) until its battle position may change again (0: free): Lyla's lock (ViewCard.PositionLockEnds).</summary>
         public int PositionLockEndPhases;
+        /// <summary>Ours: the effects (bit = description index, id*16+index) already used this turn (ViewCard.UsedEffectMask): their count limits start spent.</summary>
+        public int UsedEffectMask;
     }
 
     /// <summary>
@@ -217,6 +219,17 @@ namespace BotTest.Game.AI.Search
                 if (Cards[i].PositionLockEndPhases > 0 && Cards[i].Location == LocMZone)
                     lua.Append($"if {c} then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_CANNOT_CHANGE_POSITION) ")
                         .Append($"e:SetReset(RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END,{Cards[i].PositionLockEndPhases + SkipTurns}) {c}:RegisterEffect(e) end\n");
+                // Once-per-turn effects already used in the real turn (user, 2026-11-25: "once per turn effects can only be activated once per
+                // turn and it should understand that"): a rebuilt card's count limits start fresh, so the lines offered Card Trooper's mill a
+                // second time. The used effects only, by description index (not the whole card: Gearframe's summon trigger used leaves its
+                // equip free), each with a count limit left, for the rebuilt turn only. Spent at the start of the rebuilt turn's Draw Phase: the
+                // engine recharges every count limit as a turn begins, so spending them while the position loads did nothing.
+                if (Cards[i].UsedEffectMask != 0 && Cards[i].Location is LocMZone or LocSZone)
+                    lua.Append($"if {c} then local tc={c} local g=Effect.GlobalEffect() g:SetType(EFFECT_TYPE_FIELD|EFFECT_TYPE_CONTINUOUS) g:SetCode(EVENT_PHASE_START+PHASE_DRAW) ")
+                        .Append("g:SetOperation(function() if Duel.GetTurnCount()~=_st_turn then return end ")
+                        .Append("for _,e in ipairs({tc:GetOwnEffects()}) do local d=e:GetDescription() ")
+                        .Append($"if d>=16 and (({Cards[i].UsedEffectMask}>>(d&15))&1)==1 and e:GetCountLimit()>0 then e:UseCountLimit({Cards[i].Controller}) end end end) ")
+                        .Append("Duel.RegisterEffect(g,0) end\n");
                 if (Cards[i].DestroyAtOwnersEnd && Cards[i].Location == LocMZone)
                     lua.Append($"if {c} then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS) e:SetRange(LOCATION_MZONE) ")
                         .Append($"e:SetCode(EVENT_PHASE+PHASE_END) e:SetCountLimit(1) e:SetCondition(function(e) return Duel.IsTurnPlayer(e:GetHandler():GetControler()) end) ")

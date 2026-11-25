@@ -1,0 +1,27 @@
+// Live 2026-11-25 11:50 Blackwing Hybrid #023 (turn 6, main1): hand Kalut, Burial from a Different Dimension, Brain Control, Vayu;
+// Icarus Attack set. Their Lyla face-up DEF (1700/200) and two set cards (S1 turned out to be Gottoms' Emergency Call), hand 2.
+// The search summoned Vayu and chained Icarus in its summon window on Lyla + a set card. User: "why not attack with vayu first? it
+// could have killed lyla and then used icarus to kill both backrow". Their deck read: X-Saber 94%; MachinaControl stands in.
+{
+  "deck": "BlackwingHybrid",
+  "opponent": "MachinaControl",
+  "lp": [6300, 8000],
+  "turn": 6,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": false,
+  "ours": {
+    "monsters": [],
+    "spells": [ { "id": 53567095, "zone": 0, "set": true } ],
+    "hand": [ 85215458, 48976825, 87910978, 72714392 ],
+    "grave": [ 55144522, 2009101, 53567095, 70342110 ]
+  },
+  "theirs": {
+    "monsters": [ { "id": 22624373, "zone": 0, "pos": "def" } ],
+    "spells": [ { "zone": 0, "set": true }, { "zone": 4, "set": true } ],
+    "handCount": 2,
+    "grave": [ 70342110, 60682203, 90508760, 94886282, 64697231, 5318639, 58120309, 31383545, 21502796, 29401950, 23115241, 78422252,
+               87910978, 42737833, 53582587, 90508760, 97077563, 21502796 ],
+    "banished": [ 85087012 ]
+  }
+}

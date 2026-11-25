@@ -1,0 +1,26 @@
+// Live 2026-11-25 11:14 Machina Control #017 (turn 2, main1): Card Trooper summoned and its mill already used (3 milled: Gearframe,
+// Heavy Storm, Ryko). The rebuilt Trooper offered its once-per-turn mill again (KEY MISMATCH live). With usedEffects its count limit
+// is spent in the rebuild: "activate Card Trooper" must not appear among the root moves.
+{
+  "deck": "MachinaControl",
+  "opponent": "MachinaControl",
+  "lp": [8000, 8000],
+  "turn": 2,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": true,
+  "idleSummons": [ 85087012 ],
+  "usedEffects": [ "85087012:1361392192" ],
+  "ours": {
+    "monsters": [ { "id": 85087012, "zone": 2, "thisTurn": true, "atk": 1900 } ],
+    "spells": [],
+    "hand": [ 24508238, 24508238, 58054262, 94192409, 5318639 ],
+    "grave": [ 42940404, 19613556, 21502796 ]
+  },
+  "theirs": {
+    "monsters": [ { "id": 85087012, "zone": 4 } ],
+    "spells": [ { "zone": 0, "set": true }, { "zone": 1, "set": true } ],
+    "handCount": 3,
+    "grave": [ 78422252, 60682203, 42737833 ]
+  }
+}

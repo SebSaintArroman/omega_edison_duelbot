@@ -933,6 +933,11 @@ namespace BotTest.Game.AI.Brains
         [Tunable("How much the fear of their cards drops at full pressure (risk tolerance at its top): 0.6 = to 40%.")]
         public static readonly Tuned<double> RiskDiscountMax = new(0.6);
 
+        /// <summary>The chance they bring out their biggest Extra Deck attacker next turn, in the attacker odds behind LethalExposure (user,
+        /// 2026-11-25: "yes, add" — Gearframe left in attack position at 900 LP, in reach of XX-Saber Gottoms' 3100).</summary>
+        [Tunable("The chance they bring out their biggest Extra Deck attacker next turn, in the attacker odds behind the lethal exposure (user, 2026-11-25).")]
+        public static readonly Tuned<double> ExtraDeckAttackerChance = new(0.3);
+
         public double LethalExposure(SideSummary ours)
         {
             int lp = ours.LifePoints;

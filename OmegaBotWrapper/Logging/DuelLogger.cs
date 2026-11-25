@@ -29,6 +29,10 @@ namespace OmegaBotWrapper.Logging
 
         /// <summary>Minimum time between end-of-duel checks while the bot is idle.</summary>
         public static TimeSpan IdleCheckInterval { get; set; } = TimeSpan.FromSeconds(2);
+
+        /// <summary>A duel's log closed: the bot, its log path (without extension), the result ("BOT WON", "BOT LOST", "DRAW", or a guess
+        /// such as "PROBABLY BOT WON ..."), and why it ended. For the live position dataset. Must not throw or block.</summary>
+        public static Action<DuelBotWrapper, string, string, string>? DuelEnded { get; set; }
     }
 
     /// <summary>
@@ -415,6 +419,12 @@ namespace OmegaBotWrapper.Logging
 
                 WriteUnlocked(sb.ToString(), record);
                 BotLogger.Log(_bot.BotID, "DuelLog", $"Duel log saved: {_currentBasePath}.log");
+                try
+                {
+                    if (_currentBasePath != null)
+                        DuelLogOptions.DuelEnded?.Invoke(_bot, _currentBasePath, finalResult, reason);
+                }
+                catch { /* the dataset must never break the log */ }
                 CloseFiles();
             }
         }

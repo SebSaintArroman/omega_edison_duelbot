@@ -29,6 +29,8 @@ namespace BotTest.Game.AI.Brains
 
         private readonly double[] _slots;
         private readonly bool[] _has;
+        // Per strategic state (index: the state): "Key@State" lines (StateTuning).
+        private readonly Dictionary<int, double>[] _stateSlots = Enumerable.Range(0, StateTuning.StateCount).Select(_ => new Dictionary<int, double>()).ToArray();
 
         private TuningProfile(string name, Dictionary<string, double> values)
         {
@@ -38,11 +40,22 @@ namespace BotTest.Game.AI.Brains
             _slots = new double[statics.Count];
             _has = new bool[statics.Count];
             foreach (var (key, value) in values)
-                if (statics.TryGetValue(key, out var tuned) && tuned.Slot >= 0)
+            {
+                if (StateTuning.TrySplit(key, out string baseKey, out var state))
+                {
+                    if (statics.TryGetValue(baseKey, out var stateTuned) && stateTuned.Slot >= 0)
+                    {
+                        _stateSlots[(int)state][stateTuned.Slot] = value;
+                        stateTuned.ProfileStates = true;
+                        StateTuning.AnyStaticStateValues = true;
+                    }
+                }
+                else if (statics.TryGetValue(key, out var tuned) && tuned.Slot >= 0)
                 {
                     _slots[tuned.Slot] = value;
                     _has[tuned.Slot] = true;
                 }
+            }
         }
 
         /// <summary>The file's name, for logs.</summary>
@@ -61,6 +74,10 @@ namespace BotTest.Game.AI.Brains
             value = 0;
             return false;
         }
+
+        /// <summary>This profile's value of a static number for one strategic state ("Key@State"), if it sets one.</summary>
+        internal bool TryGet(int slot, TagRules.BotStrategicState state, out double value) =>
+            _stateSlots[(int)state].TryGetValue(slot, out value);
 
         /// <summary>Reads a profile file (bot-tuning.txt format; lines without a number are reported in <paramref name="warn"/>).</summary>
         public static TuningProfile Load(string path, Action<string>? warn = null)
@@ -88,6 +105,7 @@ namespace BotTest.Game.AI.Brains
         }
 
         /// <summary>The keys this profile sets that no tunable has (renamed or removed?), once every brain has been tuned.</summary>
-        public IEnumerable<string> UnknownKeys() => Values.Keys.Where(k => !Tuning.IsKnownKey(k));
+        public IEnumerable<string> UnknownKeys() =>
+            Values.Keys.Where(k => !Tuning.IsKnownKey(StateTuning.TrySplit(k, out string baseKey, out _) ? baseKey : k));
     }
 }

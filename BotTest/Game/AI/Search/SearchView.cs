@@ -30,7 +30,9 @@ namespace BotTest.Game.AI.Search
         bool DestroyAtOwnersEnd = false,
         /// <summary>Its battle position can't change until the End Phase of this real turn (0: no lock): Lyla, Lightsworn Sorceress after her effect,
         /// "until the end of your next turn" (user, 2026-11-18: "lyla is still stuck in defence during my next turn").</summary>
-        int PositionLockEnds = 0);
+        int PositionLockEnds = 0,
+        /// <summary>Ours: the effects used this turn, one bit per description index (id*16+index): their count limits are spent in the rebuild.</summary>
+        int UsedEffectMask = 0);
 
     /// <summary>
     /// Everything the bot knows at a decision (only what Omega shows it, plus its own deck list and the deck read), and
@@ -146,6 +148,13 @@ namespace BotTest.Game.AI.Search
         /// <summary>Cards on top of their deck, first = next draw (a replay: the card their turn's draw really gave them).</summary>
         public List<int> EnemyDeckTop { get; } = new();
 
+        /// <summary>The DEF a face-down monster of theirs is assumed to have against a piercing attack: the highest-DEF Normal Summon left in
+        /// their likeliest list (OpponentDeckPredictor.HighestSetDefense); -1 unknown.</summary>
+        public int EnemyLikelySetDefense { get; set; } = -1;
+
+        /// <summary>Honest known or suspected in their hand as the decision was made (DeckBotBrain.HonestSuspected).</summary>
+        public bool EnemyHonestSuspected { get; set; }
+
         /// <summary>
         /// This board as a turn starts (the turn-start snapshot, DeckBotBrain.TurnLog): nothing has happened in the new turn yet, so no
         /// card is marked as attacked, battled or arrived this turn, and nothing of the turn's record carries over.
@@ -181,7 +190,7 @@ namespace BotTest.Game.AI.Search
                 ThreatHistory = ThreatHistory.Copy(),
                 OpponentSummonedAndAttackedWithThreatTurn = OpponentSummonedAndAttackedWithThreatTurn,
                 DrawsAtStart = DrawsAtStart, Record = Record, SkipTurns = SkipTurns, BlankNextDraw = BlankNextDraw, OnlyAttackerZone = OnlyAttackerZone,
-                LylaEffectUsed = LylaEffectUsed,
+                LylaEffectUsed = LylaEffectUsed, EnemyLikelySetDefense = EnemyLikelySetDefense, EnemyHonestSuspected = EnemyHonestSuspected,
             };
             v.EnemyKnownExtra.AddRange(EnemyKnownExtra);
             v.EnemyDeckTop.AddRange(EnemyDeckTop);
@@ -358,6 +367,7 @@ namespace BotTest.Game.AI.Search
                 (p.Attack, p.Defense) = (card.Attack, card.Defense);
                 p.Battled = card.Battled && controller == 1;
                 p.DestroyAtOwnersEnd = card.DestroyAtOwnersEnd && controller == 0;
+                p.UsedEffectMask = controller == 0 ? card.UsedEffectMask : 0;
                 p.PositionLockEndPhases = card.PositionLockEnds > 0 ? Math.Max(0, card.PositionLockEnds - RealTurn + 1) : 0;
                 p.Proper = !card.Improper;
                 p.Counters.AddRange(card.Counters);

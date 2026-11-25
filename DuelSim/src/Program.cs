@@ -15,6 +15,7 @@ public static class Program
           DuelSim run <deckA> <deckB> [--duels N] [--seed N] [--format MasterDuel] [--no-bot-logs] [--timeout-min N]
           DuelSim run ... [--out DIR] [--result FILE.json]   (also: a deck can be a tuned variant from tuning/, e.g. vayu-test-1)
           DuelSim run ... [--search MS] [--search-a MS] [--search-b MS] [--search-horizon N]   [--dead-time MS]   (MCTS: ms per decision, turns ahead; optional simulated dead-time search, off by default)
+          DuelSim replay-check FILE.json|DIR [--lines N] [--ms MS] [--seed N] [--verbose]   (re-run a live turn's replay the bot saved on a miss: BotTest/duel-logs/replays)
           DuelSim search-bench <deckA> <deckB> | --scenario FILE.json  [--ms MS] [--threads N] [--horizon N] [--repeat N] [--trace KEY] [--profile-puzzle-parse]   (MCTS on one position: best line, lines/s)
           DuelSim evolve [--base Vayu] [--name vayu-test] [--generations N] [--duels 100] [--workers N]
                          [--mutations 8] [--strength 0.3] [--accept 0.55] [--baseline-every 5] [--baseline-duels 100]
@@ -364,6 +365,9 @@ public static class Program
                 }
                 return 0;
             }
+
+            case "replay-check":
+                return DuelSim.Match.ReplayCheck.Run(args, console.WriteLine);
 
             case "search-bench":
             {

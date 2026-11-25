@@ -668,8 +668,14 @@ namespace BotTest.Game.AI.Search
         {
             if (Interlocked.Increment(ref _replayMisses) == 1)
                 FirstReplayMiss = why;
+            if (CollectReplayMisses)
+                AllReplayMisses.Add(why);
             return "replay: " + why;
         }
+
+        /// <summary>Keep every replay miss's reason (DuelSim replay-check), not only the first.</summary>
+        public bool CollectReplayMisses { get; init; }
+        public ConcurrentBag<string> AllReplayMisses { get; } = new();
 
         /// <param name="start">The node whose decision is the root prompt (the tree's root, or a decision found again).</param>
         /// <param name="priorKey">The real brain's pick at the root (its answer gets the progressive bias there).</param>
@@ -777,6 +783,21 @@ namespace BotTest.Game.AI.Search
             thread.Start();
         }
 
+        // ---------------------------------------------------------------- fears and reserves, per strategic state (StateTuning)
+
+        [Tunable("How much a line's exposure to Torrential Tribute counts (1 = in full). Per strategic state: Desperate 0 (user, 2026-11-24: \"remove the fear of heavy storm and traps\").", StateDefaults = "Desperate=0")]
+        public static readonly Tuned<double> TorrentialFear = new(1);
+        [Tunable("How much a line's exposure to Mirror Force counts (1 = in full). Per strategic state: Desperate 0.", StateDefaults = "Desperate=0")]
+        public static readonly Tuned<double> MirrorForceFear = new(1);
+        [Tunable("How much a line's exposure to Heavy Storm counts (1 = in full). Per strategic state: Desperate 0.", StateDefaults = "Desperate=0")]
+        public static readonly Tuned<double> HeavyStormFear = new(1);
+        [Tunable("How much a line's exposure to single removal on its best monster counts (1 = in full). Per strategic state: Desperate 0.", StateDefaults = "Desperate=0")]
+        public static readonly Tuned<double> SingleRemovalFear = new(1);
+        [Tunable("How much a line's exposure to Icarus Attack counts (1 = in full). Per strategic state: Desperate 0.", StateDefaults = "Desperate=0")]
+        public static readonly Tuned<double> IcarusFear = new(1);
+        [Tunable("While pressuring (PressuringState: an open opponent, our attackers on their clock), monsters in hand and graveyard reserves count this much extra in the card score, so lines keep them back. Per strategic state: Desperate 0.", StateDefaults = "Desperate=0")]
+        public static readonly Tuned<double> PressuringReserveWeight = new(1);
+
         // ---------------------------------------------------------------- the search
 
         private int _maxDepth;
@@ -784,6 +805,8 @@ namespace BotTest.Game.AI.Search
         /// <summary>Searches until the budget (or MaxIterations, or cancellation), then reports the root's answers.</summary>
         public SearchOutcome Run(int seed, CancellationToken ct = default, ThreadPriority priority = ThreadPriority.Normal)
         {
+            // Every line of this search reads the static numbers of the root's strategic state (StateTuning), its threads included.
+            using var stateScope = StateTuning.Use(State);
             SearchHost.Register(_view.AllKnownIds());
             var clock = Stopwatch.StartNew();
             int threads = Math.Max(1, _settings.Threads);
@@ -930,7 +953,7 @@ namespace BotTest.Game.AI.Search
                 var here = host.Summary(0);
                 var hereTheirs = host.Summary(1);
                 var fresh = new TreeBaseline(here, hereTheirs, ReadCardPiles(host, 0), ReadCardPiles(host, 1),
-                    State != TagRules.BotStrategicState.Desperate && PressuringState.Applies(here, hereTheirs));
+                    PressuringState.Applies(here, hereTheirs));
                 var baseline = Interlocked.CompareExchange(ref _tree.Baseline, fresh, null) ?? fresh;
                 var (ours, theirs, pressuring) = (baseline.Ours, baseline.Theirs, baseline.Pressuring);
                 var parts = _evaluator.PositionParts(ours, theirs);
@@ -1977,10 +2000,10 @@ namespace BotTest.Game.AI.Search
                 (peakTorrential, peakMirror, peakSpot, peakIcarus) = (ownTorrential, ownMirror, ownSpot, ownIcarus);
             static double Peak(double p) => double.IsNegativeInfinity(p) ? 0 : p;
             (peakTorrential, peakMirror, peakSpot, peakIcarus) = (Peak(peakTorrential), Peak(peakMirror), Peak(peakSpot), Peak(peakIcarus));
-            // Desperate (far behind on cards): no fear of Heavy Storm or their traps (user, 2026-11-24: "It should however remove the fear
-            // of heavy storm and traps"). The sitting duck (their next attacker) stays.
-            if (State == TagRules.BotStrategicState.Desperate)
-                (peakTorrential, peakMirror, heavyExposure, peakSpot, peakIcarus) = (0, 0, 0, 0, 0);
+            // How much each exposure is feared in this strategic state (StateTuning; Desperate: none, user 2026-11-24: "It should however
+            // remove the fear of heavy storm and traps"). The sitting duck (their next attacker) stays.
+            (peakTorrential, peakMirror, heavyExposure, peakSpot, peakIcarus) = (peakTorrential * TorrentialFear, peakMirror * MirrorForceFear,
+                heavyExposure * HeavyStormFear, peakSpot * SingleRemovalFear, peakIcarus * IcarusFear);
             double sittingDuck = turnEnd is { } atEnd ? _evaluator.SittingDuckExposure(atEnd.Ours, atEnd.Theirs, lylaEffectUsed) : 0;
             double exposure = peakTorrential + peakMirror + heavyExposure + peakSpot + peakIcarus + sittingDuck;
             if (Math.Abs(exposure) > 0.05)
@@ -2011,8 +2034,8 @@ namespace BotTest.Game.AI.Search
             double theirSetTrapAdjustment = startCounts.TheirSetTrapAdjustment - endCounts.TheirSetTrapAdjustment;
             double ourGrave = endCounts.OurGraveValue - startCounts.OurGraveValue;
             double theirGrave = startCounts.TheirGraveValue - endCounts.TheirGraveValue;
-            double pressuringHand = endCounts.PressuringHandValue - startCounts.PressuringHandValue;
-            double pressuringGrave = endCounts.PressuringGraveValue - startCounts.PressuringGraveValue;
+            double pressuringHand = (endCounts.PressuringHandValue - startCounts.PressuringHandValue) * PressuringReserveWeight;
+            double pressuringGrave = (endCounts.PressuringGraveValue - startCounts.PressuringGraveValue) * PressuringReserveWeight;
             double ourAdvantage = (ourHand + ourHandAdjustment + BoardEvaluator.MonsterCardValue * ourMonstersDelta + ourSpellsDelta + ourSetTrapAdjustment +
                 gravePairs + ourGrave + pressuringHand + pressuringGrave) * weight;
             double theirAdvantage = (theirHand + theirHandAdjustment + BoardEvaluator.MonsterCardValue * theirMonstersDelta + theirSpellsDelta + theirSetTrapAdjustment +
@@ -2286,11 +2309,19 @@ namespace BotTest.Game.AI.Search
             return (proposed, packet, refused);
         }
 
-        /// <summary>A face-up monster's position change in a Main Phase: it opens the position window (SearchMoveRules.Allowed).</summary>
+        /// <summary>A face-up monster's position change in a Main Phase: it opens the position window (SearchMoveRules.Allowed). So does
+        /// Sirocco's boost in Main Phase 1: the last step before the battle (user, 2026-11-25).</summary>
         private static bool OpensPositionWindow(Prompt prompt, byte[] packet, DuelHost host)
         {
-            if (prompt.Player != 0 || prompt.Data is not IdleCmdData idle || host.Phase is not ((int)DuelPhase.Main1 or (int)DuelPhase.Main2) || packet.Length < 4 ||
-                BitConverter.ToUInt16(packet, 0) != (ushort)MainAction.Repos)
+            if (prompt.Player != 0 || prompt.Data is not IdleCmdData idle || host.Phase is not ((int)DuelPhase.Main1 or (int)DuelPhase.Main2) || packet.Length < 4)
+                return false;
+            if (BitConverter.ToUInt16(packet, 0) == (ushort)MainAction.Activate && host.Phase == (int)DuelPhase.Main1)
+            {
+                int activation = BitConverter.ToUInt16(packet, 2);
+                return (idle.ActivableCards ?? Array.Empty<DynamicCard>()).Any(card => SearchHost.Is(card.ID, BlackwingSiroccoTheDawn) &&
+                    (card.ActionActivateIndex ?? Array.Empty<ActivationCardIndex>()).Any(a => a.ActionIndex == activation));
+            }
+            if (BitConverter.ToUInt16(packet, 0) != (ushort)MainAction.Repos)
                 return false;
             int index = BitConverter.ToUInt16(packet, 2);
             return (idle.ReposableCards ?? Array.Empty<DynamicCard>()).Any(card => card.ActionIndex != null &&
@@ -2404,12 +2435,49 @@ namespace BotTest.Game.AI.Search
             string mine = DecisionKey.Of(_rootState, h.Summary(0), h.Summary(1), ReplayOptionKeys(p, h, rng));
             if (FromTurnStart is { } replay && replay.SameCheckpointBoard(mine, key, replay.Checkpoints[^1].Phase))
                 return true;
-            return sumForPick ? WithoutCancel(mine) == WithoutCancel(key) : mine == key;
+            return sumForPick ? WithoutCancel(mine) == WithoutCancel(key) : mine == key || WithoutGraveOrder(mine) == WithoutGraveOrder(key);
         }
+
+        /// <summary>
+        /// A decision key with its answers' graveyard places dropped ("card:7391468@1.16.10" to "card:7391468@1.16") and the answers sorted: a
+        /// line's graveyard fills in its own order (live 2026-11-25, Machina #116: D.D. Crow's banish pick from their graveyard never matched
+        /// the live one, the same 11 cards at other places, so no line reached it and the brain answered: "no recorded answer").
+        /// </summary>
+        private static string WithoutGraveOrder(string key)
+        {
+            int hash = key.LastIndexOf('#');
+            if (hash < 0)
+                return key;
+            var answers = key[(hash + 1)..].Split(';')
+                .Select(o => GravePlace.Replace(o, "@$1.16"))
+                .Select(o => o.StartsWith("cards:") ? "cards:" + string.Join("+", o[6..].Split('+').OrderBy(c => c, StringComparer.Ordinal)) : o)
+                .OrderBy(o => o, StringComparer.Ordinal);
+            return key[..(hash + 1)] + string.Join(";", answers);
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex GravePlace = new(@"@(\d)\.16\.\d+", System.Text.RegularExpressions.RegexOptions.Compiled);
 
         private IEnumerable<string> ReplayOptionKeys(Prompt prompt, DuelHost host, Random rng) =>
             prompt.Data is SelectChainData chain ? SearchActions.ChainOptionKeys(chain)
-                : YesNoLegalKeys(prompt) ?? OptionsFor(prompt, true, rng, host)?.Select(option => option.Key) ?? Enumerable.Empty<string>();
+                : YesNoLegalKeys(prompt) ?? RawPickKeys(prompt) ?? OptionsFor(prompt, true, rng, host)?.Select(option => option.Key) ?? Enumerable.Empty<string>();
+
+        /// <summary>
+        /// A card pick's every legal answer, as the live root key lists them (DeckBotBrain.TurnStartPickAsync), not the lines' rule-filtered
+        /// ones (live 2026-11-25, Machina #116: D.D. Crow's allowed targets left the lines one card of the eleven on offer live, so the root
+        /// never matched: "no recorded answer").
+        /// </summary>
+        private static IEnumerable<string>? RawPickKeys(Prompt prompt) => prompt.Data switch
+        {
+            SelectCardData select when (select.SelectableCards?.Length ?? 0) > 0 =>
+                SearchActions.CardPicks(select.SelectableCards!, select.SelectionHint == (int)DHint.ATTACKTARGET ? Math.Max(1, select.Minimum) : select.Minimum,
+                    select.Maximum, false).Select(p => p.Key).Distinct(),
+            SelectTributeData tribute when (tribute.SelectableCards?.Length ?? 0) > 0 =>
+                SearchActions.CardPicks(tribute.SelectableCards!, tribute.Minimum, tribute.Maximum, false).Select(p => p.Key).Distinct(),
+            SelectUnselectCardData unselect when (unselect.SelectableCards?.Length ?? 0) > 0 =>
+                SearchActions.CardPicks(unselect.SelectableCards!, Math.Min(unselect.Minimum, 1), 1, unselect.Minimum == 0 || unselect.Cancelable)
+                    .Select(p => p.Key).Distinct(),
+            _ => null,
+        };
 
         /// <summary>
         /// A yes/no's legal answers for its decision key: both, even when a rule leaves the lines one (EffectAnswer). The live decision is
@@ -2617,6 +2685,7 @@ namespace BotTest.Game.AI.Search
         /// </summary>
         public LineCheck CheckLine(IReadOnlyList<PlanStep> steps, Func<PlanStep, IReadOnlyCollection<string>, string?> match, int lines, int seed)
         {
+            using var stateScope = StateTuning.Use(State);
             SearchHost.Register(_view.AllKnownIds());
             var engine = EnginePool.TryTake(out var pooled) ? pooled : new PuzzleEngine(SearchHost.Cards, SearchHost.Scripts, seed);
             using var giveBack = new PoolReturn(engine);

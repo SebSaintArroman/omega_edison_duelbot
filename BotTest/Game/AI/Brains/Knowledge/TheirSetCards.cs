@@ -98,9 +98,9 @@ namespace BotTest.Game.AI.Brains
         protected async Task<List<double>> SetCardStopChancesAsync()
         {
             var stops = new List<double>();
-            // Desperate: their set cards aren't feared (pushes, lethal rolls, direct attacks; user, 2026-11-24: "remove the fear of heavy
-            // storm and traps").
-            if (StrategicState == TagRules.BotStrategicState.Desperate)
+            // How much their set cards are feared in our strategic state (StateTuning; Desperate: not at all, so none counts for pushes,
+            // lethal rolls or direct attacks; user, 2026-11-24: "remove the fear of heavy storm and traps").
+            if (SetCardFear <= 0)
                 return stops;
             foreach (var card in (await GetEnemySpellCardsAsync()).Where(card => !card.IsFaceup()))
             {
@@ -108,10 +108,14 @@ namespace BotTest.Game.AI.Brains
                 double factor = (e?.NotMirror == true ? PartialReadFactor : 1) * (e?.NotTorrential == true ? PartialReadFactor : 1);
                 // Without list data and traps negated: only a quick-play spell could stop us (a small share of set cards).
                 double fallback = TrapsNegated ? SetCardStopsPushChance * QuickPlayShareOfStoppers : SetCardStopsPushChance;
-                stops.Add((OpponentDeck.StopChance(card.CurrentCoordinates.Sequence) ?? fallback) * factor);
+                stops.Add(Math.Clamp((OpponentDeck.StopChance(card.CurrentCoordinates.Sequence) ?? fallback) * factor * SetCardFear, 0, 1));
             }
             return stops;
         }
+
+        /// <summary>How much their set spells/traps are feared as stoppers of a push (each one's stop chance times this; 0: none counts).</summary>
+        [Tunable("How much their set spells/traps are feared as stoppers of a push, a lethal roll or a direct attack: each one's stop chance times this (0: none counts at all). Per strategic state: Desperate 0 (user, 2026-11-24: \"remove the fear of heavy storm and traps\").", StateDefaults = "Desperate=0")]
+        public double SetCardFear { get; set; } = 1;
 
         /// <summary>Without deck-list data: the share of push-stopping set cards that are quick-play spells (Book of Moon,
         /// Enemy Controller...), what's left of the threat while traps are negated. Tune from logs.</summary>

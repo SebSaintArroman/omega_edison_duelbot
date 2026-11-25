@@ -36,8 +36,23 @@ namespace BotTest.Game.AI.Brains
         public const string CheapestIntoBouncer = "deck.cheapest-into-bouncer";
         public const string ChimeratechSafetyFuse = "deck.chimeratech-safety-fuse";
         public const string CompulsorySavesOwn = "deck.compulsory-saves-own";
+        /// <summary>On their turn, Compulsory Evacuation Device prefers to wait for the attack, unless doomed: a small hold, there are lots of
+        /// reasons to use it early (user, 2026-11-25). Held in the earlier windows (CompulsoryWaitsForAttack.cs).</summary>
+        [HoldCost(HoldCosts.Light)]
         public const string CompulsoryOnAttack = "deck.compulsory-on-attack";
+        /// <summary>Bouncing a monster of theirs that Special Summons itself from the hand (Fortress, Faultroll) outside an attack: a large hold
+        /// (user, 2026-11-25). Selection/Rules/BounceSelfSummoner.cs.</summary>
+        [HoldCost(HoldCosts.Strong)]
+        public const string BounceSelfSummoner = "deck.bounce-self-summoner";
         public const string CrashForBattlePayoff = "deck.crash-for-battle-payoff";
+        /// <summary>A free kill on a monster that doesn't replace itself before one on a recruiter (XX-Saber Emmersblade): damage and a cleared
+        /// monster over a kill that gets them a monster from the deck (user, 2026-11-25).</summary>
+        [HoldCost(HoldCosts.Light)] // user, 2026-11-25: 0.75
+        public const string KillBeforeRecruiter = "deck.kill-before-recruiter";
+        /// <summary>Attacking a monster whose destruction rewards them (recruit, draw) with no plain kill on offer: discouraged, not prevented
+        /// (user, 2026-11-25). Battle/Rules/KillBeforeRecruiter.cs.</summary>
+        [HoldCost(0.1)] // user, 2026-11-25: barely there, so the bot never skips an attack over it; a lever for tuning later
+        public const string AttackIntoBattleReward = "deck.attack-into-battle-reward";
         public const string CrashTrades = "deck.crash-trades";
         public const string DDCrowChain = "deck.dd-crow-chain";
         /// <summary>Banishing from their graveyard without a planned target: a card with a graveyard effect first, then a Fairy, then other monsters (user, 2026-11-14 / 2026-11-17).</summary>

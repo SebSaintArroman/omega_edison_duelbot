@@ -93,6 +93,7 @@ namespace BotTest.Game.AI.Brains
             if ((DuelPhase)header.CurrentPhase != DuelPhase.Draw)
                 (_lastSeenOwnHand, _lastSeenTheirHand) = (view.OwnHand.ToList(), view.EnemyHandCount);
             _turnStart = new TurnStartSnapshot(header.CurrentTurn, beforeDraw, header.CurrentPhase, view);
+            RecordPosition(bot, header, view, beforeDraw);
             bot.LogNote($"turn log: turn {header.CurrentTurn} ({TurnOwnerWord(header.CurrentTurn)}) starts; snapshot {SnapshotWhen(_turnStart)}: " +
                         $"our hand {view.OwnHand.Count}, field {view.OwnMonsters.Count}+{view.OwnSpells.Count}; " +
                         $"their hand {view.EnemyHandCount}, field {view.EnemyMonsters.Count}+{view.EnemySpells.Count}; LP {view.LifePoints[0]} / {view.LifePoints[1]}");
@@ -149,6 +150,7 @@ namespace BotTest.Game.AI.Brains
                                 (_lastStanding != null ? $" ({_lastStanding})" : "");
                 bot.LogNote($"strategic state: {TagRules.DescribeStrategicState(strategicState, _lastLoggedStrategicState)} at {state}{detail}");
                 _lastLoggedStrategicState = strategicState;
+                ApplyStateTuning();
 
                 try { await TrackTemporaryMonstersAsync(); }
                 catch { /* tracking is best effort */ }
@@ -470,7 +472,10 @@ namespace BotTest.Game.AI.Brains
                               $"{all}/{runs.Count} line(s) reached all {checkpoints.Count} checkpoints in {clock.ElapsedMilliseconds} ms" +
                               (misses.Length > 0 ? $"; misses: {misses}; {replay.DescribeStart()}" : "");
                 if (all < runs.Count)
-                    FlagReplayIssue(bot, note.Replace("replay audit:", "replay audit: REPLAY MISS:"));
+                {
+                    string? saved = SaveReplayDump(bot, note, start, ours, checkpoints.Select(c => c.ToReplay()).ToList(), null, null, null);
+                    FlagReplayIssue(bot, note.Replace("replay audit:", "replay audit: REPLAY MISS:") + (saved != null ? $" [replay saved: {saved}]" : ""));
+                }
                 else
                     bot.LogNote(note);
             }
@@ -635,8 +640,12 @@ namespace BotTest.Game.AI.Brains
                 session?.Resume();
             }
             if (misses > 0)
-                FlagReplayIssue(bot, $"search: REPLAY MISS: {misses} line(s) didn't reach this {rootState} from the turn's start (first: {firstMiss})" +
-                            (outcome is not { Root.Count: > 0 } ? "; no line reached it, the brain answers" : ""));
+            {
+                string missNote = $"search: REPLAY MISS: {misses} line(s) didn't reach this {rootState} from the turn's start (first: {firstMiss})" +
+                                  (outcome is not { Root.Count: > 0 } ? "; no line reached it, the brain answers" : "");
+                string? saved = SaveReplayDump(bot, missNote, start, ours, checkpoints, rootState, rootKey, options);
+                FlagReplayIssue(bot, missNote + (saved != null ? $" [replay saved: {saved}]" : ""));
+            }
             _lastTurnStartSearch = outcome is { Root.Count: > 0 } ? (start.Turn, dealt, root) : null;
             return outcome is { Root.Count: > 0 } ? outcome with { NeverOffered = NeverOffered(root, options) } : null;
         }
@@ -761,6 +770,48 @@ namespace BotTest.Game.AI.Brains
         /// file"; reviewed and fixed with each comments review), with the log file and decision it belongs to.
         /// </summary>
         private void FlagReplayIssue(DuelBotWrapper bot, string note) => FlagForReview(bot, "replay-issues.jsonl", note);
+
+        /// <summary>
+        /// The missed replay's input, for DuelSim replay-check (user, 2026-11-25): duel-logs/replays/&lt;log&gt;_&lt;decision&gt;.json. Null when it
+        /// couldn't be written. <paramref name="rootState"/> null: an end-of-turn audit (every checkpoint answered).
+        /// </summary>
+        /// <summary>A mid-chain replan's miss (MidChainSearchAsync), saved as SaveReplayDump does: duel-logs/replays/&lt;log&gt;_&lt;decision&gt;_midchain.json.</summary>
+        private string? SaveMidChainDump(DuelBotWrapper bot, string note, int turn, BotState rootState, IEnumerable<string> options, ReplayDump.MidChainDto midChain)
+        {
+            try
+            {
+                string? log = bot.DuelLog?.CurrentLogPath;
+                int decision = (bot.DuelLog?.DecisionCount ?? 0) + 1;
+                var dump = new ReplayDump.File
+                {
+                    Deck = bot.DeckName ?? "", Log = log, Decision = decision, Note = note, Turn = turn, Ours = IsOwnTurn(_currentHeader),
+                    RootState = rootState, RootKey = midChain.TargetKey, Options = options.ToList(), MidChain = midChain,
+                };
+                return ReplayDump.Save(Path.Combine(DuelLogOptions.Directory, "replays"),
+                    $"{Path.GetFileNameWithoutExtension(log ?? "live")}_{decision:000}_midchain.json", dump);
+            }
+            catch
+            {
+                return null; // the dump must never cost the bot its answer
+            }
+        }
+
+        private string? SaveReplayDump(DuelBotWrapper bot, string note, TurnStartSnapshot start, bool ours, IReadOnlyList<ReplayCheckpoint> checkpoints,
+            BotState? rootState, string? rootKey, IEnumerable<string>? options)
+        {
+            try
+            {
+                string? log = bot.DuelLog?.CurrentLogPath;
+                int decision = (bot.DuelLog?.DecisionCount ?? 0) + 1;
+                string name = $"{Path.GetFileNameWithoutExtension(log ?? "live")}_{decision:000}{(rootState == null ? "_audit" : "")}.json";
+                var dump = ReplayDump.Make(bot.DeckName ?? "", log, decision, note, start.View, ours, start.Turn, checkpoints, !ours, rootState, rootKey, options);
+                return ReplayDump.Save(Path.Combine(DuelLogOptions.Directory, "replays"), name, dump);
+            }
+            catch
+            {
+                return null; // the dump must never cost the bot its answer
+            }
+        }
 
         /// <summary>A note for the duel log, also written to a review file beside the duel logs (with the log file and decision it belongs to).</summary>
         private void FlagForReview(DuelBotWrapper bot, string file, string note)

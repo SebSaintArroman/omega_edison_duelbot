@@ -165,8 +165,13 @@ public sealed class MatchRunner
             }
             catch (IOException) { }
         }
+        // The position dataset: the engine's real position at each turn start, and each seat's own scores (PositionSink), joined at the end.
+        var dataset = new PositionDataset();
         host.TurnStarted += (turn, player, lp0, lp1) =>
+        {
+            dataset.Truth(host, turn, player);
             Progress($"turn {turn} ({(player == 0 ? first.Def.DeckId + " P0" : second.Def.DeckId + " P1")}) | LP {lp0} / {lp1}");
+        };
         Progress("starting");
 
         DuelLogOptions.Enabled = options.BotLogs;
@@ -202,6 +207,12 @@ public sealed class MatchRunner
             if (seat >= 0)
                 lock (searchEvents[seat])
                     searchEvents[seat].Add(evt);
+        };
+        BotTest.Game.AI.Brains.PositionSink.OnPosition = (bot, turn, row) =>
+        {
+            int seat = Array.IndexOf(bots, bot);
+            if (seat >= 0)
+                dataset.View(seat, turn, row);
         };
         var botTasks = bots.Select((bot, seat) => Task.Run(async () =>
         {
@@ -253,6 +264,16 @@ public sealed class MatchRunner
             turns = result.Turns, error = result.Error, firstVersion = versions[0], secondVersion = versions[1],
         }));
         BotTest.Game.AI.Brains.SearchEventSink.OnSearchEvent = null;
+        BotTest.Game.AI.Brains.PositionSink.OnPosition = null;
+        var tunings = new[] { aFirst ? options.TuningA?.Name : options.TuningB?.Name, aFirst ? options.TuningB?.Name : options.TuningA?.Name };
+        try
+        {
+            dataset.Write(_paths, _cards, runFolder, number, new[] { first.Def.DeckId, second.Def.DeckId }, versions, tunings, result);
+        }
+        catch (Exception ex)
+        {
+            transcript.WriteLine($"  !! position dataset not written: {ex.Message}");
+        }
         SearchRecord.AppendDuel(runFolder, number, first.Def.DeckId, second.Def.DeckId, result.Error != null ? -1 : result.Winner, searchEvents, versions);
         return new DuelOutcome(number, first.Def.DeckId, second.Def.DeckId, result, folder, warnings);
     }

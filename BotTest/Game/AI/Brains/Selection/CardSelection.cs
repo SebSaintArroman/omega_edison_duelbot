@@ -32,7 +32,8 @@ namespace BotTest.Game.AI.Brains
             ConsoleUtils.PrintColored($"[DECK BOT BRAIN] [OnSelectCard] => {(DHint)context.StateData.SelectionHint}");
 
             var cards = context.StateData.SelectableCards ?? Array.Empty<DynamicCard>();
-            return StapleTargets(context)                                                                  // 1.
+            await HoldBounceSelfSummonersAsync(context); // Selection/Rules/BounceSelfSummoner.cs
+            return StapleTargets(context)                                                                 // 1.
                 ?? await AllureBanishPickAsync(context)
                 ?? SelectPlannedMaterials(context, cards, context.StateData.Minimum, context.StateData.Maximum,
                        context.StateData.SelectionHint)                                                    // 2.

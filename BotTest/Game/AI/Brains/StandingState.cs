@@ -8,7 +8,7 @@ namespace BotTest.Game.AI.Brains
     ///    advantage score than the bot");
     ///  - Conservative: our LP at least ConservativeLpFrom and neither side more than ConservativeCardGap ahead ("when its lifepoints
     ///    are high and neither person has much card advantage on the other, it should play a little more conservatively"). Resource
-    ///    holds ([ResourceHold] rules) then cost ConservativeHoldFactor times as much.
+    ///    holds ([ResourceHold] rules) then cost their own Conservative hold cost (StateTuning: HoldCost.<rule>@Conservative).
     /// Card score: each side's whole card advantage score as the search counts it (BoardEvaluator.CardAdvantageScores: hand count
     /// and values, monsters, spells/traps and set trap values, graveyard values, Vayu pairs; user, 2026-11-24: "it should be the total
     /// card advantage score").
@@ -25,9 +25,6 @@ namespace BotTest.Game.AI.Brains
 
         [Tunable("The Desperate strategic state when their card advantage score (each side's whole CardAdvantageDelta count) is this much above ours. User, 2026-11-24: \"enter desperate if opponent has 3+ more card advantage score than the bot\".")]
         public static readonly Tuned<double> DesperateCardGap = new(3.0);
-
-        [Tunable("In the Conservative strategic state, a resource hold ([ResourceHold] rules: Fortress's summon, a Vayu or synchro spend) costs this many times its usual hold cost.")]
-        public static readonly Tuned<double> ConservativeHoldFactor = new(1.5);
 
         /// <summary>Desperate, Conservative, or Base, from our LP and both card scores.</summary>
         public static TagRules.BotStrategicState Assess(int ourLp, double ourScore, double theirScore) =>

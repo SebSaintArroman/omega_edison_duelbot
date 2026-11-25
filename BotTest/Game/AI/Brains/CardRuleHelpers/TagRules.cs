@@ -22,6 +22,11 @@ namespace BotTest.Game.AI.Brains
         /// 2026-11-24: "give desperate all things that threatened can do too. this should remain true always"). Every Threatened check
         /// goes through here, never "state == Threatened".
         /// </summary>
+        /// <summary>A Set Only monster may be Normal Summoned when a Tuner is ready and no other Synchro answer is (StateTuning: on while
+        /// Threatened, and so Desperate).</summary>
+        [Tunable("A Set Only monster may be Normal Summoned when a Tuner is ready and no other Synchro answer is (the generic Set Only exception). Per strategic state: on while Threatened (Desperate follows Threatened).", StateDefaults = "Threatened=true")]
+        internal static readonly Tuned<bool> SetOnlyTunerException = new(false);
+
         internal static bool ActsThreatened(BotStrategicState state) =>
             state is BotStrategicState.Threatened or BotStrategicState.Desperate;
 
@@ -51,7 +56,10 @@ namespace BotTest.Game.AI.Brains
             NeverSummonInDefence = 65536,
             // A single answer to an attack that waits for a bigger attacker still to come (weighed in HoldForBiggerAttackerAsync)
             // even when the current attack costs us something.
-            SaveForBiggerAttacker = 131072
+            SaveForBiggerAttacker = 131072,
+            // Used right before our Battle Phase, as the last step of Main Phase 1: in the search, the Battle Phase isn't on offer until it's
+            // used, and using it opens the position window (Sirocco's lethal boost; user, 2026-11-25).
+            ActivateBeforeBattle = 262144
         }
 
         /// <summary>`DoNotSummon` forbids Normal Summon, Special Summon, and setting unless its survival exception is active.</summary>
@@ -84,9 +92,9 @@ namespace BotTest.Game.AI.Brains
             if (projectedDamage > 0 && opponentLifePoints - projectedDamage <= 200)
                 return false;
 
-            // Generic Set Only exception: while Threatened (or Desperate), allow it when a Tuner is available and no other Synchro
-            // answer is available.
-            if (ActsThreatened(state) && hasTuner && !hasAlternativeSynchro)
+            // Generic Set Only exception: in the states it's on for (Threatened, and Desperate through its chain), allow it when a Tuner is
+            // available and no other Synchro answer is available.
+            if (SetOnlyTunerException.In(state) && hasTuner && !hasAlternativeSynchro)
                 return false;
 
             return true;

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using BotTest.Game.AI.Search;
 using DuelSim.Data;
 
@@ -21,6 +21,8 @@ internal static class SearchScenario
     private sealed class Card { public int Id { get; set; } public int Zone { get; set; } public string? Pos { get; set; } public bool Set { get; set; } public bool Attacked { get; set; } public bool Improper { get; set; } public int? EquippedTo { get; set; }
         /// <summary>Ours: summoned / set this turn (no position change; a set trap can't be activated yet).</summary>
         public bool ThisTurn { get; set; }
+        /// <summary>Its current ATK as live shows it (a Card Trooper's mill boost), when it differs from the printed one.</summary>
+        public int? Atk { get; set; }
         /// <summary>Their unknown face-down monster: the deck read's likely cards, [[id, chance], ...] (as live EnemySetMonsterOdds).</summary>
         public List<double[]>? Likely { get; set; } }
     private sealed class Side
@@ -64,7 +66,7 @@ internal static class SearchScenario
         static ViewCard ToView(Card c, bool monster, int owner) =>
             new(c.Id, c.Zone, Position(c, monster), owner, c.Attacked,
                 // "equippedTo": the zone of the monster on the same side it's equipped to (a union, an Equip Spell).
-                c.EquippedTo is int zone ? (owner, (int)SearchPosition.LocMZone, zone) : null, new(), new(), c.Improper, ThisTurn: c.ThisTurn);
+                c.EquippedTo is int zone ? (owner, (int)SearchPosition.LocMZone, zone) : null, new(), new(), c.Improper, ThisTurn: c.ThisTurn, Attack: c.Atk ?? -1);
 
         var view = new SearchView();
         view.LifePoints[0] = file.Lp[0];
@@ -76,8 +78,11 @@ internal static class SearchScenario
         view.RealTurn = file.Turn;
         if (file.IdleSummons.Count > 0)
             view.Record = new BotTest.Game.AI.Brains.TurnRecord { IdleSummons = file.IdleSummons };
-        view.OwnMonsters.AddRange(file.Ours.Monsters.Select(c => ToView(c, true, 0)));
-        view.OwnSpells.AddRange(file.Ours.Spells.Select(c => ToView(c, false, 0)));
+        // "usedEffects" ("id:description") also spend those effects' count limits on our rebuilt cards, as live (ViewCard.UsedEffectMask).
+        int UsedMask(int code) => file.UsedEffects.Select(u => u.Split(':')).Where(p => p.Length == 2 && p[0] == code.ToString() &&
+                long.TryParse(p[1], out long d) && d >= 16).Aggregate(0, (mask, p) => mask | 1 << (int)(long.Parse(p[1]) & 15));
+        view.OwnMonsters.AddRange(file.Ours.Monsters.Select(c => ToView(c, true, 0) with { UsedEffectMask = UsedMask(c.Id) }));
+        view.OwnSpells.AddRange(file.Ours.Spells.Select(c => ToView(c, false, 0) with { UsedEffectMask = UsedMask(c.Id) }));
         view.OwnHand.AddRange(file.Ours.Hand);
         view.OwnGrave.AddRange(file.Ours.Grave);
         view.OwnBanished.AddRange(file.Ours.Banished);

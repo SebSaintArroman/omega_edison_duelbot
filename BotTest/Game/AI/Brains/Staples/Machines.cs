@@ -114,7 +114,7 @@ namespace BotTest.Game.AI.Brains
             var normals = state.SummonableCards ?? Array.Empty<DynamicCard>();
             var specials = state.SpecialSummonableCards ?? Array.Empty<DynamicCard>();
             if ((!normals.Any(IsMachine) && !specials.Any(card => card.IsCode(MachinaFortress))) ||
-                !Rules.Roll(DeckRules.NoChimeratechExposure, out _))
+                !Rules.Roll(DeckRules.NoChimeratechExposure, StrategicState, out _))
                 return state;
             var monsters = await GetBotMonsterCardsAsync();
             if (await DoomedJinzoFuseAheadAsync(monsters))

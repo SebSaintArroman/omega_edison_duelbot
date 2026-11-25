@@ -70,7 +70,16 @@ namespace BotTest.Game.AI.Brains
         private CardRuleRegistry.Context BaseContext(SideSummary? own, SideSummary? theirs, int ownLp, int theirLp) =>
             new(own?.DeckCodes ?? _view.OwnDeck, own?.HandCodes ?? _view.OwnHand, theirs?.Hand ?? 0, ownLp, theirLp, false,
                 PlannedSetCardId: _plannedSetCardId,
-                OpponentRemovableSpellTraps: theirs?.SpellCodes.Count(s => !s.FaceUp || StaysOnField(s.Code)) ?? -1);
+                OpponentRemovableSpellTraps: theirs?.SpellCodes.Count(s => !s.FaceUp || StaysOnField(s.Code)) ?? -1,
+                // Their monsters and our attackers (Sirocco's boost onto an empty field only for a one-attack lethal; user, 2026-11-25).
+                OpponentMonsterIds: theirs?.Monsters.Select(monster => monster.Code).ToArray(),
+                OwnFaceUpAttackers: own?.Monsters.Where(monster => monster.FaceUp && monster.AttackPosition).Select(monster => (monster.Code, monster.Attack)).ToList(),
+                OpponentMonsters: theirs?.Monsters.Select(monster => (monster.Code, monster.Attack, monster.Defense, monster.FaceUp, monster.AttackPosition)).ToList(),
+                OpponentSetSpellTraps: theirs?.SpellCodes.Count(s => !s.FaceUp) ?? -1,
+                OpponentLikelySetDefense: _view.EnemyLikelySetDefense,
+                HonestSuspected: _view.EnemyHonestSuspected,
+                OpponentGrave: theirs?.GraveCodes ?? _view.EnemyGrave,
+                OpponentHand: theirs?.HandCodes ?? _view.EnemyKnownHand);
 
         // Machina Jinzo only (_mstOwnFutureFusion): our own face-up Future Fusion in the Draw Phase, the one own card MST may target.
         // No other deck, whatever it plays (user, 2026-11-24).
@@ -239,8 +248,11 @@ namespace BotTest.Game.AI.Brains
                 // turn (more position changes, sets, the end of the turn). User, 2026-11-24: "if it has committed to going to the battle
                 // phase next, it should still be allowed to change the battle positions ... decide not to use substitoad's effect, then
                 // change it to def, then go to battle"; "end of mp2 should offer the same battle position change window".
+                // Sirocco's boost belongs to that window too: it's the last step before the battle (user, 2026-11-25: "only do this right
+                // before battle, in the atk position change window").
                 if (_positionWindowChosen && !(action is MainAction.Repos or MainAction.ToEndPhase ||
                                                _phase == (int)DuelPhase.Main1 && action == MainAction.ToBattlePhase ||
+                                               _phase == (int)DuelPhase.Main1 && action == MainAction.Activate && SearchHost.Is(id, BlackwingSiroccoTheDawn) ||
                                                _phase == (int)DuelPhase.Main2 && action is MainAction.SetMonster or MainAction.SetSpell))
                     return false;
                 if (action == MainAction.Repos)
@@ -296,6 +308,7 @@ namespace BotTest.Game.AI.Brains
                 {
                     NoOtherAnswer = noOtherAnswer,
                     OwnMonsterIds = _ownMonsterIds,
+                    BattleAhead = _phase == (int)DuelPhase.Main1 && idle.CanBattlePhase,
                     DrawTrapException = noHandAnswer || (idle.SummonableCards?.Length ?? 0) == 0 &&
                         (idle.MonsterSetableCards?.Length ?? 0) == 0,
                     PlaguespreaderMayRevive = _plagueMayRevive == true
@@ -419,6 +432,7 @@ namespace BotTest.Game.AI.Brains
                         CanWinThisTurn = host != null && CanWinThisTurn(host),
                         OwnMonsterIds = host?.Summary(0).Monsters.Select(monster => monster.Code).ToArray(),
                         StrategicState = strategicState,
+                        BattleAhead = _phase == (int)DuelPhase.Main1 && _idle.CanBattlePhase,
                     }
                     : null;
                 Dictionary<string, string>? mandatoryReasons = null;
@@ -434,6 +448,11 @@ namespace BotTest.Game.AI.Brains
                         return (tags & TagRules.Tag.ActivateAtFirstOpportunity) != 0 ||
                             (tags & TagRules.Tag.ActivateOnSummon) != 0 && host?.IsSummonWindow(0, id) == true;
                     }).ToList();
+                    // A card to use right before the Battle Phase (ActivateBeforeBattle: Sirocco's one-attack lethal): no Battle Phase, and no
+                    // ending Main Phase 1 without one, until it's used (user, 2026-11-25).
+                    if (_phase == (int)DuelPhase.Main1 && choices.Any(c => c.Response.Action == MainAction.Activate &&
+                            (CardRuleRegistry.TagsFor(SearchActions.KeyCardId(c.Key), ruleContext) & TagRules.Tag.ActivateBeforeBattle) != 0))
+                        choices.RemoveAll(c => c.Response.Action is MainAction.ToBattlePhase or MainAction.ToEndPhase);
                     if (mandatoryActivations.Count > 0)
                     {
                         choices = mandatoryActivations;
@@ -458,11 +477,11 @@ namespace BotTest.Game.AI.Brains
         }
 
         /// <summary>
-        /// A step of the brain's plan the rules don't allow in this line: Allure of Darkness while Desperate is only the last card
+        /// A step of the brain's plan the rules don't allow in this line: Allure of Darkness, where its last-card use is on (AllureAsLastCard: Desperate), is only the last card
         /// in hand (its tag's own exception).
         /// </summary>
         public bool PlanStepAllowed(string key, DuelHost host) =>
-            !(_state == TagRules.BotStrategicState.Desperate &&
+            !(DeckBotBrain.AllureAsLastCard &&
               key.StartsWith($"{(int)MainAction.Activate}:", StringComparison.Ordinal) &&
               SearchHost.Is(SearchActions.KeyCardId(key), AllureOfDarkness) &&
               (host.Summary(0).HandCodes is not { Count: 1 } hand || !SearchHost.Is(hand[0], AllureOfDarkness)));
@@ -582,7 +601,14 @@ namespace BotTest.Game.AI.Brains
                 OpponentHand: enemySide.HandCodes,
                 UnknownOpponentHandCards: enemySide.HandCodes.Any(code => SearchHost.Is(code, SearchView.InertCard)),
                 IsOurTurn: ourTurn,
-                OurFaceUpAttackers: ownSide.Monsters.Count(monster => monster.FaceUp && monster.AttackPosition));
+                OurFaceUpAttackers: ownSide.Monsters.Count(monster => monster.FaceUp && monster.AttackPosition),
+                // Sirocco's lethal check, for its Bora target (CardRules SiroccoTargets).
+                OwnMonsterIds: ownSide.Monsters.Select(monster => monster.Code).ToArray(),
+                OwnFaceUpAttackers: ownSide.Monsters.Where(monster => monster.FaceUp && monster.AttackPosition).Select(monster => (monster.Code, monster.Attack)).ToList(),
+                OpponentMonsters: enemySide.Monsters.Select(monster => (monster.Code, monster.Attack, monster.Defense, monster.FaceUp, monster.AttackPosition)).ToList(),
+                OpponentSetSpellTraps: enemySide.SpellCodes.Count(s => !s.FaceUp),
+                OpponentLikelySetDefense: _view.EnemyLikelySetDefense,
+                HonestSuspected: _view.EnemyHonestSuspected);
             // Mystical Space Typhoon never targets our own cards (user, 2026-11-24), except our own Future Fusion in the Draw Phase.
             if (SearchHost.Is(currentId, MysticalSpaceTyphoon))
             {
@@ -649,7 +675,11 @@ namespace BotTest.Game.AI.Brains
             var ourSide = host?.Summary(0);
             var enemySide = host?.Summary(1);
             var activeLink = host?.CurrentSearchChain(0) ?? new SearchChainLink(-1, 0, Array.Empty<int>());
-            var activeTargets = host != null ? TargetedEnemyGraveCards(host, 0) : Array.Empty<int>();
+            // A D.D. Crow of ours already in this chain answers their graveyard target: the target still reads as targeted until the chain
+            // resolves, but it isn't a reason for a second Crow (user, 2026-11-25, Machina #117: "two dd crows both used at the same time -
+            // only one card was being targeted, only one crow should have been used").
+            bool ourCrowInChain = host?.PendingChainEffects.Any(effect => effect.Player == 0 && SearchHost.Is(effect.Code, DDCrow)) == true;
+            var activeTargets = host != null && !ourCrowInChain ? TargetedEnemyGraveCards(host, 0) : Array.Empty<int>();
             bool inDamageStep = host?.InDamageStep == true;
             var battlers = prompt.Player == 0 && host != null ? host.BattlingCards(0) : default;
             bool gladiatorWouldBeDestroyed = inDamageStep &&
@@ -686,6 +716,7 @@ namespace BotTest.Game.AI.Brains
                 InDamageStep = inDamageStep, GladiatorWouldBeDestroyed = gladiatorWouldBeDestroyed,
                 DrawTrapException = drawTrapException,
                 OwnFutureFusionInDrawPhase = OwnFutureFusionInDrawPhase(host, ourSide),
+                BattleAhead = ourTurn && host?.Phase == (int)DuelPhase.Main1,
             };
             bool IsDoomed(DynamicCard card)
             {
@@ -760,6 +791,7 @@ namespace BotTest.Game.AI.Brains
                 IsOurTurn = ourTurn, OurFaceUpAttackers = activationContext.OurFaceUpAttackers,
                 CanWinThisTurn = activationContext.CanWinThisTurn,
                 OwnMonsterIds = activationContext.OwnMonsterIds,
+                BattleAhead = activationContext.BattleAhead,
             };
             var mandatory = list.Where(option => option.Key.StartsWith("chain:", StringComparison.Ordinal) &&
                 ((CardRuleRegistry.TagsFor(SearchActions.KeyCardId(option.Key), ruleContext) & TagRules.Tag.ActivateAtFirstOpportunity) != 0 ||

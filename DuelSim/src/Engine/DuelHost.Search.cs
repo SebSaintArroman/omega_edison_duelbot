@@ -276,6 +276,15 @@ internal sealed partial class DuelHost
     internal int[] BanishedCodes(int player) => QueryCodes(player, Ocg.LocRemoved)
         .Where(code => code.HasValue).Select(code => code.GetValueOrDefault()).ToArray();
 
+    /// <summary>Every card in a location with whether it's face-up, read fresh from the engine (no cache): the real duel's truth, for the
+    /// position dataset's card counts.</summary>
+    internal List<(int Code, bool FaceUp)> CardsIn(int player, uint location) =>
+        QueryList(player, location, Ocg.QueryCode | Ocg.QueryPosition).Where(card => card != null && card.Code > 0)
+            .Select(card => (card!.Code, (card.Position & Ocg.PosFaceUp) != 0)).ToList();
+
+    /// <summary>A player's life points now.</summary>
+    internal int LifePointsOf(int player) => _lp[player];
+
     internal StrategicCard[] StrategicCards(int player, bool spellZone) =>
         (spellZone
             ? QueryList(player, Ocg.LocSZone, Ocg.QueryCode | Ocg.QueryPosition | Ocg.QueryAttack | Ocg.QueryDefense | Ocg.QueryStatus)

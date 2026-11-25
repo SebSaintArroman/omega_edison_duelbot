@@ -784,6 +784,26 @@ namespace BotTest.Game.AI.Brains
             return (normal, tribute);
         }
 
+        /// <summary>
+        /// The highest DEF among the Level 4-or-lower monsters left in their likeliest list: what a face-down monster of theirs is assumed to
+        /// be against a piercing attack (user, 2026-11-25: "assume their highest defence position normal summon in decklist if face down").
+        /// Null without list data.
+        /// </summary>
+        public int? HighestSetDefense()
+        {
+            if (!HasListData || !Search.SearchHost.Available)
+                return null;
+            var top = Weights().OrderByDescending(kv => kv.Value).FirstOrDefault();
+            if (top.Key == null)
+                return null;
+            int best = 0;
+            foreach (var id in top.Key.Main.Keys)
+                if (Data.Value.Kinds.TryGetValue(id, out char k) && k is 'M' or 'F' or 'f' && Remaining(top.Key, id) > 0 &&
+                    Search.SearchHost.Cards.Get(id) is { } card && (card.Type & 0x1) != 0 && card.Level <= 4)
+                    best = Math.Max(best, card.RealDefense);
+            return best;
+        }
+
         public double[]? AttackerChances(int[] thresholds, int unknownCards, Func<int, (int Attack, int Level)?> stats, int maxLevel = 4) =>
             // A frozen read (a search copy's) asks the same question at every decision of every line (2026-11-17 profile: a sixth of
             // the brain's time in the lines). The thresholds are a fixed array, so its identity is part of the key.
@@ -832,12 +852,21 @@ namespace BotTest.Game.AI.Brains
                     if (left > 0)
                         attackers.Add((tagged || effectThreat != null && effectThreat(id) ? int.MaxValue : s.Attack, left));
                 }
+                // Their Extra Deck's attackers (user, 2026-11-25, Machina #135: Gearframe left in attack position at 900 LP, in reach of a
+                // 2700+ attacker; the main deck had none, XX-Saber Gottoms has 3100): the biggest left, made with
+                // BoardEvaluator.ExtraDeckAttackerChance.
+                int extraBest = 0;
+                foreach (var id in deck.Extra.Keys)
+                    if (stats(id) is { } s && s.Attack > extraBest && Remaining(deck, id) > 0)
+                        extraBest = s.Attack;
                 for (int t = 0; t < thresholds.Length; t++)
                 {
                     int r = attackers.Where(a => a.Attack >= thresholds[t]).Sum(a => a.Count);
                     double none = 1;
                     for (int i = 0; i < Math.Min(unknownCards, pool); i++)
                         none *= Math.Max(0, (double)(pool - r - i) / (pool - i));
+                    if (extraBest >= thresholds[t] && thresholds[t] > 0)
+                        none *= 1 - BoardEvaluator.ExtraDeckAttackerChance;
                     result[t] += weight * (1 - none);
                 }
             }

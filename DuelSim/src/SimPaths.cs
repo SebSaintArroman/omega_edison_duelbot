@@ -9,6 +9,8 @@ public sealed record SimPaths(string Root)
     public string CustomScripts => Path.Combine(Root, "scripts");
     public string CardDb => Path.Combine(Vendor, "cdb", "cards.cdb");
     public string Output => Path.Combine(Root, "out");
+    /// <summary>The position dataset (positions.jsonl, card-names.json): outside out/, so superseding runs never moves it.</summary>
+    public string Dataset => Path.Combine(Root, "dataset");
     /// <summary>Tuned bot variants (&lt;name&gt;.json) and the evolve history.</summary>
     public string Tuning => Path.Combine(Root, "tuning");
 

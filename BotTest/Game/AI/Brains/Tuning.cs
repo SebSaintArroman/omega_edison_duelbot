@@ -26,6 +26,23 @@ namespace BotTest.Game.AI.Brains
 
         /// <summary>The size of one tuning step, about the smallest change worth testing (NaN: derived from the value).</summary>
         public double Step { get; init; } = double.NaN;
+
+        /// <summary>Its built-in values for strategic states (StateTuning), written to the tuning file as <c>Key@State</c> lines when missing:
+        /// "Desperate=0", "Desperate=true; Conservative=1.5". A state not listed uses its chain (Desperate: Threatened), then the base.</summary>
+        public string? StateDefaults { get; init; }
+
+        /// <summary>The built-in per-state values, parsed.</summary>
+        internal IEnumerable<(TagRules.BotStrategicState State, string Value)> ParsedStateDefaults() =>
+            (StateDefaults ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(part => part.Split('=', 2, StringSplitOptions.TrimEntries))
+                .Where(pair => pair.Length == 2 && Enum.TryParse<TagRules.BotStrategicState>(pair[0], out _))
+                .Select(pair => (Enum.Parse<TagRules.BotStrategicState>(pair[0]), pair[1]));
+    }
+
+    /// <summary>An object whose [Tunable] properties take a value per strategic state (a deck brain: DeckBotBrain.ApplyStateTuning).</summary>
+    internal interface IStateTunable
+    {
+        void SetStateValue(PropertyInfo property, TagRules.BotStrategicState state, object value);
     }
 
     /// <summary>What a tunable is, for self-play tuning: a static number (one per process, each DuelSim side may override it through a
@@ -89,6 +106,8 @@ namespace BotTest.Game.AI.Brains
                                 StaticTuned[$"{tunable.Section ?? type.Name}.{field.Name}"] = tuned;
                             }
                             Apply(type, field.Name, tuned.ValueType, () => tuned.BaseValue, v => tuned.BaseValue = v, tunable, values, missing, TunableKind.Static);
+                            foreach (var (state, value) in StateValues($"{tunable.Section ?? type.Name}.{field.Name}", tuned.ValueType, tunable, values, missing))
+                                tuned.SetStateValue(state, value);
                         }
                         else if (!field.IsInitOnly)
                             Apply(type, field.Name, field.FieldType, () => field.GetValue(null), v => field.SetValue(null, v), tunable, values, missing, TunableKind.Static);
@@ -215,25 +234,47 @@ namespace BotTest.Game.AI.Brains
                         Apply(deckOwn ? own : type, prop.Name, prop.PropertyType, () => prop.GetValue(instance), v => prop.SetValue(instance, v), tunable,
                             _values!, (deckOwn ? firstOwn : first) ? missing : null, TunableKind.Brain);
                         // This side's own value (DuelSim self-play): under the key the file uses, or the deck's own name for a shared number.
+                        string fileKey = $"{tunable.Section ?? (deckOwn ? own : type).Name}.{prop.Name}", ownKey = $"{own.Name}.{prop.Name}";
                         if (TuningProfile.Current is { } profile &&
-                            (profile.Values.TryGetValue($"{tunable.Section ?? (deckOwn ? own : type).Name}.{prop.Name}", out double mine) ||
-                             profile.Values.TryGetValue($"{own.Name}.{prop.Name}", out mine)) && ProfileValue(mine, prop.PropertyType) is { } set)
+                            (profile.Values.TryGetValue(fileKey, out double mine) ||
+                             profile.Values.TryGetValue(ownKey, out mine)) && ProfileValue(mine, prop.PropertyType) is { } set)
                             prop.SetValue(instance, set);
+                        // Its values per strategic state: the file's (or the built-in ones), then this side's profile over them.
+                        if (instance is IStateTunable stateTunable)
+                        {
+                            var perState = StateValues(fileKey, prop.PropertyType, tunable, _values!, (deckOwn ? firstOwn : first) ? missing : null)
+                                .ToDictionary(e => e.State, e => e.Value);
+                            if (TuningProfile.Current is { } stateProfile)
+                                foreach (var state in StateTuning.States)
+                                    if ((stateProfile.Values.TryGetValue(StateTuning.Key(fileKey, state), out double v) ||
+                                         stateProfile.Values.TryGetValue(StateTuning.Key(ownKey, state), out v)) && ProfileValue(v, prop.PropertyType) is { } stateSet)
+                                        perState[state] = stateSet;
+                            foreach (var (state, value) in perState)
+                                stateTunable.SetStateValue(prop, state, value);
+                        }
                     }
                 }
                 // This side's rule hold costs (keys <Brain>.HoldCost.<rule>, for this brain or the shared DeckBotBrain).
                 if (TuningProfile.Current is { } side && instance is DeckBotBrain brain)
-                    foreach (var (key, cost) in side.Values)
+                    foreach (var (key, number) in side.Values)
                     {
-                        int at = key.IndexOf(".HoldCost.", StringComparison.Ordinal);
+                        // <Brain>.HoldCost.<rule>[@State] and <Brain>.Rule.<rule>[@State] (the rule's probability).
+                        int at = key.IndexOf(".HoldCost.", StringComparison.Ordinal), length = ".HoldCost.".Length;
+                        bool probability = at <= 0 && (at = key.IndexOf(".Rule.", StringComparison.Ordinal)) > 0;
+                        if (probability)
+                            length = ".Rule.".Length;
                         if (at <= 0)
                             continue;
                         string owner = key[..at];
                         bool ours = false;
                         for (var type = own; type != null && type != typeof(object) && !ours; type = type.BaseType)
                             ours = type.Name == owner;
-                        if (ours)
-                            brain.Rules.SetCost(key[(at + ".HoldCost.".Length)..], cost);
+                        if (!ours)
+                            continue;
+                        if (probability)
+                            brain.Rules.Set(key[(at + length)..], number);
+                        else
+                            brain.Rules.SetCost(key[(at + length)..], number);
                     }
                 Append(missing);
             }
@@ -264,8 +305,33 @@ namespace BotTest.Game.AI.Brains
 
         public static bool IsKnownKey(string key)
         {
+            // A rule's probability (<Brain>.Rule.<rule>): every rule has one, listed or not.
+            if (key.Contains(".Rule.", StringComparison.Ordinal))
+                return true;
             lock (Gate)
                 return EntriesByKey.ContainsKey(key);
+        }
+
+        /// <summary>
+        /// A tunable's values per strategic state: each state's line in the file (<c>Key@State</c>), else its built-in one
+        /// (TunableAttribute.StateDefaults, then listed in the file). States with neither are left out (their chain, then the base, applies).
+        /// </summary>
+        private static IEnumerable<(TagRules.BotStrategicState State, object Value)> StateValues(string key, Type valueType, TunableAttribute tunable,
+            Dictionary<string, string> values, List<string>? missing)
+        {
+            var defaults = tunable.ParsedStateDefaults().ToDictionary(d => d.State, d => d.Value);
+            var found = new List<(TagRules.BotStrategicState, object)>();
+            foreach (var state in StateTuning.States)
+            {
+                string stateKey = StateTuning.Key(key, state);
+                string? text = values.TryGetValue(stateKey, out string? inFile) ? inFile : defaults.GetValueOrDefault(state);
+                if (text == null || Parse(text, valueType) is not { } parsed)
+                    continue;
+                if (inFile == null && missing != null && Listed.Add(stateKey))
+                    missing.Add($"{stateKey} = {text}   # in the {state} state: {tunable.Description.Replace("\r", " ").Replace("\n", " ").Trim()}");
+                found.Add((state, parsed));
+            }
+            return found;
         }
 
         private static void Record(string key, TunableKind kind, Type type, double value, string description, TunableAttribute? tunable)

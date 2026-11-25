@@ -107,11 +107,22 @@ namespace BotTest.Game.AI.Brains
         private static readonly System.Text.RegularExpressions.Regex DrawText = new(
             @"\bdraw (\d|one|two|three) cards?\b",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+        // A draw that only follows the card's own destruction or trip to the graveyard ("If this card is destroyed and sent to the GY:
+        // Draw 1 card"): not a draw the player can activate.
+        private static readonly System.Text.RegularExpressions.Regex DeathTriggerText = new(
+            @"\bif this card\b[^.:;]*?\b(is|was) (destroyed|sent to)\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, bool> DrawCards = new();
 
-        /// <summary>Whether this card's text draws cards (Pot of Greed, Upstart Goblin, Allure of Darkness...).</summary>
+        /// <summary>
+        /// Whether this card's text has a draw the player activates (Pot of Greed, Upstart Goblin, Allure of Darkness...). A draw in a
+        /// sentence that starts from the card's own destruction doesn't count (live 2026-11-25: Card Trooper's death draw made its mill
+        /// "a draw effect on offer", so every main move after the mill paid DrawLaterCost and ending the turn beat attacking).
+        /// </summary>
         internal static bool Draws(int code) => code > 0 && DrawCards.GetOrAdd(code, id =>
-            SearchHost.Available && SearchHost.Cards.Get(id) is { } info && DrawText.IsMatch(info.Text ?? ""));
+            SearchHost.Available && SearchHost.Cards.Get(id) is { } info &&
+            System.Text.RegularExpressions.Regex.Split(info.Text ?? "", @"(?<=[.;])\s+")
+                .Any(sentence => DrawText.IsMatch(sentence) && !DeathTriggerText.IsMatch(sentence)));
 
         internal static readonly int[] Lyla = { LylaLightswornSorceress, LylaLightswornSorceressPreErrata };
         internal static readonly int[] Unions = { MachinaGearframe, MachinaGearframePreErrata, MachinaPeacekeeper, MachinaPeacekeeperPreErrata };

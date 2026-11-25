@@ -12,6 +12,11 @@ namespace BotTest.Game.AI.Brains
     public abstract partial class DeckBotBrain
     {
         private const string DesperateAllureRoutine = "desperate Allure of Darkness";
+
+        /// <summary>Allure of Darkness may be played as the last card in hand (clearing the hand to draw out of a bad spot), in this strategic
+        /// state (StateTuning: Desperate only, built in).</summary>
+        [Tunable("Allure of Darkness may be played as the last card in hand, clearing the hand to draw out of a bad spot (the desperate Allure routine). Per strategic state: on only when Desperate.", StateDefaults = "Desperate=true")]
+        internal static readonly Tuned<bool> AllureAsLastCard = new(false);
         private TagRules.BotStrategicState? _strategicStateOverride;
         private TagRules.BotStrategicState _assessedStrategicState;
         internal TagRules.BotStrategicState StrategicState
@@ -28,7 +33,7 @@ namespace BotTest.Game.AI.Brains
 
         private async Task<IdleCmdResponse?> TryDesperateAllureAsync(DecisionContext<IdleCmdData> context)
         {
-            if (StrategicState != TagRules.BotStrategicState.Desperate)
+            if (!AllureAsLastCard)
                 return null;
 
             var state = context.StateData;

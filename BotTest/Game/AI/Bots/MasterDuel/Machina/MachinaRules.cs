@@ -32,8 +32,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
         [ResourceHold]
         public const string KnightBeforeCostlyFortress = "machina.knight-before-costly-fortress";
         /// <summary>Fortress waits while a less expensive answer handles their board (a ready monster, Gearframe, a free summon), in the
-        /// Conservative strategic state (high LP, cards even; user, 2026-11-24: play a little more conservatively).</summary>
-        [ResourceHold]
+        /// Conservative strategic state (high LP, cards even; user, 2026-11-24: play a little more conservatively): its probability is 0
+        /// outside it (StateTuning: MachinaBotBrain.Rule.machina.cheaper-answer-first@Conservative = 1).</summary>
+        [ResourceHold, InStates("Conservative")]
         public const string CheaperAnswerFirst = "machina.cheaper-answer-first";
         /// <summary>Fortress waits while Gearframe can be Normal Summoned first (it searches; Fortress then discards the search).</summary>
         public const string GearframeBeforeFortress = "machina.gearframe-before-fortress";

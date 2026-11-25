@@ -20,7 +20,11 @@ namespace BotTest.Game.AI.Brains
     public abstract partial class DeckBotBrain : DefaultBotBrain
     {
         // IsCode falls back to the card database's alias (Omega's ids, prompts without an alias; see Helpers.AliasResolver).
-        static DeckBotBrain() => OmegaBotWrapper.Helpers.AliasResolver ??= Search.SearchHost.CanonicalId;
+        static DeckBotBrain()
+        {
+            OmegaBotWrapper.Helpers.AliasResolver ??= Search.SearchHost.CanonicalId;
+            StateTuning.Install(); // each bot's run carries its own strategic state for the per-state numbers
+        }
 
         private DuelBotWrapper? _trackedBot;
 
@@ -36,14 +40,10 @@ namespace BotTest.Game.AI.Brains
         /// </summary>
         protected bool Rule(string name)
         {
-            // Desperate: no fear of Heavy Storm or their traps ([TrapFear] rules; user, 2026-11-24).
-            if (StrategicState == TagRules.BotStrategicState.Desperate && RuleGates.IsTrapFear(name))
-            {
-                if (!IsSearchTwin)
-                    _trackedBot?.LogNote($"rule {name} off: we're Desperate (no fear of Heavy Storm or traps)");
-                return false;
-            }
-            bool fired = Rules.Roll(name, out double p);
+            // Its probability in our strategic state (RuleGates: Key@State; [TrapFear] rules are off when Desperate, user 2026-11-24).
+            bool fired = Rules.Roll(name, StrategicState, out double p);
+            if (p <= 0 && Rules.Probability(name) > 0 && !IsSearchTwin)
+                _trackedBot?.LogNote($"rule {name} off in the {StrategicState} state");
             if (fired && p > 0)
                 _decisionRules.Add(name); // for the play search verdict (which rules shaped this decision)
             if (!fired && p > 0)
@@ -149,6 +149,8 @@ namespace BotTest.Game.AI.Brains
                 try { await AssessStrategicStateAsync(context.Bot); }
                 catch { _assessedStrategicState = TagRules.BotStrategicState.Base; }
             }
+            // The numbers of this state (StateTuning): the brain's own, and the real bot's static ones.
+            ApplyStateTuning();
 
             // Grand Mole on their field / back in their hand: tracked at every decision, so a Mole that comes out,
             // bounces and returns to their hand within one Battle Phase isn't missed.

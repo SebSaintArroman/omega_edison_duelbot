@@ -268,8 +268,14 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
             // Sirocco's effect with nothing to gain, whichever play the brain makes first (user, 2026-11-18: "why isn't the rule about not
             // using sirocco's effect pointlessly stopping sirocco's effect being used pointlessly?").
             if (TryGetActivable(state, CardId.BlackwingSiroccoTheDawn, out var pointlessBoost) &&
-                pointlessBoost.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && SiroccoBoostPointless(botMonsters, enemyMonsters))
+                pointlessBoost.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone &&
+                SiroccoBoostPointless(botMonsters, enemyMonsters, await CurrentField.GetBotLifePoints(isOwnSide: false)))
                 Hold(pointlessBoost.ID, MainAction.Activate, BlackwingRules.SiroccoBoostPointless);
+            // Icarus Attack in our turn outside Main Phase 1 waits for their turn: a hold, not a ban (user, 2026-11-25: "no hard bans"; Vayu
+            // could have attacked Lyla, then Icarus taken both set cards in Main Phase 2).
+            if ((DuelPhase)context.Header.CurrentPhase != DuelPhase.Main1 && TryGetActivable(state, CardId.IcarusAttack, out var lateIcarus) &&
+                Rule(BlackwingRules.IcarusWaitsForTheirTurn))
+                Hold(lateIcarus.ID, MainAction.Activate, BlackwingRules.IcarusWaitsForTheirTurn);
 
             // 1. Free card advantage.
             // (Shared staple rule: Upstart Goblin, Charge of the Light Brigade, Reinforcement of the Army.)
@@ -1382,6 +1388,12 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
         public override async Task<IList<byte>?> OnSelectCardAsync(DecisionContext<SelectCardData> context, CancellationToken ct = default)
         {
             await PrepareContextAsync(context, ct);
+            // Sirocco's boost as the one-attack lethal: Bora (card rule, CardRules SiroccoTargets; user, 2026-11-25).
+            if (await SiroccoLethalBoraPickAsync(context) is IList<byte> lethalBora)
+            {
+                Note(context, "Sirocco's boost is the one-attack lethal: on Bora");
+                return lethalBora;
+            }
             // Sirocco's boost: Bora / Shura, whoever activated it.
             if (SiroccoPick(context.StateData.SelectableCards ?? Array.Empty<DynamicCard>(), context.StateData.Minimum, context.StateData.Maximum) is IList<byte> hard)
             {
@@ -2545,8 +2557,18 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
         /// blackwing on the field. no point to do that ever"), or their field has no monster (2026-11-16: "using sirocco's effect is pointless
         /// if I don't have a monster on the field": split attacks deal the same).
         /// </summary>
-        private bool SiroccoBoostPointless(List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters) =>
-            (botMonsters.Count(card => card.IsFaceup() && IsBlackwing(card)) < 2 || enemyMonsters.Count == 0) && Rule(BlackwingRules.SiroccoBoostPointless);
+        /// <summary>
+        /// Sirocco's boost gains nothing: fewer than two face-up Blackwings, or their field empty without the boost making one lethal attack
+        /// (user, 2026-11-25: "if sirocco's boost meant you could deal lethal in a single attack then it should use that because it removes gorz
+        /// risk. but if that's not the case then it shouldn't be used if I have no monster"). The boosted Blackwing gets every other face-up
+        /// Blackwing's ATK, and only it attacks: lethal when all their ATK together reaches their life points.
+        /// </summary>
+        private bool SiroccoBoostPointless(List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters, int theirLp)
+        {
+            var blackwings = botMonsters.Where(card => card.IsFaceup() && IsBlackwing(card)).ToList();
+            bool singleLethal = blackwings.Sum(card => card.Attack) >= theirLp && theirLp > 0;
+            return (blackwings.Count < 2 || enemyMonsters.Count == 0 && !singleLethal) && Rule(BlackwingRules.SiroccoBoostPointless);
+        }
 
         /// <summary>The chain window after a summon offers Sirocco's boost too (seen 2026-11-18: chained with Sirocco the only monster): held there.</summary>
         protected override async Task RecordDeckChainHoldsAsync(DecisionContext<SelectChainData> context)
@@ -2554,7 +2576,7 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
             var offered = context.StateData.SelectableCards ?? Array.Empty<DynamicCard>();
             if (!offered.Any(card => card.IsCode(CardId.BlackwingSiroccoTheDawn) && card.CurrentCoordinates is { Controller: 0, Location: (byte)CardLocation.MonsterZone }))
                 return;
-            if (SiroccoBoostPointless(await GetBotMonsterCardsAsync(), await GetEnemyMonsterCardsAsync()))
+            if (SiroccoBoostPointless(await GetBotMonsterCardsAsync(), await GetEnemyMonsterCardsAsync(), await CurrentField.GetBotLifePoints(isOwnSide: false)))
                 foreach (var card in offered.Where(card => card.IsCode(CardId.BlackwingSiroccoTheDawn)))
                     HoldKey(card.ID, "chain:", BlackwingRules.SiroccoBoostPointless);
         }
@@ -2749,6 +2771,7 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
                 var biggest = enemyMonsters.Where(card => card.IsFaceup() && card.IsAttack()).OrderByDescending(card => card.Attack).FirstOrDefault();
                 int ourBest = wings.Select(card => card.Attack).DefaultIfEmpty(0).Max();
                 string? why = null;
+                // (Their empty field's one-attack lethal is Sirocco's card rule: used right before the Battle Phase, CardRules SiroccoHelper.)
                 if (wings.Count >= 2 && enemyMonsters.Count == 1 && biggest.ID > 0 && total - biggest.Attack >= oppLp)
                     why = $"one attacker at {total} through {CardNames.Get(biggest.ID)} is lethal";
                 else if (wings.Count >= 2 && biggest.ID > 0 && biggest.Attack >= ourBest && total > biggest.Attack && enemyMonsters.Count == 1)
@@ -2892,6 +2915,44 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
             return !BoraOrShura(steps[index].Key) && offered.Any(BoraOrShura) ? cost + SuggestionCost : cost;
         }
 
+        /// <summary>Sirocco's target when its boost is the one-attack lethal and Bora is on offer: Bora, as the card rule says (AllowedTargets
+        /// with the board as live sees it). Null otherwise.</summary>
+        private async Task<IList<byte>?> SiroccoLethalBoraPickAsync(DecisionContext<SelectCardData> context)
+        {
+            var cards = context.StateData.SelectableCards ?? Array.Empty<DynamicCard>();
+            if (LastMainMove is not { Action: MainAction.Activate } move || move.Turn != CurrentTurnNumber ||
+                !(move.CardId == CardId.BlackwingSiroccoTheDawn || Search.SearchHost.CanonicalId(move.CardId) == CardId.BlackwingSiroccoTheDawn) ||
+                !cards.Any(card => card.IsCode(CardId.BlackwingBoraTheSpear) && card.CurrentCoordinates.Controller == 0))
+                return null;
+            var ours = await GetBotMonsterCardsAsync();
+            var theirs = await GetEnemyMonsterCardsAsync();
+            var field = await CurrentField.GetBotField();
+            int likelyDefense;
+            bool honest;
+            lock (OpponentDeck)
+            {
+                likelyDefense = OpponentDeck.HighestSetDefense() ?? -1;
+                honest = HonestSuspected((field.EnemySide.Hand ?? Array.Empty<int>()).Length);
+            }
+            var ruleContext = new CardRuleRegistry.Context(Array.Empty<int>(), Array.Empty<int>(), 0, 0, await CurrentField.GetBotLifePoints(isOwnSide: false), false,
+                OwnMonsterIds: ours.Select(card => card.ID).ToArray(),
+                OwnFaceUpAttackers: ours.Where(card => card.IsFaceup() && card.IsAttack()).Select(card => (card.ID, card.Attack)).ToList(),
+                OpponentMonsterIds: theirs.Select(card => card.ID).ToArray(),
+                OpponentMonsters: theirs.Select(card => (card.ID, card.Attack, card.Defense, card.IsFaceup(), card.IsAttack())).ToList(),
+                OpponentSetSpellTraps: (await GetEnemySpellCardsAsync()).Count(card => !card.IsFaceup()),
+                OpponentLikelySetDefense: likelyDefense, HonestSuspected: honest,
+                OpponentGrave: field.EnemySide.Grave ?? Array.Empty<int>(),
+                OpponentHand: (field.EnemySide.Hand ?? Array.Empty<int>()).Where(id => id > 0).ToArray());
+            var allowed = CardRuleRegistry.AllowedTargets(CardId.BlackwingSiroccoTheDawn, ruleContext, cards.Select(card => card.ID).ToList());
+            if (allowed.Count == cards.Length || !allowed.All(id => Search.SearchHost.Is(id, CardId.BlackwingBoraTheSpear)))
+                return null;
+            int index = Array.FindIndex(cards, card => card.IsCode(CardId.BlackwingBoraTheSpear) && card.CurrentCoordinates.Controller == 0);
+            if (index < 0)
+                return null;
+            LastMainMove = default; // one target per activation
+            return new List<byte> { (byte)index };
+        }
+
         // Sirocco's target when the brain picks it, whoever activated Sirocco (a strong suggestion, user 2026-11-10: a
         // planner line boosting anything else pays the suggestion cost; see PlanSuggestions).
         private IList<byte>? SiroccoPick(DynamicCard[] cards, int minimum, int maximum)
@@ -2910,14 +2971,7 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
         // Black Whirlwind always searches when it can (user, 2026-11-10: "it should always always trigger when possible").
         protected override bool AlwaysTriggers(DynamicCard card) => card.IsCode(CardId.BlackWhirlwind);
 
-        protected override bool SearchMayChoose(DynamicCard card, MainAction action) =>
-            base.SearchMayChoose(card, action) &&
-            // (Blizzard without a revive target and Kalut as a plain body are holds now, not bans: a line summoning them pays.)
-            // Icarus Attack in our own turn only to attack through what it clears (Main Phase 1). Otherwise it waits for their
-            // turn: their attack, their removal, or their End Phase, by when they may have committed something better to
-            // hit (user, 2026-11-11: it was fired in our Main Phase 2 at Gorz + token).
-            !(action == MainAction.Activate && card.IsCode(CardId.IcarusAttack) &&
-              (DuelPhase)CurrentHeader.CurrentPhase != DuelPhase.Main1 && Rule(BlackwingRules.IcarusWaitsForTheirTurn));
+        // (Icarus Attack outside our Main Phase 1 was a ban here until 2026-11-25; it's a hold now: OnIdle, IcarusWaitsForTheirTurn.)
 
         private async Task<IdleCmdData> WithoutPointlessSummonsAsync(DecisionContext<IdleCmdData> context, IdleCmdData state,
             List<DynamicCard> hand, List<DynamicCard> botMonsters, List<DynamicCard> enemyMonsters)

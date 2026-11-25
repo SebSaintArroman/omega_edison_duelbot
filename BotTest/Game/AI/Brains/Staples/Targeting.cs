@@ -200,22 +200,38 @@ namespace BotTest.Game.AI.Brains
             // still has to attack this turn comes first only when its attack matters: the damage still to come is
             // lethal or leaves us within reach of their board, or it would destroy a monster of ours that isn't
             // expendable. Then the biggest of those.
+            // The damage is judged per pick, after that pick's kill (user, 2026-11-25, Machina #119: Ryko took Gardestrike 2100 over
+            // Airbellum 1600 because both attacks together were lethal, but either kill alone left 2500 LP alive and in reach of their board:
+            // "neither card would have killed the bot, nor made a significant difference on the bot's clock", so Airbellum's live discard
+            // effect decides). A kill matters by damage when it leaves us in a better spot (not dead, or out of their board's reach)
+            // than another pick would; picks equally good on that go by their effects.
             var stillToAttack = await StillToAttackThisTurnAsync(context.Header);
             var coming = opponent.Where(x => stillToAttack(x.Card)).ToList();
-            bool damageMatters = false;
+            var dangerAfter = new Dictionary<int, int>();
+            int worstDanger = 0;
             var ourMonsters = new List<DynamicCard>();
             if (coming.Count > 0)
             {
                 int lp = await CurrentField.GetBotLifePoints();
                 int incoming = coming.Sum(x => x.Card.Attack);
                 int theirBoard = (await GetEnemyMonsterCardsAsync()).Where(card => card.IsFaceup()).Sum(card => card.Attack);
-                damageMatters = incoming >= lp || lp - incoming <= theirBoard;
+                foreach (var x in opponent)
+                {
+                    bool faceUpMonster = x.Card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && x.Card.IsFaceup();
+                    int damage = incoming - (stillToAttack(x.Card) ? x.Card.Attack : 0);
+                    int board = theirBoard - (faceUpMonster ? x.Card.Attack : 0);
+                    dangerAfter[x.Index] = damage >= lp ? 2 : lp - damage <= board ? 1 : 0;
+                }
+                worstDanger = dangerAfter.Values.DefaultIfEmpty(0).Max();
                 ourMonsters = (await GetBotMonsterCardsAsync()).Where(card => card.IsFaceup() && !IsExpendable(card)).ToList();
             }
+            int Danger(int index) => dangerAfter.TryGetValue(index, out int d) ? d : worstDanger;
+            bool damageMatters = opponent.Any(x => stillToAttack(x.Card) && Danger(x.Index) < worstDanger);
             bool ProtectsOurs(DynamicCard enemy) =>
                 ourMonsters.Any(own => own.IsAttack() ? enemy.Attack >= own.Attack : enemy.Attack > own.Defense);
-            bool AttackMatters(DynamicCard enemy) => stillToAttack(enemy) && (damageMatters || ProtectsOurs(enemy));
-            var mattering = opponent.Where(x => AttackMatters(x.Card)).ToList();
+            bool DamageMattersFor(int index, DynamicCard enemy) => stillToAttack(enemy) && Danger(index) < worstDanger;
+            bool AttackMatters(int index, DynamicCard enemy) => stillToAttack(enemy) && (DamageMattersFor(index, enemy) || ProtectsOurs(enemy));
+            var mattering = opponent.Where(x => AttackMatters(x.Index, x.Card)).ToList();
             if (mattering.Count > 0)
                 Note(context, $"their Battle Phase: hit a monster still to attack ({string.Join(", ", mattering.Select(x => $"{CardNames.Get(x.Card.ID)} {x.Card.Attack}"))}): " +
                               (damageMatters ? "the damage still to come matters" : "it would destroy one of our monsters"));
@@ -249,11 +265,17 @@ namespace BotTest.Game.AI.Brains
                               (dad.Use == 1 && anyMonster ? "a monster first (one it can't get over, or a \"destroyed by battle\" one, if any)"
                                                           : "clear the way for its attack: monsters bigger than it, then set cards and \"destroyed by battle\" monsters"));
             }
+            // RULE deck.bounce-self-summoner (Selection/Rules/BounceSelfSummoner.cs): a bounce outside an attack on a monster that comes
+            // straight back from the hand goes last.
+            var comesBack = await BouncedComesBackAsync(context);
             var picks = opponent
                 .OrderBy(x => dadGroup.TryGetValue(x.Index, out int g) ? g : 0)
+                .ThenBy(x => comesBack.Contains(x.Index) ? 1 : 0)
                 .ThenByDescending(x => fromHand && copies[VisibleSignature(x.Card)] == 1)
-                .ThenByDescending(x => AttackMatters(x.Card) ? 1 : 0)
-                .ThenByDescending(x => AttackMatters(x.Card) ? x.Card.Attack : 0)
+                .ThenByDescending(x => AttackMatters(x.Index, x.Card) ? 1 : 0)
+                // The pick that leaves us safest first; equally safe by damage, the biggest only when it's about our monsters.
+                .ThenBy(x => AttackMatters(x.Index, x.Card) && damageMatters ? Danger(x.Index) : 0)
+                .ThenByDescending(x => AttackMatters(x.Index, x.Card) && !DamageMattersFor(x.Index, x.Card) ? x.Card.Attack : 0)
                 .ThenByDescending(x => effectScores.TryGetValue(x.Index, out double s) ? s : 0)
                 .ThenByDescending(x => faceUpSpellValue.TryGetValue(x.Index, out int v) ? v : OpponentThreat(x.Card))
                 // Between set spells/traps: the one most likely to be Mirror Force / Torrential, random on ties (never by zone).

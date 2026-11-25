@@ -117,7 +117,8 @@ namespace BotTest.Game.AI.Brains
         protected virtual double HoldCost(string rule) =>
             // Sets held for Main Phase 2 (spell/trap and monster) cost their own tier: the only charge for a Main Phase 1 set (user, 2026-11-18:
             // "give it a cost. give it 0.5"; "we should only have one": LineTally's set-then-battle charge is gone).
-            Rules.Cost(rule);
+            // In our strategic state (StateTuning: a resource hold's own Conservative cost, user 2026-11-24).
+            Rules.Cost(rule, StrategicState);
 
         // Rules whose summon holds the search now checks on the actual line (LineTally, user 2026-11-13): a monster summoned
         // that never attacks, uses an effect or leaves the field; Lyla's effect, a union equip, or a set in Main Phase 1 before
@@ -136,14 +137,7 @@ namespace BotTest.Game.AI.Brains
 
         private double HoldCost(string rule, MainAction? action) =>
             CheckedOnTheLine.Contains(rule) || action is MainAction.Summon or MainAction.SpSummon && SummonsCheckedOnTheLine.Contains(rule)
-                ? 0 : HoldCost(rule) * ConservativeFactor(rule);
-
-        /// <summary>
-        /// In the Conservative strategic state a resource hold ([ResourceHold] on the rule, in any deck's rule set) costs more (user,
-        /// 2026-11-24: "if its on, then resource holds like fortresses's summon should count for more (same as using vayu ...)").
-        /// </summary>
-        private double ConservativeFactor(string rule) =>
-            StrategicState == TagRules.BotStrategicState.Conservative && RuleGates.IsResourceHold(rule) ? StandingState.ConservativeHoldFactor : 1.0;
+                ? 0 : HoldCost(rule);
 
         /// <summary>
         /// Records that the brain considered this move and held it back by this rule. Called where a rule rejects a move, so
@@ -1020,11 +1014,8 @@ namespace BotTest.Game.AI.Brains
             twin.TurnStartMs = 0;
             twin.Variant = Variant;
             twin.OpponentDeck.Frozen = true; // a search copy observes nothing: its deck read's chances can be cached
-            foreach (var rule in RuleGates.Declared(GetType()))
-            {
-                twin.Rules.Set(rule, Rules.Probability(rule));
-                twin.Rules.SetCost(rule, Rules.Cost(rule));
-            }
+            // The brain's own rule values (base and per state); the rest the twin reads from the tuning file as the brain does.
+            twin.Rules.CopyFrom(Rules);
             return twin;
         }
 
@@ -2058,9 +2049,11 @@ namespace BotTest.Game.AI.Brains
                     // Theirs, taken until the End Phase (Brain Control / Mind Control / Change of Heart activated this turn): it goes back
                     // in the rebuilt turn too and doesn't count toward our exposure (C1, user 2026-11-16). Taken for good (Goyo): ours.
                     Borrowed = card.Owner == 1 && _activatedThisTurn.Overlaps(TemporaryControlIds),
-                    DestroyAtOwnersEnd = IsReturnerJinzo(card), PositionLockEnds = PositionLockEnds(card) });
+                    DestroyAtOwnersEnd = IsReturnerJinzo(card), PositionLockEnds = PositionLockEnds(card),
+                    UsedEffectMask = UsedEffectMask(card) });
             foreach (var card in await CurrentField.GetBotCardsInZone(CardLocation.SpellZone, true))
-                view.OwnSpells.Add(ToView(card, card.ID) with { ThisTurn = OwnCardThisTurn(false, card) });
+                view.OwnSpells.Add(ToView(card, card.ID) with { ThisTurn = OwnCardThisTurn(false, card),
+                    UsedEffectMask = (card.Position & 0x5) != 0 ? UsedEffectMask(card) : 0 });
 
             // Their side: face-up cards in full; face-down ones by zone, named only when we remember them.
             var faceUpMonsters = (await CurrentField.GetBotCardsInZone(CardLocation.MonsterZone, false)).ToDictionary(c => (int)c.CurrentCoordinates.Sequence);
@@ -2083,6 +2076,9 @@ namespace BotTest.Game.AI.Brains
                 if (known <= 0)
                     view.EnemySetMonsterOdds[z] = OpponentDeck.LikelyMonsterZone(z);
             }
+            // A face-down monster of theirs against Bora's pierce (Sirocco's lethal check): the highest-DEF Normal Summon in their list.
+            lock (OpponentDeck)
+                view.EnemyLikelySetDefense = OpponentDeck.HighestSetDefense() ?? -1;
             var faceUpSpells = (await CurrentField.GetBotCardsInZone(CardLocation.SpellZone, false)).ToDictionary(c => (int)c.CurrentCoordinates.Sequence);
             var spellZones = enemy.SpellZones ?? Array.Empty<CardArray>();
             for (int z = 0; z < spellZones.Length; z++)
@@ -2109,6 +2105,9 @@ namespace BotTest.Game.AI.Brains
                 if (Summons.ImproperInGrave(1, id) is > 0 and var n)
                     view.EnemyGraveImproper[id] = n;
             view.EnemyHandCount = enemy.Hand?.Length ?? 0;
+            // Honest known or suspected in their hand (Sirocco's lethal check; user, 2026-11-25: "yes count suspicion").
+            lock (OpponentDeck)
+                view.EnemyHonestSuspected = HonestSuspected(view.EnemyHandCount);
             view.EnemyExtraCount = enemy.Extra?.Length ?? 0;
 
             // Our deck: the list minus every main-deck card of ours we can see.

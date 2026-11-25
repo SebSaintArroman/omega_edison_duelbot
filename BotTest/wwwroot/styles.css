@@ -904,17 +904,21 @@ option {
   flex: none;
   display: grid;
   place-items: center;
-  width: 1.4rem;
   height: 1.4rem;
+  padding: 0 0.5rem;
   border: 1px solid currentColor;
-  border-radius: 50%;
+  border-radius: 999px;
   color: var(--muted);
+  font-size: 0.75rem;
   font-weight: 700;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .entry-strategic-state[data-state="threatened"] { color: var(--accent-strong); }
 .entry-strategic-state[data-state="desperate"] { color: var(--danger); }
+.entry-strategic-state[data-state="pressuring"] { color: var(--success); }
+.entry-strategic-state[data-state="conservative"] { color: #8fc8ff; }
 
 .entry-caret {
   width: 0.7rem;

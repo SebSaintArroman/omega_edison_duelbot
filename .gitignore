@@ -29,6 +29,8 @@ launcher.log
 
 # DuelSim run output (duel transcripts, logs, summaries)
 DuelSim/out/
+# DuelSim position dataset (grows with every run)
+DuelSim/dataset/
 
 # Local Claude Code settings
 .claude/settings.local.json

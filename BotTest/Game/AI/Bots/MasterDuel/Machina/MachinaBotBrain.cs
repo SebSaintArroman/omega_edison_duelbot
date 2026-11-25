@@ -648,7 +648,8 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Machina
             // Fortress came out discarding Jinzo - Returner when Gearframe alone handled the set monster.
             // Not when Fortress answers a big monster by crashing, wins this turn, or holding loses. Tied to the generic Conservative
             // strategic state (StandingState: high LP, cards even; user, 2026-11-24: "tie that conservative play to a state").
-            if (answer == null && StrategicState == TagRules.BotStrategicState.Conservative &&
+            // Its rule fires only in the Conservative state (StateTuning: [InStates("Conservative")]): checked before the costlier tests.
+            if (answer == null && Rules.Probability(MachinaRules.CheaperAnswerFirst, StrategicState) >= 0.5 &&
                 CheaperAnswer(context, state, botMonsters, enemyMonsters) is string cheapAnswer &&
                 !await FortressWinsNowAsync(botMonsters, enemyMonsters) && !await WeLoseNextTurnAsync() &&
                 Rule(MachinaRules.CheaperAnswerFirst))

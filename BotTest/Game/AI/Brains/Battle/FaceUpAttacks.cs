@@ -64,7 +64,9 @@ namespace BotTest.Game.AI.Brains
                              !SkipPointlessTreebornAttack(battle, option.Attacker, option.Target) &&
                              !MoleLockStopsThisAttack(battle, option.Attacker, option.Target) &&
                              !SaveMoleForBetterAnswer(battle, option.Attacker, option.Target, betterMoleAnswer))
-            .OrderByDescending(option => option.Score)
+            // RULE deck.kill-before-recruiter (Battle/Rules/KillBeforeRecruiter.cs): a kill on a monster that doesn't replace itself first.
+            .OrderByDescending(option => !RewardsBattleDestruction(option.Target) || !Rule(DeckRules.KillBeforeRecruiter) ? 1 : 0)
+            .ThenByDescending(option => option.Score)
             .ThenByDescending(option => option.AttackerPower)
             .FirstOrDefault();
 

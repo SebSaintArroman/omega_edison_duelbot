@@ -255,7 +255,8 @@ function addReason(source, text, validator) {
     return null;
   }
   if (source === "strategic state") {
-    const state = text.match(/^(Base|Threatened|Desperate)\b/);
+    // Any state name (the leading word of the note) gets the tag, so states added later show up without a page change.
+    const state = text.match(/^([A-Z][A-Za-z]*)\b/);
     if (state) {
       const head = currentEntry.querySelector(".entry-head");
       let icon = head.querySelector(".entry-strategic-state");
@@ -265,7 +266,7 @@ function addReason(source, text, validator) {
         head.append(icon);
       }
       icon.dataset.state = state[1].toLowerCase();
-      icon.textContent = { Base: "\u25C7", Threatened: "\u26A0", Desperate: "!" }[state[1]];
+      icon.textContent = state[1];
       icon.title = `Strategic state: ${text}`;
       icon.setAttribute("aria-label", icon.title);
       return icon;

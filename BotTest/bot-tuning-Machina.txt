@@ -60,3 +60,12 @@ MachinaBotBrain.HoldCost.machina.gearframe-search = 3
 # --- MachinaBotBrain
 MachinaBotBrain.HoldCost.machina.cheaper-answer-first = 1.5
 MachinaBotBrain.HoldCost.machina.gearframe-before-fortress = 1.5
+
+# added 2026-11-25 13:44 (new in the code since the file was written)
+# --- MachinaBotBrain
+MachinaBotBrain.HoldCost.machina.cheaper-answer-first@Conservative = 2.25   # a resource hold, in the Conservative state
+MachinaBotBrain.HoldCost.machina.fortress-last-resort@Conservative = 2.25   # a resource hold, in the Conservative state
+MachinaBotBrain.HoldCost.machina.knight-before-costly-fortress@Conservative = 2.25   # a resource hold, in the Conservative state
+MachinaBotBrain.Rule.machina.cheaper-answer-first = 0   # the rule's probability outside the states it's for
+MachinaBotBrain.Rule.machina.cheaper-answer-first@Conservative = 1   # the rule's probability in the Conservative state
+MachinaBotBrain.Rule.machina.fortress-banish-risk@Desperate = 0   # the rule's probability in the Desperate state

@@ -43,6 +43,19 @@ namespace BotTest.Game.AI.Brains
         // Our effects used this turn, "official id:effect description" (Mcts.UsedEffects).
         private readonly HashSet<string> _usedEffects = new();
 
+        /// <summary>Our card's effects used this turn (_usedEffects), one bit per description index (id*16+index), for the rebuild (SearchPosition).</summary>
+        private int UsedEffectMask(OmegaBotWrapper.Struct.DynamicCard card)
+        {
+            if (card.ID <= 0)
+                return 0;
+            string id = (Search.SearchHost.CanonicalId(card.ID) is > 0 and var official ? official : card.ID) + ":";
+            int mask = 0;
+            foreach (string used in _usedEffects)
+                if (used.StartsWith(id, StringComparison.Ordinal) && long.TryParse(used[id.Length..], out long desc) && desc >= 16)
+                    mask |= 1 << (int)(desc & 15);
+            return mask;
+        }
+
         private void MarkEffectUsed(int cardId, long description)
         {
             if (cardId > 0)

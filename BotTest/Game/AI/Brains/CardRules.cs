@@ -182,19 +182,13 @@ namespace BotTest.Game.AI.Brains
                     : TagRules.Tag.None),
 
             // Blackwing - Sirocco the Dawn
-            new(new[] { BlackwingSiroccoTheDawn }, TagRules.Tag.GoodDiscard | TagRules.Tag.DoNotActivate,
-                TagsToDisableWhen: context => context.OwnMonsterIds?.Any(id =>
-                    Search.SearchHost.Is(id, BlackwingVayuTheEmblemOfHonor) ||
-                    Search.SearchHost.Is(id, BlackwingBlizzardTheFarNorth) ||
-                    Search.SearchHost.Is(id, BlackwingBoraTheSpear) ||
-                    Search.SearchHost.Is(id, BlackwingShuraTheBlueFlame) ||
-                    Search.SearchHost.Is(id, BlackwingGaleTheWhirlwind) ||
-                    Search.SearchHost.Is(id, BlackwingKalutTheMoonShadow) ||
-                    Search.SearchHost.Is(id, BlackwingArmedWing) ||
-                    Search.SearchHost.Is(id, BlackwingArmorMaster) ||
-                    Search.SearchHost.Is(id, BlackwingSilverwindTheAscendant)) == true
-                    ? TagRules.Tag.DoNotActivate
-                    : TagRules.Tag.None),
+            // Never without another Blackwing of ours on the field. Never onto their empty field, unless the boost makes one lethal attack;
+            // a one-attack lethal (CardRuleHelpers/SiroccoHelper.cs: no set cards, no Necro Gardna / Honest / Kalut, through or piercing a
+            // monster) always, right before the Battle Phase (user, 2026-11-25: "don't use sirocco onto an empty board unless it gives you a
+            // lethal attack in which case always do"; "only do this right before battle, in the atk position change window").
+            // Its target: our Bora when the boost is that lethal (user, 2026-11-25).
+            new(new[] { BlackwingSiroccoTheDawn }, TagRules.Tag.GoodDiscard | TagRules.Tag.DoNotActivate | TagRules.Tag.ActivateBeforeBattle,
+                TagsToDisableWhen: SiroccoTagsToDisable, AllowedTargets: SiroccoTargets),
 
             // Blackwing - Vayu the Emblem of Honor
             new(new[] { BlackwingVayuTheEmblemOfHonor }, TagRules.Tag.GoodDiscard),
@@ -293,7 +287,7 @@ namespace BotTest.Game.AI.Brains
             new(new[] { AllureOfDarkness }, TagRules.Tag.ActivateAtFirstOpportunity,
                 TagsToDisableWhen: context => context.OwnHand.Any(id =>
                     (Search.SearchHost.Type(id) & 0x1) != 0 && (Search.SearchHost.Attribute(id) & 0x20) != 0) ||
-                    context.StrategicState == TagRules.BotStrategicState.Desperate &&
+                    DeckBotBrain.AllureAsLastCard &&
                     context.OwnHand.Count == 1 && context.OwnHand.Any(id => Search.SearchHost.Is(id, AllureOfDarkness))
                     ? TagRules.Tag.None
                     : TagRules.Tag.ActivateAtFirstOpportunity),

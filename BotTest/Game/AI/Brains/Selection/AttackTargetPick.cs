@@ -29,6 +29,7 @@ namespace BotTest.Game.AI.Brains
                     if (offeredTarget.ID > 0 && offeredTarget.IsFaceup() && IsRecruiter(offeredTarget) && !StealSpeedsUpClock(_declaredAttacker, offeredTarget) &&
                         Rule(DeckRules.NoStealRecruiter))
                         HoldPick(offeredTarget.ID, DeckRules.NoStealRecruiter);
+            HoldRecruiterTargets(context); // Battle/Rules/KillBeforeRecruiter.cs
 
             if (_selectedDefenderCard.HasValue)
             {

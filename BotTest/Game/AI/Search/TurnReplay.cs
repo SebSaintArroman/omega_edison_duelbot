@@ -65,6 +65,11 @@ namespace BotTest.Game.AI.Search
             SearchHost.Available && SearchHost.Cards.Get(code)?.Text is { } text &&
             System.Text.RegularExpressions.Regex.IsMatch(text, @"Special Summon this card", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+        /// <summary>The card's effect changes itself to Defense Position (Lyla, Lightsworn Sorceress).</summary>
+        private static bool TurnsItselfToDefence(int code) =>
+            SearchHost.Available && SearchHost.Cards.Get(code)?.Text is { } text &&
+            System.Text.RegularExpressions.Regex.IsMatch(text, @"change this (face-up )?card to Defense Position", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
         /// <summary>The card's text Special Summons a monster from the graveyard (XX-Saber Faultroll: "target 1 ... in your Graveyard;
         /// Special Summon it").</summary>
         private static bool RevivesFromGrave(int code) =>
@@ -133,6 +138,7 @@ namespace BotTest.Game.AI.Search
                 int turnDraw = v.KnownTop.Count > 0 && ours ? v.KnownTop[0] : 0; // the turn's draw, already on top
                 var mills = new List<int>();
                 ReplayStep? before = null; // our answer just before this checkpoint
+                bool drawPending = false;  // a draw card of ours played whose draw hasn't shown yet
                 foreach (var cp in checkpoints)
                 {
                     var deckNow = Raw(cp.View.OwnDeck);
@@ -143,7 +149,12 @@ namespace BotTest.Game.AI.Search
                     if (before is { Key: var played } && played.Contains("@hand") && SearchActions.KeyCardId(played) is > 0 and var playedId)
                         foreach (int id in hand.Keys.Where(id => Canon(id) == playedId).Take(1).ToList())
                             hand[id]--;
+                    // The last draw card of ours played (its draw may come a pick or two later: Pot of Avarice's targets first).
+                    if (before?.Key is { } playedKey && !playedKey.StartsWith("card") && SearchActions.KeyCardId(playedKey) is > 0 and var playedCard &&
+                        Brains.LineTally.Draws(playedCard))
+                        drawPending = true;
                     before = cp.Answer;
+                    var forcedNow = new Dictionary<int, int>();
                     foreach (var (id, n) in deck)
                         for (int left = n - deckNow.GetValueOrDefault(id); left > 0; left--)
                         {
@@ -153,10 +164,26 @@ namespace BotTest.Game.AI.Search
                                 continue;
                             }
                             if (handNow.GetValueOrDefault(id) > hand.GetValueOrDefault(id))
+                            {
                                 v.ForcedDraws.Add(id);
+                                forcedNow[id] = forcedNow.GetValueOrDefault(id) + 1;
+                            }
                             else if (goneNow.GetValueOrDefault(id) > gone.GetValueOrDefault(id))
                                 mills.Add(id);
                         }
+                    // A draw card that shuffles first (Pot of Avarice: five monsters from the graveyard back into the deck, then two drawn): the
+                    // cards drawn may be ones that were in the graveyard a checkpoint ago, never in the deck we compared (live 2026-11-25, Machina
+                    // #98: Avarice drew Ryko and Card Trooper out of the five it returned; the lines drew at random and none reached the window).
+                    if (drawPending)
+                        foreach (var (id, n) in handNow)
+                            for (int more = n - hand.GetValueOrDefault(id) - forcedNow.GetValueOrDefault(id);
+                                 more > 0 && goneNow.GetValueOrDefault(id) < gone.GetValueOrDefault(id); more--)
+                            {
+                                v.ForcedDraws.Add(id);
+                                drawPending = false;
+                            }
+                    if (forcedNow.Count > 0)
+                        drawPending = false;
                     (deck, hand, gone) = (deckNow, handNow, goneNow);
                 }
                 if (mills.Count > 0)
@@ -631,10 +658,26 @@ namespace BotTest.Game.AI.Search
             var expected = real.Split('|');
             var hand = actual[3].Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
             var known = expected[3].Split(',', StringSplitOptions.RemoveEmptyEntries);
-            if (hand.Count != known.Length + 1 || known.Length != Start.OwnHand.Count ||
+            // The hidden card is the draw: every known card was in the hand as the turn started (not necessarily all of that hand: live
+            // 2026-11-25, Blackwing #39, Burial from a Different Dimension had left it earlier in the Draw Phase, and no line matched).
+            var startHand = Start.OwnHand.Select(Canon).ToList();
+            if (hand.Count != known.Length + 1 ||
+                !known.All(id => int.TryParse(id, out int code) && startHand.Remove(Canon(code))) ||
                 !known.All(hand.Remove))
                 return false;
             actual[3] = expected[3];
+            // The options (a root's key has them, after the last '#'): the hidden card's own (live 2026-11-25: a drawn D.D. Crow offered as
+            // "? <effect of D.D. Crow>" in the Draw Phase, so no line ever matched the window) leave the real list, and the line's drawn card's
+            // leave the line's, unless a known copy in hand offers the same.
+            string Without(string key, Func<string, bool> drop)
+            {
+                int hash = key.LastIndexOf('#');
+                return hash < 0 ? key : key[..(hash + 1)] + string.Join(";", key[(hash + 1)..].Split(';').Where(o => !drop(o)));
+            }
+            string drawn = hand[0];
+            bool drawnIsKnownCopy = known.Contains(drawn);
+            actual[^1] = Without(actual[^1], o => !drawnIsKnownCopy && o.Contains($":{drawn}@hand", StringComparison.Ordinal));
+            expected[^1] = Without(expected[^1], o => o.Contains(":0@hand", StringComparison.Ordinal));
             return actual.SequenceEqual(expected);
         }
 
@@ -691,6 +734,11 @@ namespace BotTest.Game.AI.Search
 
         private static bool IsBattle(int phase) => phase is >= (int)DuelPhase.BattleStart and <= (int)DuelPhase.Battle;
 
+        /// <summary>Their side needs nothing new but graveyard copies of monsters they have face-up now (destroyed in a battle still to come).</summary>
+        private static bool TheirSideAwaitsBattle(Needs needs, SideSummary enemy) =>
+            needs.UpMonsters.Count == 0 && needs.UpSpells.Count == 0 && needs.SetMonsters <= 0 && needs.SetSpells <= 0 &&
+            needs.Grave.All(kv => enemy.Monsters.Count(m => m.FaceUp && Canon(m.Code) == kv.Key) >= kv.Value);
+
         /// <summary>
         /// Their answer toward the next checkpoint: (packet, null), or (null, null) to let the quick policy answer, or (null, why) when a
         /// main / battle prompt of theirs has no move that gets there (the line can't follow the real game).
@@ -716,8 +764,11 @@ namespace BotTest.Game.AI.Search
                     // normal summoned Infernal Prodigy and then had no Normal Summon left for the real Raiza).
                     var found = Pick(MainAction.SpSummon, c => needs.UpMonsters.GetValueOrDefault(c) > 0)
                                 ?? Pick(MainAction.Activate, c => needs.UpMonsters.GetValueOrDefault(c) > 0 && SummonsItself(c)) // an effect that summons itself
-                                ?? Pick(MainAction.Summon, c => needs.UpMonsters.GetValueOrDefault(c) > 0)
+                                // A flip summon before a Normal Summon: it keeps the Normal Summon too, and their set copy is the one that turns
+                                // up (live 2026-11-25, Blackwing #58: their set XX-Saber Darksoul was flipped; the replay normal summoned a Darksoul
+                                // from hand and kept a set monster the real game no longer had).
                                 ?? Pick(MainAction.Repos, c => needs.UpMonsters.GetValueOrDefault(c) > 0) // a flip summon
+                                ?? Pick(MainAction.Summon, c => needs.UpMonsters.GetValueOrDefault(c) > 0)
                                 // An Extra Deck monster to appear that nothing summons directly: a graveyard effect that brings it out (Vayu's, seen
                                 // 2026-11-18: Blackwing Armed Wing).
                                 ?? (needs.UpMonsters.Keys.Any(ExtraDeckMonster) && options.FirstOrDefault(o => o.Key.StartsWith($"{(int)MainAction.Activate}:") && o.Key.Contains("@0.16.")) is { } fromGrave
@@ -731,6 +782,10 @@ namespace BotTest.Game.AI.Search
                                 ?? Pick(MainAction.Activate, c => needs.UpSpells.GetValueOrDefault(c) > 0 || needs.Grave.GetValueOrDefault(c) > 0)
                                 ?? (needs.SetMonsters > 0 ? Pick(MainAction.SetMonster, c => !needs.Any(c)) ?? Pick(MainAction.SetMonster, _ => true) : null)
                                 ?? (needs.SetSpells > 0 ? Pick(MainAction.SetSpell, c => c == SearchView.InertCard) ?? Pick(MainAction.SetSpell, c => !needs.Any(c)) : null)
+                                // A monster to go to defence by its own effect (Lyla, Lightsworn Sorceress destroying a spell/trap of ours): the
+                                // effect, not a plain position change (live 2026-11-25, Blackwing #19: Lyla's effect destroyed our set Icarus Attack;
+                                // the replay turned her to defence and our Icarus stayed).
+                                ?? Pick(MainAction.Activate, c => needs.Defense.GetValueOrDefault(c) > 0 && TurnsItselfToDefence(c))
                                 ?? WrongPosition();
                     // A face-up monster in the wrong position: only the copy that needs it (seen 2026-11-18: with two Machina Gearframes, the
                     // replay turned the one already in attack position to defence).
@@ -773,7 +828,12 @@ namespace BotTest.Game.AI.Search
                     // The card the real chain had on it first (ChainCard: Faultroll's revive, not another monster's effect).
                     bool FieldEffect(SearchActions.Choice<IdleCmdResponse> o) =>
                         o.Key.StartsWith($"{(int)MainAction.Activate}:") && (o.Key.Contains("@0.4.") || o.Key.Contains("@0.8."));
-                    if (same && cp.State == BotState.SelectChain && (IsBattle(cp.Phase) ? IsBattle(host.Phase) : cp.Phase == host.Phase) &&
+                    // ...also when all the line still lacks is graveyard cards out of their deck, their hand no smaller: the effect's cost milled them
+                    // (live 2026-11-25: their Card Trooper sent 3 cards at the start of Main Phase 1; the replay waited for them and missed).
+                    bool onlyMilled = !same && needs.Grave.Count > 0 && needs.UpMonsters.Count == 0 && needs.UpSpells.Count == 0 &&
+                        needs.Defense.Count == 0 && needs.Attack.Count == 0 && needs.SetMonsters <= 0 && needs.SetSpells <= 0 &&
+                        needs.Placed.Keys.All(needs.Grave.ContainsKey) && enemy.Hand == cp.View.EnemyHandCount;
+                    if ((same || onlyMilled) && cp.State == BotState.SelectChain && (IsBattle(cp.Phase) ? IsBattle(host.Phase) : cp.Phase == host.Phase) &&
                         (options.FirstOrDefault(o => cp.ChainCard > 0 && FieldEffect(o) && Canon(SearchActions.KeyCardId(o.Key)) == Canon(cp.ChainCard))
                          ?? options.FirstOrDefault(FieldEffect)) is { } effect)
                         return (SearchActions.Packet(effect.Response), null);
@@ -836,6 +896,19 @@ namespace BotTest.Game.AI.Search
                         attacked[code] = attacked.GetValueOrDefault(code) + 1;
                         return (SearchActions.Packet(declared.Response), null);
                     }
+                    // Their side is the checkpoint's (bar monsters of theirs the battle sends to the graveyard) but ours isn't yet, and our next
+                    // prompt is in this Battle Phase: what's left is an attack's outcome on our side (live 2026-11-25, Machina #119: their attack
+                    // flipped our set Ryko and its target pick came next; the line's Ryko was still face-down, so the boards never "matched" and
+                    // the replay stood still). Their biggest attacker that hasn't attacked yet declares it.
+                    if (!matched && cp.State is BotState.SelectChain or BotState.SelectCard && IsBattle(cp.Phase) && IsBattle(host.Phase) &&
+                        TheirSideAwaitsBattle(needs, enemy) &&
+                        options.Where(o => o.Key.StartsWith("attack:") && attacked.GetValueOrDefault(Canon(SearchActions.KeyCardId(o.Key))) == 0)
+                               .OrderByDescending(o => SearchActions.AttackerFor(battle, o.Response.Index).Attack).FirstOrDefault() is { } outcome)
+                    {
+                        int code = Canon(SearchActions.KeyCardId(outcome.Key));
+                        attacked[code] = attacked.GetValueOrDefault(code) + 1;
+                        return (SearchActions.Packet(outcome.Response), null);
+                    }
                     string? phaseKey =(DuelPhase)(matched ? PhaseAhead(next, host.Phase) : cp.Phase) switch
                     {
                         DuelPhase.Main2 => "main2",
@@ -867,7 +940,8 @@ namespace BotTest.Game.AI.Search
                     bool fieldNeeds = needs.UpMonsters.Count > 0 || needs.UpSpells.Count > 0 || needs.SetMonsters > 0 || needs.SetSpells > 0;
                     for (int i = 0; i < cards.Length; i++)
                         if (needs.Any(Canon(cards[i].ID)) && !DestroyedByUs(cards[i], needs, next) && !SummonedInstead(cards[i], needs, host) &&
-                            !AlreadyUp(cards[i], needs) && !(fieldNeeds && host.Phase < cp.Phase && SetForGraveOnly(cards[i], needs)))
+                            !AlreadyUp(cards[i], needs) && !(fieldNeeds && host.Phase < cp.Phase && SetForGraveOnly(cards[i], needs)) &&
+                            !FieldMonsterOnlyToGrave(cards[i], needs))
                             return (BitConverter.GetBytes(i), null);
                     // Their trigger that changes only our side (Raiza's bounce): a face-up card of theirs on the field, not a card from their hand
                     // or a set one (seen 2026-11-18: their Mystical Space Typhoon chained from hand to their own Pot of Greed in the replay).
@@ -879,6 +953,10 @@ namespace BotTest.Game.AI.Search
                 }
                 case SelectEffectYnData:
                     return (new[] { (byte)(TheirEffectOnUs(host, cp, needs) || OwnTrigger(host, cp) ? 1 : 0) }, null);
+                // Their number for a mill cost (Card Trooper's 1-3): as many as the graveyard cards the checkpoint still needs.
+                case AnnounceNumberData announce when needs.Grave.Values.Sum() is int milling and > 0 &&
+                                                      Array.IndexOf(announce.SelectableOptions ?? Array.Empty<int>(), milling) is int at and >= 0:
+                    return (BitConverter.GetBytes(at), null);
                 case SelectPositionData position:
                 {
                     int code = Canon(position.CardID);
@@ -909,6 +987,20 @@ namespace BotTest.Game.AI.Search
             int code = Canon(card.ID);
             return card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && FaceUp(card.Position) &&
                    needs.Grave.GetValueOrDefault(code) <= 0 && needs.UpSpells.GetValueOrDefault(code) <= 0;
+        }
+
+        /// <summary>
+        /// A face-up monster of theirs whose only need is the graveyard, its effect not one that sends itself there (a tribute or send of "this
+        /// card"): using the effect doesn't get it there, a destruction does (live 2026-11-25, Machina #83: the replay chained Goyo Guardian's
+        /// take-control trigger because Goyo was to reach the graveyard; our Machina Fortress's destroy put it there in the real game).
+        /// </summary>
+        private static bool FieldMonsterOnlyToGrave(DynamicCard card, Needs needs)
+        {
+            int code = Canon(card.ID);
+            return card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone && FaceUp(card.Position) &&
+                   needs.Grave.GetValueOrDefault(code) > 0 && needs.UpMonsters.GetValueOrDefault(code) <= 0 && needs.UpSpells.GetValueOrDefault(code) <= 0 &&
+                   !(SearchHost.Available && SearchHost.Cards.Get(code)?.Text is { } text &&
+                     System.Text.RegularExpressions.Regex.IsMatch(text, @"(tribute|send) this card", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
         }
 
         /// <summary>A set spell/trap of theirs the checkpoint only has in the graveyard: before an earlier phase's summons and sets are made, it

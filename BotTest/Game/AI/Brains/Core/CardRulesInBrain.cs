@@ -191,8 +191,12 @@ namespace BotTest.Game.AI.Brains
             if (cards.Length > 0 && cards.All(card => card.CurrentCoordinates.Controller == 0 && card.IsCode(BlackwingSiroccoTheDawn)))
             {
                 var ownMonsters = await GetBotMonsterCardsAsync();
-                var ruleContext = new CardRuleRegistry.Context(Array.Empty<int>(), Array.Empty<int>(), 0, 0, 0, false,
-                    OwnMonsterIds: ownMonsters.Select(monster => monster.ID).ToArray());
+                var theirMonsters = await GetEnemyMonsterCardsAsync();
+                var ruleContext = new CardRuleRegistry.Context(Array.Empty<int>(), Array.Empty<int>(), 0, 0,
+                    await CurrentField.GetBotLifePoints(isOwnSide: false), false,
+                    OwnMonsterIds: ownMonsters.Select(monster => monster.ID).ToArray(),
+                    OpponentMonsterIds: theirMonsters.Select(monster => monster.ID).ToArray());
+                // (Its one-attack lethal is used right before the Battle Phase, not in this window: user, 2026-11-25.)
                 if ((CardRuleRegistry.TagsFor(BlackwingSiroccoTheDawn, ruleContext) & TagRules.Tag.DoNotActivate) != 0)
                     return -1;
             }
@@ -248,6 +252,50 @@ namespace BotTest.Game.AI.Brains
 
             if (IsSearchTwin)
                 return null;
+            // ActivateOnSummon in the monster's own summon window: the search's lines are made to chain it there (SearchMoveRules.ChainOptions),
+            // so the real game does too, or it leaves every line (live 2026-11-25, Machina #012: the lines milled with Card Trooper in its
+            // summon window; that forced step isn't a tree decision, so the plan lookup landed on a later window's "don't chain", the real
+            // game passed, and at #013 the tree had no node for the board: a DESYNC. User: "what happened there?! fix it").
+            if (ourTurn && LastMainMove.Turn == context.Header.CurrentTurn &&
+                LastMainMove.Action is MainAction.Summon or MainAction.SpSummon or MainAction.Repos)
+            {
+                int summoned = Array.FindIndex(cards, card => card.CurrentCoordinates is { Controller: 0, Location: (byte)CardLocation.MonsterZone } &&
+                    card.ID > 0 && SearchHost.Is(card.ID, LastMainMove.CardId) && !WasCardActivatedThisTurn(card.ID));
+                if (summoned >= 0)
+                {
+                    var deck = (await CurrentField.GetBotField()).OwnSide.Main ?? Array.Empty<int>();
+                    var summonContext = new CardRuleRegistry.Context(deck, Array.Empty<int>(), 0, 0, 0, false, IsOurTurn: true);
+                    if ((CardRuleRegistry.TagsFor(cards[summoned].ID, summonContext) & TagRules.Tag.ActivateOnSummon) != 0)
+                    {
+                        MarkStapleActivated(cards[summoned].ID); // its follow-up prompts (Card Trooper's number) know it's ours
+                        return Required(summoned, "activate on summon, as the search's lines do");
+                    }
+                }
+            }
+            // Only D.D. Crow on offer, none of its reasons holding (CrowMayActivate) and no chain link of theirs open: pass now, no
+            // search (user, 2026-11-25: "the AI is taking a while to pass on these chains ... the crow rules should make it unusable";
+            // the search's lines drop held Crow anyway and ended on "only pass allowed by the rules" after ~10 s per window).
+            // An open link of theirs (Vayu, Plaguespreader, a graveyard target) still goes to the brain and the search.
+            if (brainIndex == -1 && context.Header.LastChainPlayer != 1 && cards.Length > 0 &&
+                cards.All(card => card.CurrentCoordinates.Controller == 0 && card.IsCode(DDCrow)))
+            {
+                var field = await CurrentField.GetBotField();
+                var theirHand = field.EnemySide.Hand ?? Array.Empty<int>();
+                var ownMonsters = await GetBotMonsterCardsAsync();
+                var crowContext = new CardRuleRegistry.Context(Array.Empty<int>(), Array.Empty<int>(), theirHand.Length, 0, 0, false,
+                    OwnGrave: field.OwnSide.Grave ?? Array.Empty<int>(),
+                    OpponentGrave: field.EnemySide.Grave ?? Array.Empty<int>(),
+                    OpponentMonsterIds: (await GetEnemyMonsterCardsAsync()).Where(monster => monster.ID > 0).Select(monster => monster.ID).ToArray(),
+                    OpponentHand: theirHand.Where(id => id > 0).ToArray(),
+                    UnknownOpponentHandCards: theirHand.Any(id => id <= 0),
+                    IsOurTurn: ourTurn,
+                    OurFaceUpAttackers: ownMonsters.Count(monster => monster.IsFaceup() && monster.IsAttack()));
+                if ((CardRuleRegistry.TagsFor(DDCrow, crowContext) & TagRules.Tag.DoNotActivate) != 0)
+                {
+                    context.Bot.LogNote("shared chain rules: only D.D. Crow on offer and none of its reasons holds: pass, no search");
+                    return -1;
+                }
+            }
             var boosts = cards.Select((card, index) => (Card: card, Index: index))
                 .Where(offer => offer.Card.CurrentCoordinates.Controller == 0 &&
                     CardRules.IsAttackBoost(offer.Card.ID, offer.Card.CurrentCoordinates.Location)).ToList();

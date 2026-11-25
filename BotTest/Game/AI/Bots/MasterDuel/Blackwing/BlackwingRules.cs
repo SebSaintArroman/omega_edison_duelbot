@@ -24,7 +24,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         public const string BlizzardRevive = "blackwing.blizzard-revive";
         /// <summary>Icarus Attack is set only with a Winged Beast of ours on the field to tribute, one copy at a time.</summary>
         public const string IcarusSetNeedsWing = "blackwing.icarus-set-needs-wing";
-        /// <summary>Icarus Attack isn't fired in our own Main Phase 2: it waits for their turn (their attack, removal, End Phase).</summary>
+        /// <summary>Icarus Attack isn't fired in our own Main Phase 2: it waits for their turn (their attack, removal, End Phase). User, 2026-11-11
+        /// (fired at Gorz + token in Main Phase 2); a hold since 2026-11-25 (was a search ban): worth breaking for a 2-for-3 like Vayu over Lyla first.</summary>
+        [HoldCost(HoldCosts.Strong)] // user, 2026-11-25: "make mp2 icarus a heavy hold"
         public const string IcarusWaitsForTheirTurn = "blackwing.icarus-waits-for-their-turn";
         public const string FreeBody = "blackwing.free-body";
         public const string GaleHalve = "blackwing.gale-halve";
@@ -35,7 +37,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.Blackwing
         public const string IcarusPush = "blackwing.icarus-push";
         public const string KalutBoost = "blackwing.kalut-boost";
         public const string SiroccoBoost = "blackwing.sirocco-boost";
-        /// <summary>Sirocco's boost with nothing to gain: it's the only Blackwing, or their field has no monster (user, 2026-11-16 / 2026-11-17).</summary>
+        /// <summary>Sirocco's boost with nothing to gain: it's the only Blackwing, or their field has no monster and the boost isn't a one-attack lethal (user, 2026-11-16 / 2026-11-17 / 2026-11-25).</summary>
         [HoldCost(HoldCosts.Strong)]
         public const string SiroccoBoostPointless = "blackwing.sirocco-boost-pointless";
         /// <summary>Sirocco's boost with Honest suspected in their hand and a LIGHT (or face-down) monster of theirs out (user, 2026-11-17).</summary>

@@ -62,7 +62,7 @@ BlackwingBotBrain.HoldCost.blackwing.icarus-end-phase = 1.5
 BlackwingBotBrain.HoldCost.blackwing.icarus-free-tribute = 1.5
 BlackwingBotBrain.HoldCost.blackwing.icarus-push = 1.5
 BlackwingBotBrain.HoldCost.blackwing.icarus-set-needs-wing = 1.5
-BlackwingBotBrain.HoldCost.blackwing.icarus-waits-for-their-turn = 1.5
+BlackwingBotBrain.HoldCost.blackwing.icarus-waits-for-their-turn = 3
 BlackwingBotBrain.HoldCost.blackwing.kalut-boost = 1.5
 BlackwingBotBrain.HoldCost.blackwing.kalut-stays-in-hand = 2   # user, 2026-11-19
 BlackwingBotBrain.HoldCost.blackwing.necro-for-last-moment = 1.5
@@ -99,3 +99,7 @@ BlackwingBotBrain.WhirlwindNextSummonValue = 0.5   # Black Whirlwind ours and tr
 # --- BlackwingBotBrain
 BlackwingBotBrain.HoldCost.blackwing.summon-with-whirlwind-in-hand = 2
 BlackwingBotBrain.HoldCost.blackwing.no-summon-with-whirlwind-in-hand = 2
+
+# added 2026-11-25 12:39 (new in the code since the file was written)
+# --- BlackwingBotBrain
+BlackwingBotBrain.HoldCost.blackwing.shura-attacks-first = 1.5

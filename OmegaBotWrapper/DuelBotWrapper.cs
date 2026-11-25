@@ -129,8 +129,14 @@ namespace OmegaBotWrapper
         /// </summary>
         public static int HeartbeatDelayMs { get; set; } = Const.HEARTBEAT_DELAY;
 
+        /// <summary>Called as a bot's run begins, inside that run's flow: what it sets in async-local state reaches everything the bot then
+        /// runs (the brain's per-state parameters keep each bot's strategic state there). Null: nobody listening.</summary>
+        public static Action<DuelBotWrapper>? FlowStarting { get; set; }
+
         public async Task Start(CancellationToken ct = default)
         {
+            try { FlowStarting?.Invoke(this); }
+            catch { /* never stops the bot */ }
             DuelLog = DuelLogOptions.Enabled ? new DuelLogger(this) : null;
             try
             {
