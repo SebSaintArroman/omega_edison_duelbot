@@ -2819,6 +2819,7 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
             // Icarus Attack on our turn: clear two cards before attacking when that pushes damage through, tributing our
             // least useful Blackwing (2-for-2).
             if (battleAhead && TryGetActivable(state, CardId.IcarusAttack, out var icarus) &&
+                await DestructionNegatedAsync(context, CardId.IcarusAttack) == null &&
                 enemyMonsters.Count + enemySpells.Count >= 2 && IcarusTribute(botMonsters) is { ID: > 0 } fodder &&
                 botMonsters.Count(card => card.IsFaceup() && card.IsAttack()) >= 2 && Rule(BlackwingRules.IcarusPush))
             {
@@ -3209,7 +3210,8 @@ place == BotTest.Game.AI.Brains.CardPlace.Hand && Search.SearchHost.Is(code, Car
             }
 
             // Icarus Attack on their turn: free when our Blackwing dies anyway (attacked by a bigger monster).
-            if (!botTurn && Index(CardId.IcarusAttack) is int icarus and >= 0)
+            // Never into Stardust Dragon: it negates the destroy and the tribute is lost (user, 2026-11-25; card rule in CardRules.cs).
+            if (!botTurn && Index(CardId.IcarusAttack) is int icarus and >= 0 && await DestructionNegatedAsync(context, CardId.IcarusAttack) == null)
             {
                 var enemyCards = (await GetEnemyMonsterCardsAsync()).Count + (await GetEnemySpellCardsAsync()).Count;
                 // Their chain targets one of our Blackwings: tribute that one, it's going anyway (user, 2026-11-11).

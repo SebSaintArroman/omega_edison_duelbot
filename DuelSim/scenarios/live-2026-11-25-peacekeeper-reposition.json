@@ -1,0 +1,24 @@
+// Live 2026-11-25 15:27 Machina Control #016 (turn 6, battle): Machina Peacekeeper Normal Summoned this turn in attack position. The
+// search's Main Phase 2 line was "change position of Machina Peacekeeper", which the game forbids (summoned this turn). With thisTurn
+// set, "change position" must never appear in a line.
+{
+  "deck": "MachinaControl",
+  "opponent": "MachinaControl",
+  "lp": [3700, 4000],
+  "turn": 6,
+  "phase": "battle",
+  "decision": "battle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 78349123, "zone": 2, "thisTurn": true } ],
+    "spells": [ { "id": 70342110, "zone": 1, "set": true } ],
+    "hand": [ 33420078, 5220687, 5220687, 58054262, 3659803 ],
+    "grave": [ 55144522, 21502796, 70342110 ]
+  },
+  "theirs": {
+    "monsters": [ { "id": 15341822, "zone": 1, "def": true }, { "id": 40044918, "zone": 2 }, { "id": 83965310, "zone": 3 }, { "id": 15341822, "zone": 4, "def": true } ],
+    "spells": [ { "zone": 0, "set": true }, { "zone": 1, "set": true }, { "zone": 3, "set": true } ],
+    "handCount": 0,
+    "grave": [ 53582587, 70342110, 94886282, 21502796 ]
+  }
+}

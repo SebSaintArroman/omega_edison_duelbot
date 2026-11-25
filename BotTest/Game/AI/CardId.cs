@@ -158,6 +158,7 @@
         public const int ThoughtRulerArchfiend = 70780151;
         public const int TorrentialTribute = 53582587;
         public const int TrapDustshoot = 64697231;
+        public const int TytannialPrincessOfCamellias = 11819616;
         public const int TrapStun = 59616123;
         public const int TreebornFrog = 12538374;
         public const int Unifrog = 56052205;

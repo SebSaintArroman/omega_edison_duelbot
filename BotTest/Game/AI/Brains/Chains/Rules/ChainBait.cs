@@ -150,7 +150,9 @@ namespace BotTest.Game.AI.Brains
             var options = b.Options;
             for (int i = 0; i < options.Length; i++)
             {
-                if (!b.IsSetBait(options[i]) && !b.IsCostlyDoomed(options[i]))
+                // UsableBait, not IsSetBait: a targeted MST still needs a target of theirs, never one of ours (user, 2026-11-25:
+                // Ryko targeted our set MST, they had no spells/traps, and MST was chained onto our own Black Whirlwind).
+                if (!b.UsableBait(options[i]) && !b.IsCostlyDoomed(options[i]))
                     continue;
                 var at = options[i].CurrentCoordinates;
                 var attacker = b.EnemyCards.FirstOrDefault(card =>

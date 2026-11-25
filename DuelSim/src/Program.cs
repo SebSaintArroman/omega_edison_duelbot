@@ -403,6 +403,9 @@ public static class Program
                     benchOpponent = loaded.Opponent;
                     usedEffects = loaded.UsedEffects;
                     console.WriteLine($"scenario: {loaded.Deck} vs {loaded.Opponent}, {root}");
+                    // --dump-lua FILE: the rebuilt position's puzzle script, to check what the rebuild carries over.
+                    if (args.Contains("--dump-lua"))
+                        File.WriteAllText(Option2(args, "--dump-lua", "position.lua"), view.Determinize(new Random(seed)).ToLua(DuelHost.PuzzleFlags));
                 }
                 else
                 {

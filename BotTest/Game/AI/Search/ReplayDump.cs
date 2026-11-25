@@ -174,6 +174,7 @@ namespace BotTest.Game.AI.Search
             public List<CardDto> EnemySpells { get; set; } = new();
             public Dictionary<int, List<double[]>> EnemySetMonsterOdds { get; set; } = new();
             public bool NormalSummonUsed { get; set; }
+            public bool EnemyNormalSummonUsed { get; set; }
             public bool BattlePhaseDone { get; set; }
             public bool FirstTurnOfDuel { get; set; }
             public int RealTurn { get; set; } = 1;
@@ -210,7 +211,7 @@ namespace BotTest.Game.AI.Search
                 OwnGraveImproper = new(v.OwnGraveImproper), EnemyGraveImproper = new(v.EnemyGraveImproper),
                 EnemyMonsters = v.EnemyMonsters.Select(CardDto.Of).ToList(), EnemySpells = v.EnemySpells.Select(CardDto.Of).ToList(),
                 EnemySetMonsterOdds = v.EnemySetMonsterOdds.ToDictionary(kv => kv.Key, kv => kv.Value.Select(o => new[] { o.Id, o.Chance }).ToList()),
-                NormalSummonUsed = v.NormalSummonUsed, BattlePhaseDone = v.BattlePhaseDone, FirstTurnOfDuel = v.FirstTurnOfDuel, RealTurn = v.RealTurn,
+                NormalSummonUsed = v.NormalSummonUsed, EnemyNormalSummonUsed = v.EnemyNormalSummonUsed, BattlePhaseDone = v.BattlePhaseDone, FirstTurnOfDuel = v.FirstTurnOfDuel, RealTurn = v.RealTurn,
                 StrategicState = v.StrategicState, OpponentSummonedAndAttackedWithThreatTurn = v.OpponentSummonedAndAttackedWithThreatTurn,
                 InBattlePhase = v.InBattlePhase, OnlyAttackerZone = v.OnlyAttackerZone, Main2Summoned = v.Main2Summoned.ToList(),
                 ActivatedThisTurn = v.ActivatedThisTurn.ToList(), LylaEffectUsed = v.LylaEffectUsed, DrawsAtStart = v.DrawsAtStart,
@@ -227,7 +228,7 @@ namespace BotTest.Game.AI.Search
                     AttackInProgress = Attack is { Length: 5 } a
                         ? new SearchView.BattleAttack(a[0], new SearchView.BattleCard(a[1], a[2]), a[4] < 0 ? null : new SearchView.BattleCard(a[3], a[4]))
                         : null,
-                    EnemyHandCount = EnemyHandCount, EnemyExtraCount = EnemyExtraCount, NormalSummonUsed = NormalSummonUsed,
+                    EnemyHandCount = EnemyHandCount, EnemyExtraCount = EnemyExtraCount, NormalSummonUsed = NormalSummonUsed, EnemyNormalSummonUsed = EnemyNormalSummonUsed,
                     BattlePhaseDone = BattlePhaseDone, FirstTurnOfDuel = FirstTurnOfDuel, RealTurn = RealTurn, InBattlePhase = InBattlePhase,
                     StrategicState = StrategicState, OpponentSummonedAndAttackedWithThreatTurn = OpponentSummonedAndAttackedWithThreatTurn,
                     DrawsAtStart = DrawsAtStart, SkipTurns = SkipTurns, BlankNextDraw = BlankNextDraw, OnlyAttackerZone = OnlyAttackerZone,

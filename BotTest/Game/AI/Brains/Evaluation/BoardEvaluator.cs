@@ -149,7 +149,9 @@ namespace BotTest.Game.AI.Brains
                 pressuring ? ourGraveValue + gravePairs : 0);
         }
 
-        internal double HandCardValue(int code, int side)
+        /// <param name="holderMonsters">Monsters on the holder's field, for a hand correction that lifts when it can be Tribute Summoned
+        /// (CardRuleRegistry.TributableHandCorrection); null: unknown, the correction applies.</param>
+        internal double HandCardValue(int code, int side, int? holderMonsters = null, bool normalSummonAvailable = true)
         {
             // Unknown opponent cards already count as one each. Keep their value at one until we know the card.
             if (code <= 0 || code == SearchView.InertCard || SearchHost.Cards.Get(code) is not { } printed)
@@ -172,7 +174,8 @@ namespace BotTest.Game.AI.Brains
                     _valuing.Remove(code);
                 }
             }
-            return HandCardBase + HeldEffectWeight * Taper(value.Held + atk / HandAtkScale) + Bonus(code, CardPlace.Hand, side);
+            double conditional = CardRuleRegistry.TributableHandCorrection(code, holderMonsters ?? 0, normalSummonAvailable: holderMonsters != null && normalSummonAvailable);
+            return HandCardBase + HeldEffectWeight * Taper(Math.Max(0, value.Held + conditional) + atk / HandAtkScale) + Bonus(code, CardPlace.Hand, side);
         }
 
         /// <summary>Our zones at the decision (the search's view): what a held search / Special Summon / send can fetch "at that moment".</summary>
@@ -283,8 +286,10 @@ namespace BotTest.Game.AI.Brains
         }
 
 
+        // Their hand is scored with their field: a card whose hand correction lifts when its holder can Tribute Summon it (Tytannial) sees
+        // their monster count and whether their Normal Summon is still available (SideSummary.NormalSummonAvailable).
         private double HandAdjustment(SideSummary side, int player) =>
-            side.HandCodes.Sum(code => HandCardValue(code, player) - 1);
+            side.HandCodes.Sum(code => HandCardValue(code, player, side.Monsters.Count, side.NormalSummonAvailable) - 1);
 
         private double SetTrapAdjustment(SideSummary side, int player) =>
             side.SpellCodes.Where(card => !card.FaceUp && IsKnownTrap(card.Code))
@@ -844,7 +849,10 @@ namespace BotTest.Game.AI.Brains
                 if (left.Remove(m.Code))
                 {
                     var card = _values.Get(m.Code, 0);
-                    discount += (1 - Main2BoardShare) * (MonsterBase + AtkValue(Power(m)) + (m.Negated ? 0 : FieldEffectWeight * Taper(card.Field)));
+                    // On its better stat, whatever the position: the discount is the same either way, so the position's own stat difference
+                    // counts in full (user, 2026-11-25: Dark End Dragon's 2100 ATK vs 1600 DEF "is still 500 point difference, that's quite
+                    // significant"; discounted on its position's stat, a quarter of it was left and defence tied).
+                    discount += (1 - Main2BoardShare) * (MonsterBase + AtkValue(Math.Max(m.Attack, m.Defense * DefenceShare)) + (m.Negated ? 0 : FieldEffectWeight * Taper(card.Field)));
                 }
             return discount;
         }
@@ -1067,8 +1075,9 @@ namespace BotTest.Game.AI.Brains
 
         /// <summary>Mirror Force springing now (on our attack): our attack-position monsters net of the trap they spend, by its chance now.
         /// Floor: never below 0 (a cheap attacker just risks little) unless we threaten lethal.</summary>
-        public double MirrorExposure(SideSummary ours, SideSummary theirs) =>
-            ChanceWith(MirrorForceChance, UnknownSetsIn(theirs)) *
+        /// <param name="read">The line's own read so far (MirrorReadResidual per attack worth a Mirror Force their sets stayed down through).</param>
+        public double MirrorExposure(SideSummary ours, SideSummary theirs, double read = 1) =>
+            ChanceWith(MirrorForceChance * read, UnknownSetsIn(theirs)) *
             Floor(ours.Monsters.Where(m => m.FaceUp && m.AttackPosition).Sum(m => MonsterLoss(m, 0)) - WipeTrapCost, ours, theirs);
 
         /// <summary>Single-card removal and Icarus Attack count at this share of what Mirror Force / Torrential count (user, 2026-11-15: "~25%").</summary>
@@ -1192,6 +1201,14 @@ namespace BotTest.Game.AI.Brains
         public double OversetPressFrom { get; init; } = 1;
         /// <summary>A face-up monster of theirs at least this big is a threat worth a trap (DeckBotBrain.StrongMonsterAttack).</summary>
         public int StrongMonsterAttack { get; init; } = 2000;
+
+        /// <summary>
+        /// Within a line, each attack of ours worth a Mirror Force for them (a strong attacker, or two or more attack-position monsters)
+        /// that their set cards stay down through scales the Mirror Force chance for the line's later attacks by this (the brain's
+        /// EvidenceResidual; user, 2026-11-25: "If I haven't used mirror force on the first attack I'm significantly less likely to use it
+        /// on a later attack. the trap reads should get adjusted with each attack").
+        /// </summary>
+        public double MirrorReadResidual { get; init; } = 1;
 
         /// <summary>The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).</summary>
         [Tunable("The Heavy Storm charge grows with the number of our set cards: x max(1, n x this) (CSV S2).")]

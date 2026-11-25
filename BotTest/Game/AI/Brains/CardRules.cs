@@ -150,6 +150,14 @@ namespace BotTest.Game.AI.Brains
             // removal-only bouncer bonus (user, 2026-11-13: "mole should be a general bonus").
             new(new[] { NeoSpacianGrandMole }, TagRules.Tag.None, Correction: new(General: 4)),
 
+            // Tytannial, Princess of Camellias
+            // Correction: in hand only, a large negative one: a Level 8 that needs two tributes is a weak card to hold, so Trap Dustshoot
+            // doesn't return it (user, 2026-11-25: "give tytannial a large negative modifier when in hand only, so that it doesn't get
+            // returned in trap dustshoot picks"). Its revealed-hand score was 10.1 against 7.7 for the next card (Debris Dragon).
+            // Not while its holder can Tribute Summon it (normal summon available, two monsters to tribute): then it keeps its full value
+            // (user, 2026-11-25).
+            new(new[] { TytannialPrincessOfCamellias }, TagRules.Tag.None, Correction: new(Hand: -8, HandUnlessTributable: true)),
+
             // Archlord Kristya
             // Correction: stops every Special Summon (ours included) on top of a 2800 body (user, 2026-11-13: "increase the
             // threat rating of archlord krystia by something huge - maybe 5"; Solemn should have stopped it on its summon).
@@ -220,7 +228,11 @@ namespace BotTest.Game.AI.Brains
                     : TagRules.Tag.None),
 
             // Dark Armed Dragon
-            new(new[] { DarkArmedDragon }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ActivateOnSummon | TagRules.Tag.NeverSummonInDefence,
+            // Its effect never while Stardust Dragon is on their field (it negates the destroy): no on-summon activation either. Still
+            // summoned, it can attack Stardust (user, 2026-11-25: "it shouldn't use its effect at all while stardust is on the field
+            // (that's not to say don't summon it though - it can attack stardust). add this all as hard card rules").
+            new(new[] { DarkArmedDragon }, TagRules.Tag.AnswersAnyThreat | TagRules.Tag.ActivateOnSummon | TagRules.Tag.NeverSummonInDefence | TagRules.Tag.DoNotActivate,
+                TagsToDisableWhen: context => context.StardustUp ? TagRules.Tag.ActivateOnSummon : TagRules.Tag.DoNotActivate,
                 TargetPriority: (summonWindow, hint, card) => summonWindow && hint == DHint.DESTROY &&
                     (card.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone ||
                      card.CurrentCoordinates.Location == (byte)CardLocation.SpellZone &&
@@ -235,6 +247,12 @@ namespace BotTest.Game.AI.Brains
 
             // Chaos Sorcerer
             new(new[] { ChaosSorcerer }, TagRules.Tag.AnswersAnyThreat),
+
+            // Icarus Attack
+            // Never while Stardust Dragon is on their field: it negates the destroy, and the tribute is lost with it (user, 2026-11-25:
+            // Icarus went off into Stardust, which negated it, Vayu tributed for nothing).
+            new(new[] { IcarusAttack }, TagRules.Tag.DoNotActivate,
+                TagsToDisableWhen: context => context.StardustUp ? TagRules.Tag.None : TagRules.Tag.DoNotActivate),
 
             // Dimensional Prison
             // This tag does not apply to Thought Ruler Archfiend.

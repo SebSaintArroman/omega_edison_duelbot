@@ -279,6 +279,16 @@ namespace BotTest.Game.AI.Brains
                 }
             }
 
+            // No target on their card: the graveyard cards' own "targeted by" lists (user, 2026-11-25: Debris Dragon on Dandylion).
+            if ((await TheirGraveTargetsAsync(context.Bot)).FirstOrDefault(-1) is int marked and >= 0)
+            {
+                if (!Rule(DeckRules.DDCrowChain))
+                    return null;
+                _crowTarget = (context.Header.CurrentTurn, marked, theirGrave[marked]);
+                StapleNote(context, $"chain D.D. Crow: their chain link targets {CardNames.Get(theirGrave[marked])} in their graveyard (read from the card): banish it");
+                return crow;
+            }
+
             // No target reported (Omega often doesn't): read what the card they just activated can target from its text
             // ("target 1 Level 4 or lower Reptile monster in your GY") and keep only the cards in their graveyard that fit.
             // The best of those is the likely target. Nothing fits (or the text can't be read): don't waste Crow.

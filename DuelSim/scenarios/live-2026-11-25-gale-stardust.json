@@ -1,0 +1,24 @@
+// Live 2026-11-25 14:48 Blackwing #044-045 (turn 4, battle): Gale (1300) to attack, their Stardust Dragon halved by Gale to 1250 and
+// Super-Nimble Mega Hamster (1100) face-up ATK. Live picked Hamster (+9.97 vs +9.38): the rebuild lost Stardust's halving, so in the lines
+// Gale into Stardust was a 1300 vs 2500 battle. With the ATK kept, Stardust should be the pick.
+{
+  "deck": "Blackwing",
+  "opponent": "MachinaControl",
+  "lp": [5200, 8000],
+  "turn": 4,
+  "phase": "battle",
+  "decision": "battle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 75498415, "zone": 2, "attacked": true }, { "id": 2009101, "zone": 3, "thisTurn": true } ],
+    "spells": [ { "id": 91351370, "zone": 0 } ],
+    "hand": [ 72714392, 65192027, 19613556 ],
+    "grave": [ 91351370, 5318639, 22835145 ]
+  },
+  "theirs": {
+    "monsters": [ { "id": 5220687, "zone": 0 }, { "id": 44508094, "zone": 4, "atk": 1250 } ],
+    "spells": [ { "zone": 0, "set": true }, { "zone": 1, "set": true } ],
+    "handCount": 1,
+    "grave": [ 44095762, 21502816, 21502816, 14943837 ]
+  }
+}

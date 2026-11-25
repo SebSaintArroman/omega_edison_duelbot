@@ -158,6 +158,8 @@ namespace BotTest.Game.AI.Brains
                 catch { /* tracking is best effort */ }
                 try { await TrackLylasAsync(header.CurrentTurn); }
                 catch { /* tracking is best effort */ }
+                try { await TrackTheirNormalSummonAsync(bot, header); }
+                catch { /* tracking is best effort */ }
                 try { await TrackMain2SummonsAsync(header); }
                 catch { /* tracking is best effort */ }
             }
@@ -174,7 +176,7 @@ namespace BotTest.Game.AI.Brains
             try
             {
                 if (state == BotState.SelectChain && header.LastChainPlayer == 1)
-                    (chainCard, chainTargets) = await TheirChainLinkAsync(view);
+                    (chainCard, chainTargets) = await TheirChainLinkAsync(view, bot);
             }
             catch { /* best effort: the checkpoint matches on the board alone */ }
             _checkpoints.Add(new TurnCheckpoint { State = state, Phase = header.CurrentPhase, View = view, Generation = generation,
@@ -187,7 +189,7 @@ namespace BotTest.Game.AI.Brains
         /// their graveyard, and those cards (codes). The replay reaches the window only with that card on the chain (TurnReplay.SameChainLink;
         /// live 2026-11-24: D.D. Crow against XX-Saber Faultroll's revive was searched at the window after Faultroll's summon). (0, null): none.
         /// </summary>
-        private async Task<(int Card, IReadOnlyList<int>? Targets)> TheirChainLinkAsync(SearchView view)
+        private async Task<(int Card, IReadOnlyList<int>? Targets)> TheirChainLinkAsync(SearchView view, DuelBotWrapper bot)
         {
             var grave = view.EnemyGrave;
             var theirs = (await GetEnemyMonsterCardsAsync()).Concat(await GetEnemySpellCardsAsync()).Where(card => card.ID > 0);
@@ -200,6 +202,14 @@ namespace BotTest.Game.AI.Brains
                     .Select(t => grave[t.Sequence]).Where(code => code > 0).ToList();
                 if (targets.Count > 0)
                     return (card.ID, targets);
+            }
+            // Nothing on their card: the graveyard cards' own "targeted by" lists, with the card they just activated as the link (live
+            // 2026-11-25: Debris Dragon's revive of Dandylion reported no target; the replay then picked Lonefire Blossom).
+            if ((await TheirGraveTargetsAsync(bot)) is { Count: > 0 } marked)
+            {
+                var (activated, _) = await ActivatedNowAsync();
+                if (activated.FirstOrDefault(card => card.ID > 0) is { ID: > 0 } link)
+                    return (link.ID, marked.Where(i => i < grave.Count).Select(i => grave[i]).Where(code => code > 0).ToList());
             }
             return (0, null);
         }

@@ -166,6 +166,20 @@ namespace BotTest.Game.AI.Brains
                     (card.ActionActivateIndex ?? Array.Empty<ActivationCardIndex>()).Any(activation =>
                         activation.ActionIndex == move.Index)) is { ID: > 0 } sender)
                 return await GoodDiscardDeckSendAllowedAsync(sender.ID, context.Header, context.Bot);
+            // The Stardust hard card rules (Icarus Attack, Dark Armed Dragon's effect) hold for the brain's own main-phase plays too
+            // (user, 2026-11-25).
+            if (move.Action == MainAction.Activate &&
+                (state.ActivableCards ?? Array.Empty<DynamicCard>()).FirstOrDefault(card =>
+                    card.IsCode(IcarusAttack, DarkArmedDragon) &&
+                    (card.ActionActivateIndex ?? Array.Empty<ActivationCardIndex>()).Any(activation =>
+                        activation.ActionIndex == move.Index)) is { ID: > 0 } stardustHeld)
+            {
+                var stardustContext = new CardRuleRegistry.Context(Array.Empty<int>(), Array.Empty<int>(), 0, 0, 0, false,
+                    OpponentMonsterIds: (await GetEnemyMonsterCardsAsync()).Where(monster => monster.ID > 0 && monster.IsFaceup())
+                        .Select(monster => monster.ID).ToArray());
+                if ((CardRuleRegistry.TagsFor(stardustHeld.ID, stardustContext) & TagRules.Tag.DoNotActivate) != 0)
+                    return false;
+            }
             if (move.Action == MainAction.Activate &&
                 (state.ActivableCards ?? Array.Empty<DynamicCard>()).Any(card =>
                     card.IsCode(PlaguespreaderZombie) &&
@@ -199,6 +213,19 @@ namespace BotTest.Game.AI.Brains
                 // (Its one-attack lethal is used right before the Battle Phase, not in this window: user, 2026-11-25.)
                 if ((CardRuleRegistry.TagsFor(BlackwingSiroccoTheDawn, ruleContext) & TagRules.Tag.DoNotActivate) != 0)
                     return -1;
+            }
+            // The Stardust hard card rules (Icarus Attack, Dark Armed Dragon: never while Stardust Dragon is on their field) hold for the
+            // brain's own chain too, whatever exception a deck brain finds (user, 2026-11-25: "add this all as hard card rules").
+            if (brainIndex >= 0 && brainIndex < cards.Length && cards[brainIndex].IsCode(IcarusAttack, DarkArmedDragon))
+            {
+                var stardustContext = new CardRuleRegistry.Context(Array.Empty<int>(), Array.Empty<int>(), 0, 0, 0, false,
+                    OpponentMonsterIds: (await GetEnemyMonsterCardsAsync()).Where(monster => monster.ID > 0 && monster.IsFaceup())
+                        .Select(monster => monster.ID).ToArray());
+                if ((CardRuleRegistry.TagsFor(cards[brainIndex].ID, stardustContext) & TagRules.Tag.DoNotActivate) != 0)
+                {
+                    context.Bot.LogNote($"shared chain rules: {OmegaBotWrapper.Logging.CardNames.Get(cards[brainIndex].ID)} never while Stardust Dragon is on their field: pass");
+                    return -1;
+                }
             }
             var phase = (DuelPhase)context.Header.CurrentPhase;
             bool ourTurn = IsOwnTurn(context.Header);
@@ -264,7 +291,10 @@ namespace BotTest.Game.AI.Brains
                 if (summoned >= 0)
                 {
                     var deck = (await CurrentField.GetBotField()).OwnSide.Main ?? Array.Empty<int>();
-                    var summonContext = new CardRuleRegistry.Context(deck, Array.Empty<int>(), 0, 0, 0, false, IsOurTurn: true);
+                    // Their monsters too: Dark Armed Dragon's on-summon activation is off while Stardust Dragon is on their field (user, 2026-11-25).
+                    var summonContext = new CardRuleRegistry.Context(deck, Array.Empty<int>(), 0, 0, 0, false, IsOurTurn: true,
+                        OpponentMonsterIds: (await GetEnemyMonsterCardsAsync()).Where(monster => monster.ID > 0 && monster.IsFaceup())
+                            .Select(monster => monster.ID).ToArray());
                     if ((CardRuleRegistry.TagsFor(cards[summoned].ID, summonContext) & TagRules.Tag.ActivateOnSummon) != 0)
                     {
                         MarkStapleActivated(cards[summoned].ID); // its follow-up prompts (Card Trooper's number) know it's ours

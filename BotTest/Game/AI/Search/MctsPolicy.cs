@@ -37,24 +37,49 @@ namespace BotTest.Game.AI.Search
                     var choices = SearchActions.Idle(idle);
                     var plays = new List<(SearchActions.Choice<IdleCmdResponse> Choice, double Weight)>();
                     bool canSummon = (idle.SummonableCards?.Length ?? 0) > 0;
+                    // Played sensibly, cheaply (user, 2026-11-25: "make the simulated opponent's turn play out its moves sensibly", without
+                    // slowing decisions): summons that beat the other side's board first, no pointless position changes, summons before battle.
+                    // The other side's board: its strongest face-up attack-position monster and its weakest defender.
+                    var other = host.Summary(1 - prompt.Player).Monsters;
+                    int theirBest = other.Where(m => m.FaceUp && m.AttackPosition).Select(m => m.Attack).DefaultIfEmpty(0).Max();
+                    int theirWeakest = other.Count == 0 ? -1
+                        : other.Select(m => Strength(m.FaceUp, m.AttackPosition, m.Attack, m.Defense)).Min();
+                    DynamicCard CardFor(DynamicCard[]? cards, MainAction action, ushort index) =>
+                        (cards ?? Array.Empty<DynamicCard>()).FirstOrDefault(card => card.ActionIndex is { } ix && ix.Length > (int)action && ix[(int)action] == index);
+                    double SummonWeight(DynamicCard card) =>
+                        card.ID > 0 && (theirWeakest < 0 || card.Attack > theirWeakest) ? 5 : 3; // it can attack something (or directly)
+                    double ReposWeight(DynamicCard card)
+                    {
+                        if ((card.Position & 0xA) != 0)
+                            return 1; // face-down: a Flip Summon
+                        bool attacking = (card.Position & 0x1) != 0;
+                        if (!attacking)
+                            return theirWeakest < 0 || card.Attack > theirWeakest ? 1 : 0; // to attack: only with something to beat
+                        return card.Attack < theirBest && card.Defense > card.Attack ? 0.5 : 0; // to defence: only when it would lose and DEF is better
+                    }
+                    bool summonOnOffer = false;
                     if (line.IdleActions[prompt.Player]++ < 12)
                     {
                         foreach (var c in choices)
                         {
                             double w = c.Response.Action switch
                             {
-                                MainAction.Summon or MainAction.SpSummon or MainAction.Activate => 3,
+                                MainAction.Summon => SummonWeight(CardFor(idle.SummonableCards, MainAction.Summon, c.Response.Index)),
+                                MainAction.SpSummon => SummonWeight(CardFor(idle.SpecialSummonableCards, MainAction.SpSummon, c.Response.Index)),
+                                MainAction.Activate => 3,
                                 MainAction.SetMonster => canSummon ? 0.3 : 1,
                                 MainAction.SetSpell => 0.8,
-                                MainAction.Repos => 0.2,
+                                MainAction.Repos => ReposWeight(CardFor(idle.ReposableCards, MainAction.Repos, c.Response.Index)),
                                 _ => 0,
                             };
                             if (w > 0)
                                 plays.Add((c, w));
+                            summonOnOffer |= w > 0 && c.Response.Action is MainAction.Summon or MainAction.SpSummon;
                         }
                     }
+                    // Summons come before battle: going to battle with a summon still on offer is rare.
                     if (idle.CanBattlePhase)
-                        plays.Add((choices.First(c => c.Key == "battle"), 2));
+                        plays.Add((choices.First(c => c.Key == "battle"), summonOnOffer ? 0.3 : 2));
                     else if (idle.CanEndPhase)
                         plays.Add((choices.First(c => c.Key == "end"), 1));
                     if (plays.Count == 0)

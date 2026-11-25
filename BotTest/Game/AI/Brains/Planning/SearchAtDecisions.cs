@@ -1632,6 +1632,17 @@ namespace BotTest.Game.AI.Brains
                              (outcome.Failures > 0 ? $", {outcome.Failures} failed ({outcome.FirstFailure})" : "");
             if (outcome.PositionMismatch is string mismatch)
                 bot.LogNote($"search WARNING: the rebuilt position differs from the real one ({mismatch})");
+            // The brain's move has no node though the tree had its fair look: the rules (DoNotActivate, a card rule, MST's own-card ban)
+            // never let the lines make it. A move the rules forbid is never played on the brain's say-so: the search's best is (user,
+            // 2026-11-25: "when the rules leave only pass, a brain chain the rules forbid is passed - yes, obviously do this"; MST chained
+            // onto our own Black Whirlwind, D.D. Crow chained with "only pass allowed by the rules").
+            if (mine == null && best != null && legal.Contains(brainKey) && outcome.TreeVisits >= ScreenLines && !SearchMustKeep(_decisionRules))
+            {
+                bot.LogNote($"search: RULES: the brain's move ({brainKey}) is one the rules never let the lines make ({outcome.TreeVisits} lines in the tree, " +
+                            $"none through it): playing the search's {best.Label} (score {BoardEvaluator.CuPm(best.Mean, best.StdErr)} over {best.Visits} lines)");
+                LogBreakdowns(bot, outcome, best.Key, legal);
+                return best;
+            }
             if (best == null || mine == null)
             {
                 string reason = mine == null
@@ -2027,6 +2038,7 @@ namespace BotTest.Game.AI.Brains
             {
                 AttackInProgress = attacker is { } active ? new(ourAttack ? 0 : 1, active, target) : null,
                 RealTurn = _currentHeader.CurrentTurn,
+                EnemyNormalSummonUsed = TheirNormalSummonUsed(_currentHeader),
                 StrategicState = StrategicState,
                 ThreatHistory = _threatenedState.Copy(),
                 OpponentSummonedAndAttackedWithThreatTurn = _opponentSummonedAndAttackedWithThreat

@@ -195,13 +195,31 @@ internal sealed partial class DuelHost
 
     private int _searchNormalSummonOrSetTurn = -1;
     internal bool SearchNormalSummonOrSetUsed => _searchNormalSummonOrSetTurn == Turn;
+    // Per player (0 us, 1 them): the turn of their last Normal Summon or Set (user, 2026-11-25: "record it": whether a card in their hand
+    // can still be Tribute Summoned this turn, CardRuleRegistry.TributableHandCorrection).
+    private readonly int[] _normalSummonTurn = { -1, -1 };
+
+    /// <summary>Whether this player has used their Normal Summon / Set this turn.</summary>
+    internal bool NormalSummonUsed(int player) => _normalSummonTurn[player] == Turn;
+
+    /// <summary>The real game's record when the line starts mid-turn (a direct rebuild after their Normal Summon).</summary>
+    internal void MarkNormalSummonUsed(int player)
+    {
+        _normalSummonTurn[player] = Turn;
+        Array.Clear(_searchSummaries);
+    }
 
     /// <summary>Answers a prompt with an engine response.</summary>
     public void Respond(Prompt prompt, byte[] engineResponse)
     {
-        if (prompt.Player == 0 && prompt.State == BotState.SelectIdleCmd && engineResponse.Length >= 4 &&
+        if (prompt.State == BotState.SelectIdleCmd && engineResponse.Length >= 4 &&
             (BitConverter.ToInt32(engineResponse) & 0xffff) is (int)MainAction.Summon or (int)MainAction.SetMonster)
-            _searchNormalSummonOrSetTurn = Turn;
+        {
+            if (prompt.Player == 0)
+                _searchNormalSummonOrSetTurn = Turn;
+            if (prompt.Player is 0 or 1)
+                _normalSummonTurn[prompt.Player] = Turn;
+        }
         prompt.Attempts++;
         _lastPrompt = prompt;
         _duel.SetResponse(engineResponse);
@@ -388,6 +406,8 @@ internal sealed partial class DuelHost
             grave.Count, Count(Ocg.LocExtra), spells, hand, grave, foreign)
         {
             ExtraCodes = player == 0 && grave.Contains(BlackwingVayuTheEmblemOfHonor) ? ExtraDeckCodes(player) : Array.Empty<int>(),
+            // Their Normal Summon is spent only in their own turn after they used it; on the other turn, their next one comes first.
+            NormalSummonAvailable = !(TurnPlayer == player && NormalSummonUsed(player)),
         };
     }
 }
@@ -411,6 +431,8 @@ internal sealed record SideSummary(
     int Foreign = 0)
 {
     public IReadOnlyList<int> ExtraCodes { get; init; } = Array.Empty<int>();
+    /// <summary>This side can still Normal Summon (or Set) before the other side's next turn: not its own turn with it used (DuelHost.NormalSummonUsed).</summary>
+    public bool NormalSummonAvailable { get; init; } = true;
 }
 
 internal sealed record SearchChainLink(int Player, int CardId, int[] TargetCardIds);

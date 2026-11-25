@@ -200,6 +200,7 @@ namespace BotTest.Game.AI.Brains
                 TheirHonestKnown = honestKnown,
                 UnknownSets = view.EnemySpells.Count(c => c.Code <= 0),
                 MirrorForceChance = _unknownMirror,
+                MirrorReadResidual = EvidenceResidual,
                 TorrentialChance = _unknownTorrential,
                 OtherStopChance = _otherStopChance,
                 QuickPlayStopChance = _quickStopChance,

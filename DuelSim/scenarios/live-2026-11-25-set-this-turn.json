@@ -1,0 +1,23 @@
+// A trap and a quick-play spell set this turn (ThisTurn) can't be activated until next turn (user, 2026-11-25: "I think I saw once a
+// trap being activated the turn it was set"). Neither "activate" may appear at the root or in turn 1 of any line.
+{
+  "deck": "MachinaControl",
+  "opponent": "MachinaControl",
+  "lp": [8000, 8000],
+  "turn": 4,
+  "phase": "main1",
+  "decision": "idle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 7359741, "zone": 1 } ],
+    "spells": [ { "id": 5318639, "zone": 0, "set": true, "thisTurn": true }, { "id": 94192409, "zone": 1, "set": true, "thisTurn": true } ],
+    "hand": [ 5220687 ],
+    "grave": []
+  },
+  "theirs": {
+    "monsters": [ { "id": 40044918, "zone": 2 } ],
+    "spells": [ { "zone": 0, "set": true } ],
+    "handCount": 3,
+    "grave": []
+  }
+}

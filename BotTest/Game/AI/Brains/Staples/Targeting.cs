@@ -96,9 +96,18 @@ namespace BotTest.Game.AI.Brains
                     .Select(card => card.IsFaceup() ? card.GetRealPower() : OpponentMemory.FaceDownDefense(card))
                     .DefaultIfEmpty(0).Max();
                 var reasons = new List<string>();
+                // Their monsters: a card whose hand correction lifts when they can Tribute Summon it (Tytannial with two monsters to tribute;
+                // and their Normal Summon not yet used this turn: TheirNormalSummonUsed).
+                int theirMonsters = (await GetEnemyMonsterCardsAsync()).Count;
                 foreach (var x in opponent)
                 {
                     var (score, why) = await EffectEvaluator.ScoreAsync(BoardAssessment.KnownId(x.Card), opponentGrave, ourBestBlocker);
+                    double tributable = CardRuleRegistry.TributableHandCorrection(BoardAssessment.KnownId(x.Card), theirMonsters, normalSummonAvailable: !TheirNormalSummonUsed(context.Header));
+                    if (tributable != 0)
+                    {
+                        score += tributable;
+                        why = $"{why} {tributable:+0.#;-0.#} (card correction in hand: they can't Tribute Summon it, {theirMonsters} monster(s))";
+                    }
                     // Grand Mole-type cards are far stronger than their keywords suggest (especially against us).
                     var (bonus, bonusWhy) = await RemovalValueBonusAsync(BoardAssessment.KnownId(x.Card));
                     var others = opponent.Where(o => o.Index != x.Index).Select(o => BoardAssessment.KnownId(o.Card)).ToList();

@@ -1121,6 +1121,11 @@ namespace BotTest.Game.AI.Search
             bool startsAtDecision = FromTurnStart == null;
             brain?.Attach(host, Math.Max(0, _view.RealTurn - (1 + _view.SkipTurns)), RootTurn,
                 startsAtDecision && _view.NormalSummonUsed, startsAtDecision ? _view.ActivatedThisTurn : Array.Empty<int>(), _evaluator);
+            // A line rebuilt at the decision (not replayed from the turn's start): the real turn's Normal Summons so far.
+            if (startsAtDecision && _view.NormalSummonUsed)
+                host.MarkNormalSummonUsed(0);
+            if (startsAtDecision && _view.EnemyNormalSummonUsed)
+                host.MarkNormalSummonUsed(1);
         }
 
         /// <summary>One iteration. Returns a failure note, or null when it scored a line.</summary>
@@ -1316,14 +1321,20 @@ namespace BotTest.Game.AI.Search
             // Our activations in our turn: the line's (the engine's record), and before a direct rebuild the real turn's (the view's).
             IReadOnlyCollection<int> ActivatedInOurTurn() =>
                 host.ActivatedInTurn(0, SearchTurn).Concat(FromTurnStart == null ? _view.ActivatedThisTurn : Enumerable.Empty<int>()).ToHashSet();
+            double mirrorRead = 1; // the line's own Mirror Force read (BoardEvaluator.MirrorReadResidual)
             void NoteMirror()
             {
                 if (!rootReached || host.Turn != SearchTurn)
                     return;
                 var (o, t) = (host.Summary(0), host.Summary(1));
-                peakMirror = Math.Max(peakMirror, _evaluator.MirrorExposure(o, t));
-                ownMirror = Math.Max(ownMirror, _evaluator.MirrorExposure(Own(o), t));
+                peakMirror = Math.Max(peakMirror, _evaluator.MirrorExposure(o, t, mirrorRead));
+                ownMirror = Math.Max(ownMirror, _evaluator.MirrorExposure(Own(o), t, mirrorRead));
                 NoteLesser(o, t);
+                // Their unknown sets stay down in the line (they're inert): an attack worth a Mirror Force for them lowers the chance for the
+                // line's later attacks, as the brain's read does between real attacks (StapleEvidence).
+                var attackers = o.Monsters.Where(m => m.FaceUp && m.AttackPosition).ToList();
+                if (attackers.Count >= 2 || attackers.Any(m => m.Attack >= _evaluator.StrongMonsterAttack))
+                    mirrorRead *= _evaluator.MirrorReadResidual;
             }
             void NoteSummons()
             {

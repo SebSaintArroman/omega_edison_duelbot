@@ -37,7 +37,16 @@ namespace BotTest.Game.AI.Brains
             IReadOnlyList<(int Id, int Attack, int Defense, bool FaceUp, bool AttackPosition)>? OpponentMonsters = null,
             int OpponentSetSpellTraps = -1, int OpponentLikelySetDefense = -1,
             // Honest known or suspected in their hand (DeckBotBrain.HonestSuspected: the deck read's chance at HonestSuspectChance or more).
-            bool HonestSuspected = false);
+            bool HonestSuspected = false)
+        {
+            /// <summary>
+            /// Stardust Dragon on their field: the flag a caller set, or read from their monsters when the caller listed them (user,
+            /// 2026-11-25: Stardust's rules must hold wherever the card rules are asked, not only where a threat context set the flag).
+            /// </summary>
+            public bool StardustUp => OpponentHasStardustDragon ||
+                OpponentMonsters?.Any(m => m.FaceUp && Search.SearchHost.Is(m.Id, CardId.StardustDragon)) == true ||
+                OpponentMonsterIds?.Any(id => id > 0 && Search.SearchHost.Is(id, CardId.StardustDragon)) == true;
+        }
 
         internal sealed record Rule(int[] Ids, TagRules.Tag Tags,
             Func<Context, TagRules.Tag>? TagsToDisableWhen = null,
@@ -56,11 +65,30 @@ namespace BotTest.Game.AI.Brains
         /// last-resort lever for a card the scorer gets wrong (user, 2026-11-13: "don't give any cards this without my explicit
         /// approval"). General: wherever the card is scored; Hand: only while it's in a hand. Cards without one: 0.
         /// </summary>
-        internal sealed record CardCorrection(double General = 0, double Hand = 0);
+        /// <param name="HandUnlessTributable">The Hand part applies only while its holder can't Tribute Summon it (normal summon available
+        /// and enough monsters on their field to tribute); then it keeps its full hand value. Applied where the holder's field is known
+        /// (TributableHandCorrection), not in the card's static score.</param>
+        internal sealed record CardCorrection(double General = 0, double Hand = 0, bool HandUnlessTributable = false);
 
-        /// <summary>The card's correction where it is: General, plus Hand while it's in a hand (0 without one).</summary>
+        /// <summary>The card's correction where it is: General, plus Hand while it's in a hand (0 without one). A conditional Hand part
+        /// (HandUnlessTributable) isn't included: see TributableHandCorrection.</summary>
         public static double CorrectionFor(int id, bool inHand = false) =>
-            ForCard(id)?.Correction is { } c ? c.General + (inHand ? c.Hand : 0) : 0;
+            ForCard(id)?.Correction is { } c ? c.General + (inHand && !c.HandUnlessTributable ? c.Hand : 0) : 0;
+
+        /// <summary>
+        /// A conditional hand correction (HandUnlessTributable): 0 when its holder can Tribute Summon it now (normal summon still
+        /// available, and as many monsters on their field as its tributes: 1 for Level 5-6, 2 for Level 7+), else the Hand part
+        /// (user, 2026-11-25: "tytannial should retain its full hand value if the normal summon is still available and there are two
+        /// monsters on the field that could be tributed for a tribute summon").
+        /// </summary>
+        public static double TributableHandCorrection(int id, int holderMonsters, bool normalSummonAvailable)
+        {
+            if (ForCard(id)?.Correction is not { HandUnlessTributable: true } c)
+                return 0;
+            int level = Search.SearchHost.Available ? Search.SearchHost.Cards.Get(id)?.Level ?? 0 : 0;
+            int tributes = level >= 7 ? 2 : level >= 5 ? 1 : 0;
+            return normalSummonAvailable && holderMonsters >= tributes ? 0 : c.Hand;
+        }
 
         /// <summary>Tags for every card in a category; TagsToDisableWhen (card id, context) switches some off.</summary>
         internal sealed record CategoryRule(Func<int, bool> Matches, TagRules.Tag Tags,
@@ -100,11 +128,21 @@ namespace BotTest.Game.AI.Brains
                 if (category.Matches(id))
                     categoryTags |= category.Tags & ~(category.TagsToDisableWhen?.Invoke(id, context) ?? TagRules.Tag.None);
             var tags = (cardTags & ~disabledTags) | categoryTags;
+            // Stardust Dragon negates destruction: with it on their field, an answer whose text destroys isn't an answer (user,
+            // 2026-11-25: "if stardust is on the field all cards with answersanythreat that 'destroy' (not remove from field but
+            // specifically use the word destroy) should lose their tag").
+            if ((tags & TagRules.Tag.AnswersAnyThreat) != 0 && context.StardustUp && DestroysByText(id))
+                tags &= ~TagRules.Tag.AnswersAnyThreat;
             if (rule?.SendGoodDiscardFromDeck == true &&
                 context.OwnDeck.Count > 0 && !context.OwnDeck.Any(CardRules.IsGoodDarkDiscard))
                 tags |= TagRules.Tag.DoNotActivate;
             return tags;
         }
+
+        /// <summary>The card's text uses the word "destroy" (Stardust Dragon negates those).</summary>
+        private static bool DestroysByText(int id) =>
+            Search.SearchHost.Available && Search.SearchHost.Cards.Get(id)?.Text is string text &&
+            System.Text.RegularExpressions.Regex.IsMatch(text, @"\bdestroy", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
         public static IReadOnlyCollection<int> CardsWithTag(TagRules.Tag tag) => CardRules.Definitions
             .Where(rule => (rule.Tags & tag) != 0)

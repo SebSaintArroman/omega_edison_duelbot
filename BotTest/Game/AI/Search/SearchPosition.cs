@@ -217,8 +217,10 @@ namespace BotTest.Game.AI.Search
                 // A position lock that outlives the rebuild (Lyla's "cannot change its battle position until the end of your next turn"): counted in
                 // End Phases, the skipped turns' ones included (their resets fire too).
                 if (Cards[i].PositionLockEndPhases > 0 && Cards[i].Location == LocMZone)
-                    lua.Append($"if {c} then local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_CANNOT_CHANGE_POSITION) ")
-                        .Append($"e:SetReset(RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END,{Cards[i].PositionLockEndPhases + SkipTurns}) {c}:RegisterEffect(e) end\n");
+                    // A field effect on its field id: the card's own single effect didn't hold in the rebuild (2026-11-25).
+                    lua.Append($"if {c} then local fid={c}:GetFieldID() local e=Effect.GlobalEffect() e:SetType(EFFECT_TYPE_FIELD) e:SetCode(EFFECT_CANNOT_CHANGE_POSITION) ")
+                        .Append("e:SetTargetRange(LOCATION_MZONE,LOCATION_MZONE) e:SetTarget(function(e,tc) return tc:GetFieldID()==fid end) ")
+                        .Append($"e:SetReset(RESET_PHASE+PHASE_END,{Cards[i].PositionLockEndPhases + SkipTurns}) Duel.RegisterEffect(e,0) end\n");
                 // Once-per-turn effects already used in the real turn (user, 2026-11-25: "once per turn effects can only be activated once per
                 // turn and it should understand that"): a rebuilt card's count limits start fresh, so the lines offered Card Trooper's mill a
                 // second time. The used effects only, by description index (not the whole card: Gearframe's summon trigger used leaves its
@@ -313,9 +315,13 @@ namespace BotTest.Game.AI.Search
 
             // What the puzzle can't carry over from the real turn.
             const string untilEnd = "RESET_PHASE+PHASE_END";
+            // The reset count: the skipped turns' End Phases come first, as the Lyla lock and Sirocco's restriction count them (live
+            // 2026-11-25, Machina #016: with a count of 1 the locks ran out at a skipped turn's End, so a Peacekeeper Normal Summoned this
+            // turn could change position in the lines; the Normal Summon / Battle Phase blocks and attack locks went with them).
+            string untilCount = $",{1 + SkipTurns}";
             void PlayerBlock(string code) =>
                 lua.Append("do local e=Effect.GlobalEffect() e:SetType(EFFECT_TYPE_FIELD) e:SetProperty(EFFECT_FLAG_PLAYER_TARGET) ")
-                    .Append("e:SetCode(").Append(code).Append(") e:SetTargetRange(1,0) e:SetReset(").Append(untilEnd)
+                    .Append("e:SetCode(").Append(code).Append(") e:SetTargetRange(1,0) e:SetReset(").Append(untilEnd).Append(untilCount)
                     .Append(") Duel.RegisterEffect(e,0) end\n");
             if (NormalSummonUsed)
             {
@@ -333,23 +339,30 @@ namespace BotTest.Game.AI.Search
                 if (!(card.ThisTurn || card.Attacked) || card.Controller != 0)
                     continue;
                 string c = $"c[{i + 1}]";
+                // A field effect on the card's field id, as Sirocco's restriction (live 2026-11-25, Machina #016: the card's own single
+                // effect didn't hold, and a Peacekeeper Normal Summoned this turn changed position in the lines).
                 if (card.Location == LocMZone)
-                    lua.Append("if ").Append(c).Append(" then local e=Effect.CreateEffect(").Append(c)
-                        .Append(") e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_CANNOT_CHANGE_POSITION) e:SetReset(RESET_EVENT+RESETS_STANDARD+")
-                        .Append(untilEnd).Append(") ").Append(c).Append(":RegisterEffect(e) end\n");
+                    lua.Append("if ").Append(c).Append(" then local fid=").Append(c).Append(":GetFieldID() local e=Effect.GlobalEffect() e:SetType(EFFECT_TYPE_FIELD) ")
+                        .Append("e:SetCode(EFFECT_CANNOT_CHANGE_POSITION) e:SetTargetRange(LOCATION_MZONE,0) e:SetTarget(function(e,tc) return tc:GetFieldID()==fid end) ")
+                        .Append("e:SetReset(").Append(untilEnd).Append(untilCount).Append(") Duel.RegisterEffect(e,0) end\n");
                 else if (card.Location == LocSZone && card.ThisTurn)
                     lua.Append("if ").Append(c).Append(" and ").Append(c).Append(":IsFacedown() and (").Append(c).Append(":IsType(TYPE_TRAP) or ")
-                        .Append(c).Append(":IsType(TYPE_QUICKPLAY)) then local e=Effect.CreateEffect(").Append(c)
-                        .Append(") e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_CANNOT_TRIGGER) e:SetReset(RESET_EVENT+RESETS_STANDARD+")
-                        .Append(untilEnd).Append(") ").Append(c).Append(":RegisterEffect(e) end\n");
+                        .Append(c).Append(":IsType(TYPE_QUICKPLAY)) then local fid=").Append(c).Append(":GetFieldID() local e=Effect.GlobalEffect() ")
+                        // A player-wide "cannot activate" on this card's field id, as the stand-in cards' block (user, 2026-11-25: a trap
+                        // activated the turn it was set; the card's own EFFECT_CANNOT_TRIGGER didn't stop its activation).
+                        .Append("e:SetType(EFFECT_TYPE_FIELD) e:SetProperty(EFFECT_FLAG_PLAYER_TARGET) e:SetCode(EFFECT_CANNOT_ACTIVATE) e:SetTargetRange(1,0) ")
+                        .Append("e:SetValue(function(e,re,tp) return re:GetHandler():GetFieldID()==fid end) e:SetReset(").Append(untilEnd).Append(untilCount)
+                        .Append(") Duel.RegisterEffect(e,0) end\n");
             }
             for (int i = 0; i < Cards.Count; i++)
             {
                 if (!Cards[i].Attacked && !Cards[i].NoAttack)
                     continue;
-                lua.Append("if c[").Append(i + 1).Append("] then local e=Effect.CreateEffect(c[").Append(i + 1)
-                    .Append("]) e:SetType(EFFECT_TYPE_SINGLE) e:SetCode(EFFECT_CANNOT_ATTACK) e:SetReset(RESET_EVENT+RESETS_STANDARD+")
-                    .Append(untilEnd).Append(") c[").Append(i + 1).Append("]:RegisterEffect(e) end\n");
+                // A field effect on its field id: the card's own single effect didn't hold in the rebuild (2026-11-25).
+                lua.Append("if c[").Append(i + 1).Append("] then local fid=c[").Append(i + 1).Append("]:GetFieldID() local e=Effect.GlobalEffect() ")
+                    .Append("e:SetType(EFFECT_TYPE_FIELD) e:SetCode(EFFECT_CANNOT_ATTACK) e:SetTargetRange(LOCATION_MZONE,0) ")
+                    .Append("e:SetTarget(function(e,tc) return tc:GetFieldID()==fid end) e:SetReset(").Append(untilEnd).Append(untilCount)
+                    .Append(") Duel.RegisterEffect(e,0) end\n");
             }
             // Current ATK / DEF changed by effects that resolved before the rebuild (manual game 2026-11-16: Card Trooper was 1900 for
             // real and 400 in the lines, Kristya 1400 after Gale's halving and 2800 in the lines). The difference to what the rebuilt
@@ -363,10 +376,13 @@ namespace BotTest.Game.AI.Search
                 string c = $"c[{i + 1}]";
                 foreach (var (value, get, code) in new[] { (card.Attack, "GetAttack", "EFFECT_UPDATE_ATTACK"), (card.Defense, "GetDefense", "EFFECT_UPDATE_DEFENSE") })
                     if (value >= 0)
+                        // A field effect on its field id (it ends when the card leaves the zone): the card's own single effect didn't hold
+                        // in the rebuild (2026-11-25: a 3000-ATK monster fought at its printed 500 in the lines).
                         lua.Append($"if {c} and {c}:IsFaceup() and {c}:IsType(TYPE_MONSTER) then local d={value}-{c}:{get}() if d~=0 then ")
-                            .Append($"local e=Effect.CreateEffect({c}) e:SetType(EFFECT_TYPE_SINGLE) e:SetCode({code}) e:SetValue(d) ")
-                            .Append($"if d>0 then e:SetReset(RESET_EVENT+RESETS_STANDARD+{untilEnd}) else e:SetReset(RESET_EVENT+RESETS_STANDARD) end ")
-                            .Append($"{c}:RegisterEffect(e) end end\n");
+                            .Append($"local fid={c}:GetFieldID() local e=Effect.GlobalEffect() e:SetType(EFFECT_TYPE_FIELD) e:SetCode({code}) e:SetValue(d) ")
+                            .Append("e:SetTargetRange(LOCATION_MZONE,LOCATION_MZONE) e:SetTarget(function(e,tc) return tc:GetFieldID()==fid end) ")
+                            .Append($"if d>0 then e:SetReset({untilEnd}{untilCount}) end ")
+                            .Append("Duel.RegisterEffect(e,0) end end\n");
             }
             return lua.ToString();
         }

@@ -80,6 +80,8 @@ namespace BotTest.Game.AI.Search
         public Dictionary<int, List<(int Id, double Chance)>> EnemySetMonsterOdds { get; } = new();
 
         public bool NormalSummonUsed { get; set; }
+        /// <summary>Their Normal Summon / Set used this turn (their turn only; DeckBotBrain.TheirNormalSummonUsed). User, 2026-11-25: "record it".</summary>
+        public bool EnemyNormalSummonUsed { get; set; }
         public bool BattlePhaseDone { get; set; }
         /// <summary>The duel's first turn: no Battle Phase (the rebuilt turn mustn't allow one).</summary>
         public bool FirstTurnOfDuel { get; set; }
@@ -168,7 +170,7 @@ namespace BotTest.Game.AI.Search
                 v.OwnSpells[i] = v.OwnSpells[i] with { ThisTurn = false };
             for (int i = 0; i < v.EnemyMonsters.Count; i++)
                 v.EnemyMonsters[i] = v.EnemyMonsters[i] with { Attacked = false, ThisTurn = false, Battled = false };
-            v.NormalSummonUsed = v.BattlePhaseDone = v.InBattlePhase = false;
+            v.NormalSummonUsed = v.EnemyNormalSummonUsed = v.BattlePhaseDone = v.InBattlePhase = false;
             v.Record = TurnRecord.Empty;
             v.DrawsAtStart = 0;
             v.ForcedDraws.Clear();
@@ -184,7 +186,7 @@ namespace BotTest.Game.AI.Search
             var v = new SearchView
             {
                 AttackInProgress = AttackInProgress,
-                EnemyHandCount = EnemyHandCount, EnemyExtraCount = EnemyExtraCount, NormalSummonUsed = NormalSummonUsed,
+                EnemyHandCount = EnemyHandCount, EnemyExtraCount = EnemyExtraCount, NormalSummonUsed = NormalSummonUsed, EnemyNormalSummonUsed = EnemyNormalSummonUsed,
                 BattlePhaseDone = BattlePhaseDone, FirstTurnOfDuel = FirstTurnOfDuel, RealTurn = RealTurn, InBattlePhase = InBattlePhase,
                 StrategicState = StrategicState,
                 ThreatHistory = ThreatHistory.Copy(),
@@ -256,7 +258,7 @@ namespace BotTest.Game.AI.Search
                 v.OwnMonsters[i] = v.OwnMonsters[i] with { Attacked = false, ThisTurn = false };
             for (int i = 0; i < v.OwnSpells.Count; i++)
                 v.OwnSpells[i] = v.OwnSpells[i] with { ThisTurn = false };
-            v.NormalSummonUsed = v.BattlePhaseDone = v.InBattlePhase = v.FirstTurnOfDuel = false;
+            v.NormalSummonUsed = v.EnemyNormalSummonUsed = v.BattlePhaseDone = v.InBattlePhase = v.FirstTurnOfDuel = false;
             v.Record = TurnRecord.Empty;
             v.RealTurn = RealTurn + 1;
             v.OnlyAttackerZone = -1;
@@ -278,7 +280,7 @@ namespace BotTest.Game.AI.Search
                 v.OwnMonsters[i] = v.OwnMonsters[i] with { Attacked = false, ThisTurn = false };
             for (int i = 0; i < v.OwnSpells.Count; i++)
                 v.OwnSpells[i] = v.OwnSpells[i] with { ThisTurn = false };
-            v.NormalSummonUsed = v.BattlePhaseDone = v.InBattlePhase = v.FirstTurnOfDuel = false;
+            v.NormalSummonUsed = v.EnemyNormalSummonUsed = v.BattlePhaseDone = v.InBattlePhase = v.FirstTurnOfDuel = false;
             v.Record = TurnRecord.Empty;
             v.RealTurn = RealTurn + 1;
             v.OnlyAttackerZone = -1;

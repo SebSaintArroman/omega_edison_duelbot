@@ -24,6 +24,10 @@ internal static class SearchScenario
         /// <summary>Its current ATK as live shows it (a Card Trooper's mill boost), when it differs from the printed one.</summary>
         public int? Atk { get; set; }
         /// <summary>Their unknown face-down monster: the deck read's likely cards, [[id, chance], ...] (as live EnemySetMonsterOdds).</summary>
+        /// <summary>The card's owner when it isn't the side it's listed on (0 ours, 1 theirs: a monster taken by Goyo Guardian), and whether
+        /// we only borrowed it until the End Phase (Brain Control).</summary>
+        public int? Owner { get; set; }
+        public bool Borrowed { get; set; }
         public List<double[]>? Likely { get; set; } }
     private sealed class Side
     {
@@ -64,9 +68,9 @@ internal static class SearchScenario
             monster ? c.Pos?.ToLowerInvariant() switch { "def" => SearchPosition.PosFaceUpDefense, "set" or "facedown" => SearchPosition.PosFaceDownDefense, _ => SearchPosition.PosFaceUpAttack }
                     : c.Set || c.Id == 0 ? SearchPosition.PosFaceDown : SearchPosition.PosFaceUp;
         static ViewCard ToView(Card c, bool monster, int owner) =>
-            new(c.Id, c.Zone, Position(c, monster), owner, c.Attacked,
+            new ViewCard(c.Id, c.Zone, Position(c, monster), owner, c.Attacked,
                 // "equippedTo": the zone of the monster on the same side it's equipped to (a union, an Equip Spell).
-                c.EquippedTo is int zone ? (owner, (int)SearchPosition.LocMZone, zone) : null, new(), new(), c.Improper, ThisTurn: c.ThisTurn, Attack: c.Atk ?? -1);
+                c.EquippedTo is int zone ? (owner, (int)SearchPosition.LocMZone, zone) : null, new(), new(), c.Improper, ThisTurn: c.ThisTurn, Attack: c.Atk ?? -1) with { Owner = c.Owner ?? owner, Borrowed = c.Borrowed };
 
         var view = new SearchView();
         view.LifePoints[0] = file.Lp[0];

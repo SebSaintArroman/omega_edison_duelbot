@@ -1,0 +1,23 @@
+// A monster we borrowed until the End Phase (Brain Control) goes back to its owner at our End Phase, and one taken for good (Goyo
+// Guardian) stays (user, 2026-11-25: "test the take control effect that would return a monster too").
+{
+  "deck": "MachinaControl",
+  "opponent": "MachinaControl",
+  "lp": [8000, 8000],
+  "turn": 4,
+  "phase": "main2",
+  "decision": "idle",
+  "normalSummonUsed": true,
+  "ours": {
+    "monsters": [ { "id": 40044918, "zone": 1, "owner": 1, "borrowed": true }, { "id": 83965310, "zone": 2, "owner": 1 } ],
+    "spells": [],
+    "hand": [],
+    "grave": []
+  },
+  "theirs": {
+    "monsters": [],
+    "spells": [],
+    "handCount": 0,
+    "grave": []
+  }
+}

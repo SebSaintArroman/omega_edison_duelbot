@@ -553,7 +553,11 @@ namespace BotTest.Game.AI.Brains
                                       $"{BoardEvaluator.CardUnits(best.Mean) - BoardEvaluator.CardUnits(planned.Mean):0.00} card units better, " +
                                       $"inside the uncertainty (+/-{BoardEvaluator.CuErr(best.Mean, margin)}): the plan's pick kept";
                         bot.LogNote(note);
-                        FlagForReview(bot, "close-calls.jsonl", note);
+                        // Two copies of the same card (two Fluff Tokens) read the same: nothing to review (user, 2026-11-25: "yes" to not flagging them).
+                        // Face-down cards (id 0) aren't known copies, so they're still flagged.
+                        static string? CopyOf(string key) => key.StartsWith("card:") && key.Split('@')[0] is var id && id != "card:0" && !id.Contains('+') ? id : null;
+                        if (CopyOf(best.Key) is not { } copy || copy != CopyOf(planned.Key))
+                            FlagForReview(bot, "close-calls.jsonl", note);
                         best = planned;
                     }
                 }
