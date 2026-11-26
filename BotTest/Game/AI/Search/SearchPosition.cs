@@ -292,9 +292,12 @@ namespace BotTest.Game.AI.Search
             lua.Append("_st_cards={}\n");
             // A replay's draws: before each of our draw effects in the rebuilt turn, the card the real game drew goes to the top of the
             // deck (a shuffle first, as Pot of Avarice does, would otherwise draw at random; user, 2026-11-15). Only these cards, once each.
-            lua.Append("_st_draws={").Append(string.Join(",", ForcedDraws)).Append("}\n");
+            // By official id (2026-11-26: Omega's pre-errata ids, official + 20, read as the official card in the engine, so IsCode(9126371)
+            // never found Swap Frog: the forced draw was dropped, every line drew at random and ~95% missed the replay).
+            static int Official(int code) => SearchHost.CanonicalId(code) is > 0 and var official ? official : code;
+            lua.Append("_st_draws={").Append(string.Join(",", ForcedDraws.Select(Official))).Append("}\n");
             // A replay's random picks (seen 2026-11-18: Thestalos discarded another card of ours in the line): the cards that really went, first.
-            lua.Append("_st_random={").Append(string.Join(",", RandomPicks)).Append("}\n");
+            lua.Append("_st_random={").Append(string.Join(",", RandomPicks.Select(Official))).Append("}\n");
             // Our monsters that attacked this turn battled: a Gladiator Beast's tag-out checks GetBattledGroupCount() > 0, which a
             // rebuilt card reads as 0 (seen 2026-11-15: a mid-chain replay after Laquari's attack never got its tag-out window).
             lua.Append("_st_battled={}\n");

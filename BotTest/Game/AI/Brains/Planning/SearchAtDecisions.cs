@@ -1363,7 +1363,8 @@ namespace BotTest.Game.AI.Brains
                     foreach (var s in outcome.Root.Where(s => legal.Contains(s.Key)).OrderByDescending(s => s.Mean))
                         bot.LogNote($"search: !!! {s.Label}: score {BoardEvaluator.CuPm(s.Mean, s.StdErr)} over {s.Visits} lines" +
                                     (double.IsNaN(s.Average) ? "" : $" (lines average {BoardEvaluator.CuPm(s.Average, s.StdErr)})") +
-                                    (s.Key == brainKey ? " [the brain's move]" : "") + (s.Visits < ScreenLines ? " [never got a fair look]" : ""));
+                                    (s.Key == brainKey ? " [the brain's move]" : "") + (s.Visits < ScreenLines ? " [never got a fair look]" : "") +
+                                    outcome.OfferNote(s.Key));
                     decidedBy = "time limit";
                     break;
                 }

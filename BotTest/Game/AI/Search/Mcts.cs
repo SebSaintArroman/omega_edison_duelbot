@@ -105,6 +105,28 @@ namespace BotTest.Game.AI.Search
         /// other options' scores can't decide (user, 2026-11-24). Set by the replaying searches (MidChain, TurnLog).</summary>
         public IReadOnlyList<string> NeverOffered { get; init; } = Array.Empty<string>();
 
+        /// <summary>The lines that reached the root, and per move how many of them left it out of their own move list, by why (MctsNode.Missing).</summary>
+        public int RootArrivals { get; init; }
+        public IReadOnlyDictionary<string, (int Brain, int Rule, int Engine)>? RootMissing { get; init; }
+
+        /// <summary>
+        /// For the log: how often this move was in the lines' own move lists at the root, and why it was left out ("" when never left out
+        /// or nothing was recorded).
+        /// </summary>
+        public string OfferNote(string key)
+        {
+            if (RootArrivals <= 0 || RootMissing == null || !RootMissing.TryGetValue(key, out var why))
+                return "";
+            int left = why.Brain + why.Rule + why.Engine;
+            if (left == 0)
+                return "";
+            var reasons = new List<string>();
+            if (why.Brain > 0) reasons.Add($"the brain blocked it {why.Brain}");
+            if (why.Rule > 0) reasons.Add($"a search rule filtered it {why.Rule}");
+            if (why.Engine > 0) reasons.Add($"the line's game didn't offer it {why.Engine}");
+            return $" [on offer in {RootArrivals - left} of {RootArrivals} lines; left out: {string.Join(", ", reasons)}]";
+        }
+
         public RootStat? Stat(string key) => Root.FirstOrDefault(r => r.Key == key) ??
             (SearchActions.SameMoveIn(key, Root.Select(r => r.Key)) is { } same ? Root.FirstOrDefault(r => r.Key == same) : null);
     }
@@ -125,6 +147,14 @@ namespace BotTest.Game.AI.Search
         /// <summary>At a search's root: every option key a line found offered there (call under this node's lock). A real option missing
         /// from it was never searched at all (SearchAtDecisions.NeverOffered).</summary>
         public HashSet<string>? Offered;
+
+        /// <summary>
+        /// At a search's root (our main phase and chain decisions): the lines that reached it, and per move the lines whose own move list
+        /// left it out, by why (call under this node's lock): the brain twin blocked it, a search rule filtered it, or the line's engine
+        /// didn't offer it at all. A move short of lines that most lines leave out can't get its lines by focus (user, 2026-11-25).
+        /// </summary>
+        public int RootArrivals;
+        public Dictionary<string, (int Brain, int Rule, int Engine)>? Missing;
 
         /// <summary>The name of the move to this child here (call under this node's lock).</summary>
         public string LabelOf(string key, MctsNode child) => ChildLabels != null && ChildLabels.TryGetValue(key, out var label) ? label : child.Label;
@@ -1013,12 +1043,15 @@ namespace BotTest.Game.AI.Search
                     .OrderByDescending(s => s.Visits).ThenByDescending(s => s.Mean).ToList();
             List<(string Key, string Label, MctsNode Node)> rootMoves;
             Dictionary<string, (double Cost, string Rule)>? rootHolds;
-            int rootVisits;
+            int rootVisits, rootArrivals;
+            Dictionary<string, (int Brain, int Rule, int Engine)>? rootMissing;
             lock (_start.Lock)
             {
                 rootMoves = MoveSnapshot(_start);
                 rootVisits = _start.Visits;
                 rootHolds = _start.Holds == null ? null : new Dictionary<string, (double, string)>(_start.Holds);
+                rootArrivals = _start.RootArrivals;
+                rootMissing = _start.Missing == null ? null : new Dictionary<string, (int, int, int)>(_start.Missing);
             }
             // Scoring walks the graph and locks each node it visits. Never hold a parent lock across that walk.
             var stats = ScoreMoves(rootMoves);
@@ -1041,7 +1074,61 @@ namespace BotTest.Game.AI.Search
             return new SearchOutcome(stats, iterations, failures, elapsed, firstFailure, followUp, _mismatch, Plans(stats), _traces.ToList(),
                 rootVisits, _maxDepth, BestLine(), rootHolds, _start.PriorKey,
                 stats.Take(5).ToDictionary(s => s.Key, s => BestLine(s.Key)), followUps, Details(), Transposed(stats),
-                stats.ToDictionary(s => s.Key, s => ScoredLine(s.Key)));
+                stats.ToDictionary(s => s.Key, s => ScoredLine(s.Key)))
+            {
+                RootArrivals = rootArrivals,
+                RootMissing = rootMissing,
+            };
+        }
+
+        /// <summary>
+        /// A line at the root (our main phase or chain decision): which of the decision's moves its own move list (<paramref name="offered"/>)
+        /// left out, and why (MctsNode.Missing). The moves: the engine's in this line, and the real decision's (LiveRootKeys).
+        /// </summary>
+        private void NoteRootMissing(Prompt prompt, List<Option> offered, SearchBrain? brain)
+        {
+            List<string> engineKeys;
+            var blocked = new HashSet<string>();
+            switch (prompt.Data)
+            {
+                case IdleCmdData idle:
+                {
+                    var all = SearchActions.Idle(idle);
+                    engineKeys = all.Select(c => c.Key).ToList();
+                    if (brain != null)
+                    {
+                        var moves = brain.BlockedIdleMoves(prompt, idle); // the same prompt's: computed once (OptionsFor asked already)
+                        blocked.UnionWith(all.Where(c => moves.Contains((c.Response.Action, c.Response.Index))).Select(c => c.Key));
+                    }
+                    break;
+                }
+                case SelectChainData chain:
+                    engineKeys = SearchActions.ChainOptionKeys(chain);
+                    break;
+                default:
+                    return;
+            }
+            // Under the real decision's keys where only a zone differs (as the root's options: AsLiveKeys).
+            var map = LiveRootKeys == null ? new Dictionary<string, string>() : SearchActions.ToLiveKeys(engineKeys, LiveRootKeys);
+            string Live(string key) => map.TryGetValue(key, out var real) ? real : key;
+            var have = offered.Select(o => o.Key).ToHashSet();
+            var engineLive = engineKeys.Select(Live).ToHashSet();
+            var blockedLive = blocked.Select(Live).ToHashSet();
+            var decisionKeys = engineLive.Union(LiveRootKeys ?? Array.Empty<string>()).ToList();
+            lock (_start.Lock)
+            {
+                _start.RootArrivals++;
+                var missing = _start.Missing ??= new Dictionary<string, (int, int, int)>();
+                foreach (string key in decisionKeys)
+                {
+                    var (b, r, e) = missing.TryGetValue(key, out var had) ? had : (0, 0, 0);
+                    if (!engineLive.Contains(key)) e++;
+                    else if (have.Contains(key)) { missing[key] = (b, r, e); continue; }
+                    else if (blockedLive.Contains(key)) b++;
+                    else r++;
+                    missing[key] = (b, r, e);
+                }
+            }
         }
 
         /// <summary>
@@ -1676,6 +1763,8 @@ namespace BotTest.Game.AI.Search
                             path.Add(new PathStep(kindNode, 0));
                             node = kindNode;
                         }
+                        if (node == _start && ours)
+                            NoteRootMissing(prompt, options, brain);
                         // Our main / battle decisions are filed by board and answers, so a later decision finds them again.
                         if (ours && prompt.State is BotState.SelectIdleCmd or BotState.SelectBattleCmd)
                         {

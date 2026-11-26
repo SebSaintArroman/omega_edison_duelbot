@@ -726,6 +726,8 @@ namespace BotTest.Game.AI.Brains
         // Our zones as our turn began (zone -> code, position): a card that's different now arrived or changed this turn.
         private int _ownZonesTurn = -1;
         private readonly Dictionary<(bool Monster, int Zone), (int Code, uint Position)> _ownZonesAtTurnStart = new();
+        // Their face-up monsters (code, position) at the same moment: a monster borrowed from them this turn, unmoved, isn't "this turn" (OwnCardThisTurn).
+        private readonly HashSet<(int Code, uint Position)> _theirMonstersAtTurnStart = new();
         // Both graveyards and banished piles as our turn began (ours, theirs).
         private (List<int> Ours, List<int> Theirs) _pilesAtTurnStart = (new(), new());
 
@@ -769,6 +771,10 @@ namespace BotTest.Game.AI.Brains
                 _ownZonesAtTurnStart[(true, card.CurrentCoordinates.Sequence)] = (card.ID, card.Position);
             foreach (var card in await CurrentField.GetBotCardsInZone(CardLocation.SpellZone, true))
                 _ownZonesAtTurnStart[(false, card.CurrentCoordinates.Sequence)] = (card.ID, card.Position);
+            _theirMonstersAtTurnStart.Clear();
+            foreach (var card in await CurrentField.GetBotCardsInZone(CardLocation.MonsterZone, false))
+                if (card.ID > 0 && card.IsFaceup())
+                    _theirMonstersAtTurnStart.Add((card.ID, card.Position));
             var field = await CurrentField.GetBotField();
             _pilesAtTurnStart = (
                 (field.OwnSide.Grave ?? Array.Empty<int>()).Concat(field.OwnSide.Banish ?? Array.Empty<int>()).Where(id => id > 0).ToList(),
@@ -781,7 +787,12 @@ namespace BotTest.Game.AI.Brains
             if (_ownZonesTurn != _currentHeader.CurrentTurn || !IsOwnTurn(_currentHeader))
                 return false;
             if (!_ownZonesAtTurnStart.TryGetValue((monster, card.CurrentCoordinates.Sequence), out var before) || before.Code != card.ID)
-                return true;
+                // Theirs, borrowed this turn (Brain Control and the like) and still in the position it had on their field: taking control
+                // isn't a summon, so it may change position, and the engine keeps its old turn id (it moves between zones without being added
+                // again). Marked "this turn", the rebuild locked its position (user, 2026-11-26: Brain Control's Lyla and Sirocco, offered by
+                // the real game in no line, held two decisions to the 30 s limit).
+                return !(monster && card.Owner == 1 && _activatedThisTurn.Overlaps(TemporaryControlIds) &&
+                         _theirMonstersAtTurnStart.Contains((card.ID, card.Position)));
             return monster && before.Position != card.Position;
         }
     }

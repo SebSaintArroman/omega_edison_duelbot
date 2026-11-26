@@ -512,8 +512,12 @@ public static class Program
                     console.WriteLine($"  {stat.Label,-50} score {BoardEvaluator.CuPm(stat.Mean, stat.StdErr)} card units  ({stat.Visits} lines" +
                                       (double.IsNaN(stat.Average) ? "" : $", lines average {BoardEvaluator.Cu(stat.Average)}") +
                                       (double.IsNaN(stat.Unexplored) ? "" : $", best unexplored follow-up {BoardEvaluator.Cu(stat.Unexplored)}") + ")" +
-                                      (plan is { Count: > 0 } ? $"  then: {string.Join(" -> ", plan.Select(p => p.Label))}" : ""));
+                                      (plan is { Count: > 0 } ? $"  then: {string.Join(" -> ", plan.Select(p => p.Label))}" : "") +
+                                      outcome.OfferNote(stat.Key));
                 }
+                // Moves of the decision no line ever had in its own list (so no line through them at all).
+                foreach (var key in (outcome.RootMissing?.Keys ?? Enumerable.Empty<string>()).Where(k => outcome.Root.All(s => s.Key != k)))
+                    console.WriteLine($"  [{key}] never in the tree{outcome.OfferNote(key)}");
                 // --dump-tree [MINLINES]: every tree node with at least MINLINES lines (default 30), to depth --dump-depth (default 8):
                 // its lines' average, its score (MctsNode.LineValue: the best explored follow-up at our decisions) and how often it was on offer.
                 if (args.Contains("--dump-tree"))

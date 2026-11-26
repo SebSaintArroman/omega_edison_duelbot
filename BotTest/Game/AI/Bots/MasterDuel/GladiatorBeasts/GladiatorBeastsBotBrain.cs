@@ -83,7 +83,7 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
 
         // Version history: 1 = 2026-11-10 first build (tag-out picks, contact fusions, on-summon targets, War Chariot,
         // Heraklinos negates, discards).
-        public override int BrainVersion => 7; // v7: turn-start searches send their lines to moves short of them (shared). v6: attacks made safe by Shield Warrior / Waboku for a tag-out (shared). v5: Retiari tagged in for their graveyard; Gyzarus fodder tagged in for its effect. v4: Raigeki Break only on big threats; boosts equally costed. v3: attack boosts stacked over a wall; Indomitable recycle counts War Chariot. v2: Shield Warrior a value set
+        public override int BrainVersion => 7; // v7: turn-start searches send their lines to moves short of them; replays draw the real cards (pre-errata ids); borrowed monsters may change position in the lines (shared). v6: attacks made safe by Shield Warrior / Waboku for a tag-out (shared). v5: Retiari tagged in for their graveyard; Gyzarus fodder tagged in for its effect. v4: Raigeki Break only on big threats; boosts equally costed. v3: attack boosts stacked over a wall; Indomitable recycle counts War Chariot. v2: Shield Warrior a value set
 
         private static void Note<T>(DecisionContext<T> context, string message) => context.Bot.LogNote($"glads: {message}");
 
