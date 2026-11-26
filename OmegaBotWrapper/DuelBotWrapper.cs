@@ -42,6 +42,12 @@ namespace OmegaBotWrapper
         /// <summary>Called at every prompt, before it is answered (whatever then answers it). Null: nobody listening.</summary>
         public Func<BotStateHeader, BotState, Task>? PromptArrived { get; set; }
         private int _lastTurnSeen;
+        /// <summary>
+        /// Counts the duels this bot has seen: goes up when the turn counter goes backwards (a rematch on the same bot). Per-duel memory
+        /// keyed by turn number compares this too (seen 2026-11-26: a rematch's turn 2 reused the last duel's turn-2 plan, and its log
+        /// carried on in the same file, the new duel's first prompt being in turn 2).
+        /// </summary>
+        public int DuelSerial { get; private set; }
 
         /// <summary>The cards the brain knows are in the opponent's hand (its deck read), for the log's "their hand" line. Null: none told.</summary>
         public Func<IReadOnlyList<int>>? KnownOpponentHand { get; set; }
@@ -284,6 +290,8 @@ namespace OmegaBotWrapper
             // A new turn seen (the header is read every poll, prompt or not): the brain takes its turn-start snapshot before anything else.
             if (CurrentStateHeader.CurrentTurn > 0 && CurrentStateHeader.CurrentTurn != _lastTurnSeen)
             {
+                if (CurrentStateHeader.CurrentTurn < _lastTurnSeen)
+                    DuelSerial++;
                 _lastTurnSeen = CurrentStateHeader.CurrentTurn;
                 if (TurnStarted != null)
                 {

@@ -86,12 +86,39 @@ namespace BotTest.Game.AI.Brains
         }
 
         private bool _tuned;
+        private int _duelSerial;
+
+        /// <summary>
+        /// A rematch on the same bot (the wrapper's DuelSerial went up): the per-duel memory is cleared as for a new bot, and so is
+        /// everything kept by turn number (the plan, the searched decision, the turn-start line, which turns are ours). Seen 2026-11-26:
+        /// the rematch's turn 2 replayed the last duel's turn-2 plan at its first chain window (REPLAY MISS from the last searched decision).
+        /// </summary>
+        private void ForgetLastDuelIfNew(DuelBotWrapper bot)
+        {
+            if (_trackedBot != bot || bot.DuelSerial == _duelSerial)
+                return;
+            if (!IsSearchTwin)
+                bot.LogNote($"deck brain: a new duel on this bot (the turn counter went back): the last duel's memory and plan are cleared");
+            ResetForNewDuelOrTurn(new BotStateHeader { CurrentTurn = int.MinValue }); // below any turn: its new-duel part runs
+            AttachToBot(bot);
+            _ownTurnParity = -1;
+            _anchor = null;
+            _planStart = null;
+            _searchLine = null;
+            _plan = null;
+            _planInfo = null;
+            _theirTurnLine = null;
+            _turnStart = null;
+            _lastSeenOwnHand = null;
+            _lastSeenTheirHand = -1;
+        }
 
         /// <summary>A new bot (a new duel) to follow: a fresh GameField, and the per-duel memory cleared. From the first prompt, or
         /// earlier from the turn-start callback (DeckBotBrain.TurnLog), whichever comes first.</summary>
         private void AttachToBot(DuelBotWrapper bot)
         {
             _trackedBot = bot;
+            _duelSerial = bot.DuelSerial;
             _gameField = new GameField(bot);
             if (!IsSearchTwin)
                 bot.KnownOpponentHand = () => KnownEnemyHand(); // the log's "their hand" line
@@ -126,6 +153,7 @@ namespace BotTest.Game.AI.Brains
         {
             _rollChance = null; // a former roll's chance belongs to the decision that computed it
             ApplyTuningOnce(context.Bot);
+            ForgetLastDuelIfNew(context.Bot);
             if (_trackedBot != context.Bot || _gameField == null)
                 AttachToBot(context.Bot);
 

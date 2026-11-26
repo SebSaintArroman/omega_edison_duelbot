@@ -37,7 +37,9 @@ namespace BotTest.Game.AI.Brains
             IReadOnlyList<(int Id, int Attack, int Defense, bool FaceUp, bool AttackPosition)>? OpponentMonsters = null,
             int OpponentSetSpellTraps = -1, int OpponentLikelySetDefense = -1,
             // Honest known or suspected in their hand (DeckBotBrain.HonestSuspected: the deck read's chance at HonestSuspectChance or more).
-            bool HonestSuspected = false)
+            bool HonestSuspected = false,
+            // Our face-up monsters, either position (War Chariot's set rule). Null when the caller doesn't know.
+            IReadOnlyCollection<int>? OwnFaceUpMonsterIds = null)
         {
             /// <summary>
             /// Stardust Dragon on their field: the flag a caller set, or read from their monsters when the caller listed them (user,
@@ -68,7 +70,12 @@ namespace BotTest.Game.AI.Brains
         /// <param name="HandUnlessTributable">The Hand part applies only while its holder can't Tribute Summon it (normal summon available
         /// and enough monsters on their field to tribute); then it keeps its full hand value. Applied where the holder's field is known
         /// (TributableHandCorrection), not in the card's static score.</param>
-        internal sealed record CardCorrection(double General = 0, double Hand = 0, bool HandUnlessTributable = false);
+        /// <param name="Grave">Added to the card's graveyard value (CardValues), in card units: a card the effect reader can't see working from
+        /// the GY (Versago's fusion substitute; user, 2026-11-26).</param>
+        internal sealed record CardCorrection(double General = 0, double Hand = 0, bool HandUnlessTributable = false, double Grave = 0);
+
+        /// <summary>The graveyard part of the card's correction (0 without one).</summary>
+        public static double GraveCorrectionFor(int id) => ForCard(id)?.Correction?.Grave ?? 0;
 
         /// <summary>The card's correction where it is: General, plus Hand while it's in a hand (0 without one). A conditional Hand part
         /// (HandUnlessTributable) isn't included: see TributableHandCorrection.</summary>

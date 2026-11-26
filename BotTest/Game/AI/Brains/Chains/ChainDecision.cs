@@ -30,6 +30,7 @@ namespace BotTest.Game.AI.Brains
             var phase = (DuelPhase)context.Header.CurrentPhase;
             await HoldEarlyStatChangesAsync(context, phase); // Chains/Rules/StatBoostInDamageStep.cs
             await HoldWabokuOnOwnTurnAsync(context, phase);  // Chains/Rules/WabokuOwnTurn.cs
+            await HoldBackrowRemovalOutsideMain1Async(context, phase); // Chains/Rules/BackrowRemovalProtects.cs
             await HoldCompulsoryBeforeAttackAsync(context, answer); // Chains/Rules/CompulsoryWaitsForAttack.cs
             await RecordDeckChainHoldsAsync(context);
         }

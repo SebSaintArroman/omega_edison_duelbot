@@ -294,7 +294,18 @@ namespace BotTest.Game.AI.Brains
                     var planStep2 = sure;
                     context.Bot.LogNote($"search: chain window: nothing new revealed, playing the plan's step: {DescribeChainKey(chain, planStep2.Key)} " +
                                         $"(score {BoardEvaluator.CuPm(planStep2.Mean, planStep2.StdErr)} over {planStep2.Visits} lines)");
-                    return ChainIndexOf(chain, planStep2.Key) is var planIndex and >= -1 ? planIndex : null;
+                    if (ChainIndexOf(chain, planStep2.Key) is not (var planIndex and >= -1))
+                        return null;
+                    // The plan's node is matched by prompt type only, so it can be a later window of the same kind (user, 2026-11-26:
+                    // Indomitable chained at the attack declaration into a face-down: the lines skipped that window, their boost-only
+                    // pass, and the node was the damage step's, after the flip). The shared chain rules check the step here.
+                    if (await ApplySharedChainRulesAsync(context, planIndex) is int checkedIndex && checkedIndex != planIndex)
+                    {
+                        context.Bot.LogNote($"search: PLAN STEP REJECTED: the shared chain rules changed the plan's {DescribeChainKey(chain, planStep2.Key)} " +
+                                            $"to {(checkedIndex >= 0 && checkedIndex < (chain.SelectableCards?.Length ?? 0) ? CardNames.Get(chain.SelectableCards![checkedIndex].ID) : "pass")} in this window");
+                        return checkedIndex;
+                    }
+                    return planIndex;
                 }
                 // The plan's node is thin (its best answer on fewer than MinPlayLines lines: seen 2026-11-15, Skill Successor on Bestiari
                 // at the end of the Battle Phase on 8 lines): the search carries on from that node (same tree, same information).

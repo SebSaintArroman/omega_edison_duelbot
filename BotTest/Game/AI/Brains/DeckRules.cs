@@ -31,6 +31,10 @@ namespace BotTest.Game.AI.Brains
         /// can tag out (and deal with it after), or a doomed Waboku (CSV S8).</summary>
         [HoldCost(HoldCosts.Strong)]
         public const string WabokuOwnTurn = "deck.waboku-own-turn";
+        /// <summary>Our spell/trap removal (MST, Dust Tornado, Heavy Storm) only in our Main Phase 1 before a summon or an attack, to clear the
+        /// way for our monsters (user, 2026-11-26); not when doomed or at a face-up card of theirs that matters.</summary>
+        [HoldCost(HoldCosts.Standard)]
+        public const string BackrowRemovalProtects = "deck.backrow-removal-protects";
         public const string ChargeOfTheLightBrigade = "deck.charge-of-the-light-brigade";
         public const string CheapIntoFaceDown = "deck.cheap-into-face-down";
         public const string CheapestIntoBouncer = "deck.cheapest-into-bouncer";

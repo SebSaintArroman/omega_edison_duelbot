@@ -747,6 +747,8 @@ namespace BotTest.Game.AI.Brains
                 await HoldSetsBeforeBattleAsync(context, brainChoice);
                 await HoldEmptyBurialSetAsync(context);
                 await HoldForTorrentialTestAsync(context);
+                await HoldSmashingGroundAsync(context);
+                await HoldBackrowRemovalOutsideMain1Async(context); // Chains/Rules/BackrowRemovalProtects.cs
                 HoldHandTrapSets(context);
                 await HoldTrapDustshootUnsetAsync(context);
                 await DeckHoldsAsync(context);
@@ -1154,6 +1156,14 @@ namespace BotTest.Game.AI.Brains
         private bool HasItsLines(RootStat s) => s.Visits >= MinPlayLines || s.Visits >= ScreenLines && s.StdErr <= SettledError && ScoreBacked(s);
 
         /// <summary>
+        /// Whether every line that reached the root left this move out by a rule (a search rule or the brain twin's block), never because
+        /// the line's game didn't offer it (a replay mismatch stays missing). No record (picks, other prompts): not filtered.
+        /// </summary>
+        private static bool RuleFiltered(SearchOutcome outcome, string key) =>
+            outcome.RootArrivals > 0 && outcome.RootMissing != null && outcome.RootMissing.TryGetValue(key, out var why) &&
+            why.Engine == 0 && why.Brain + why.Rule >= outcome.RootArrivals;
+
+        /// <summary>
         /// Whether a move's score is backed by its lines: within 2 standard errors of its lines average. The error bar is the average's,
         /// so it only settles a score that is the average; a score read through a few of its follow-ups, far above the average, isn't
         /// settled by it (seen 2026-11-24: Reinforcement of the Army "settled" at -0.15 over 174 lines, lines average -1.14, and was
@@ -1296,7 +1306,7 @@ namespace BotTest.Game.AI.Brains
             _noProgressRuns = 0;
             _clearedThisRun = false;
             string decidedBy = "first run";
-            (long Ms, string Move, int TreeVisits, bool ClearlyAhead, int MissingMoves)? early = null;
+            (long Ms, string Move, int TreeVisits, bool ClearlyAhead, int MissingMoves, int FilteredMoves)? early = null;
             int runs = 0;
             TimeSpan runElapsed = TimeSpan.Zero, workerElapsed = TimeSpan.Zero, reportElapsed = TimeSpan.Zero;
             var outcome = await TimedRunAsync(null);
@@ -1381,13 +1391,18 @@ namespace BotTest.Game.AI.Brains
                 bool resolved = clearlyAhead || tieSettled;
                 bool canStop = hasEvidence &&
                     (elapsed < TaperAfterMs ? !Unsure(outcome, brainKey, legal) : resolved || elapsed >= MaxThinkMs);
-                int missingMoves = legal.Count - outcome.Root.Count(s => legal.Contains(s.Key));
+                // Legal moves with no lines, less those every line's rules left out (a search rule or the brain twin, in each line that
+                // reached the root): they never get lines, so waiting on them can't change the decision (user, 2026-11-26: 54 of 97
+                // decisions held to the floor were waiting on such a move, and none changed its move).
+                var unsearched = legal.Where(k => !outcome.Root.Any(s => s.Key == k)).ToList();
+                int filteredMoves = unsearched.Count(k => RuleFiltered(outcome, k));
+                int missingMoves = unsearched.Count - filteredMoves;
                 if (canStop && elapsed < MinThinkMs)
-                    early ??= (elapsed, VerdictKey(outcome), outcome.TreeVisits, clearlyAhead, missingMoves);
-                // The early exit needs actual samples for every legal move, a clear winner, and no
-                // promising follow-up that could reverse the ranking. Keep the floor for battle prompts.
+                    early ??= (elapsed, VerdictKey(outcome), outcome.TreeVisits, clearlyAhead, missingMoves, filteredMoves);
+                // The early exit needs actual samples for every legal move the rules allow, a clear winner, and no promising follow-up
+                // that could reverse the ranking. Battle prompts too (user, 2026-11-26: the battle exception dropped).
                 bool stopEarly = elapsed < MinThinkMs && canStop && missingMoves == 0 && runnerUp != null &&
-                    clearlyAhead && rootState != BotState.SelectBattleCmd && top.Key != "battle" &&
+                    clearlyAhead &&
                     double.IsNaN(top.Unexplored) &&
                     !outcome.Root.Any(s => legal.Contains(s.Key) && s.Key != top.Key &&
                         s.Unexplored >= top.Mean - 2 * Math.Sqrt(top.StdErr * top.StdErr + s.StdErr * s.StdErr));
@@ -1474,7 +1489,8 @@ namespace BotTest.Game.AI.Brains
                 string finalMove = VerdictKey(outcome);
                 string earlyStats = early is { } candidate
                     ? $"early_ms={candidate.Ms}|early_move={candidate.Move}|early_tree_visits={candidate.TreeVisits}|" +
-                      $"clearly_ahead={candidate.ClearlyAhead}|missing_moves={candidate.MissingMoves}|same_move={candidate.Move == finalMove}"
+                      $"clearly_ahead={candidate.ClearlyAhead}|missing_moves={candidate.MissingMoves}|filtered_moves={candidate.FilteredMoves}|" +
+                      $"same_move={candidate.Move == finalMove}"
                     : "early_ms=none";
                 // The pipe prefix keeps this note out of the duel narration.
                 bot.LogNote($"search-floor|prompt={rootState}|legal_moves={legal.Count}|floor_ms={MinThinkMs}|" +

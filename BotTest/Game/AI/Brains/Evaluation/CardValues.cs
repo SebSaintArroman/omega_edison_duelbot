@@ -169,7 +169,9 @@ namespace BotTest.Game.AI.Brains
                 bool fromGrave = EffectEvaluator.HasGraveyardEffect(text) || EffectEvaluator.HasGraveyardPlay(text);
                 bool likesSet = fromGrave || LikesSetText.IsMatch(text);
                 // (The card's correction, on its CardRules entry, is already in both scores: EffectEvaluator adds it where it's scored.)
-                return new CardValue(Math.Max(0, field), Math.Max(0, held), vayu ? VayuGraveReading : fromGrave ? Math.Max(GraveFloor, inGrave) : 0, likesSet, Protection(card.Type, card.CardText),
+                // The graveyard part of the card's correction (Versago, user 2026-11-26) adds to its graveyard value.
+                double graveValue = (vayu ? VayuGraveReading : fromGrave ? Math.Max(GraveFloor, inGrave) : 0) + CardRuleRegistry.GraveCorrectionFor(code);
+                return new CardValue(Math.Max(0, field), Math.Max(0, held), graveValue, likesSet, Protection(card.Type, card.CardText),
                     Removal(card.Type, card.CardText), Math.Max(0, heldUntargeted), targeted);
             }
             catch

@@ -74,6 +74,7 @@ namespace BotTest.Game.AI.Brains
                 // Their monsters and our attackers (Sirocco's boost onto an empty field only for a one-attack lethal; user, 2026-11-25).
                 OpponentMonsterIds: theirs?.Monsters.Select(monster => monster.Code).ToArray(),
                 OwnFaceUpAttackers: own?.Monsters.Where(monster => monster.FaceUp && monster.AttackPosition).Select(monster => (monster.Code, monster.Attack)).ToList(),
+                OwnFaceUpMonsterIds: own?.Monsters.Where(monster => monster.FaceUp).Select(monster => monster.Code).ToArray(),
                 OpponentMonsters: theirs?.Monsters.Select(monster => (monster.Code, monster.Attack, monster.Defense, monster.FaceUp, monster.AttackPosition)).ToList(),
                 OpponentSetSpellTraps: theirs?.SpellCodes.Count(s => !s.FaceUp) ?? -1,
                 OpponentLikelySetDefense: _view.EnemyLikelySetDefense,

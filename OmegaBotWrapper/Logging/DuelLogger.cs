@@ -65,6 +65,7 @@ namespace OmegaBotWrapper.Logging
         private string? _currentBasePath;
         private int _decisionCount;
         private int _lastTurn = -1;
+        private int _duelSerial;
         private bool _duelEnded;
         private BoardSnapshot? _previous;
         private BoardSnapshot? _lastKnown;
@@ -449,7 +450,9 @@ namespace OmegaBotWrapper.Logging
             lock (_sync)
             {
                 // A turn counter going backwards means a new duel (e.g. rematch) started.
-                bool newDuel = _text == null || _duelEnded || (_lastTurn > 1 && header.CurrentTurn < _lastTurn);
+                bool newDuel = _text == null || _duelEnded || (_lastTurn > 1 && header.CurrentTurn < _lastTurn) ||
+                               _bot.DuelSerial != _duelSerial; // the wrapper saw the turn go back, between two of our prompts
+                _duelSerial = _bot.DuelSerial;
                 if (!newDuel)
                     return;
 

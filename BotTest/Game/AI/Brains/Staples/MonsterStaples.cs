@@ -33,40 +33,69 @@ namespace BotTest.Game.AI.Brains
         }
 
         /// <summary>
-        /// Smashing Ground destroys their face-up monster with the highest DEF. Used when that monster is one we have no way of
-        /// attacking over (none of our attackers, nor a monster we can still summon, beats it), any size or kind: a big token,
-        /// a battle recruiter (destroyed by an effect, it recruits nothing), and Dupe Frog, whose lock it breaks (user,
-        /// 2026-11-13). Never on a monster that pays off whenever it's destroyed (Card Trooper's draw).
+        /// Smashing Ground destroys their face-up monster with the highest DEF. Used when that monster is a big threat (IsBigThreatAsync),
+        /// or Dupe Frog, whose lock it breaks (user, 2026-11-13). Never on a monster that pays off whenever it's destroyed (Card
+        /// Trooper's draw).
         /// </summary>
         private async Task<IdleCmdResponse?> TrySmashingGroundAsync(DecisionContext<IdleCmdData> context)
         {
-            var state = context.StateData;
-            if (!TryGetActivable(state, SmashingGround, out var smash))
+            if (!TryGetActivable(context.StateData, SmashingGround, out var smash))
                 return null;
+            var (use, why) = await SmashingGroundVerdictAsync(context);
+            if (!use)
+            {
+                if (why != null)
+                {
+                    if (!IsSearchTwin)
+                        context.Bot.LogNote($"deck brain: hold Smashing Ground: {why}");
+                    Hold(SmashingGround, MainAction.Activate, DeckRules.SmashingGround);
+                }
+                return null;
+            }
+            if (!Rule(DeckRules.SmashingGround))
+                return null;
+            context.Bot.LogNote($"deck brain: activate Smashing Ground on {why}");
+            return smash.MainActivateFromIndex();
+        }
+
+        /// <summary>
+        /// Whether Smashing Ground is worth it now, and why (null reason: no face-up monster of theirs). Not worth it on a monster that
+        /// pays off whenever it's destroyed, nor on one that isn't a big threat (user, 2026-11-26: "waste of smashing ground - it should
+        /// only be used when I have a threat").
+        /// </summary>
+        private async Task<(bool Use, string? Why)> SmashingGroundVerdictAsync(DecisionContext<IdleCmdData> context)
+        {
             var faceUp = (await GetEnemyMonsterCardsAsync()).Where(card => card.IsFaceup() && card.ID > 0).ToList();
             if (faceUp.Count == 0)
-                return null;
+                return (false, null);
             int topDef = faceUp.Max(card => card.Defense);
             var hit = faceUp.Where(card => card.Defense == topDef).OrderByDescending(OpponentThreat).First();
             if (await CardDatabase.GetAsync(hit.ID) is DBCardInfo info && DestroyedAnyWayPayoffText.IsMatch(info.CardText ?? ""))
-            {
-                context.Bot.LogNote($"deck brain: hold Smashing Ground: their highest DEF is {CardNames.Get(hit.ID)}, which pays off whenever it's destroyed");
-                Hold(SmashingGround, MainAction.Activate, DeckRules.SmashingGround);
-                return null;
-            }
+                return (false, $"their highest DEF is {CardNames.Get(hit.ID)}, which pays off whenever it's destroyed");
             bool locks = await TextMatchesAsync(hit.ID, AttackLockText);
-            int ourBest = (await GetBotMonsterCardsAsync()).Where(card => card.IsFaceup() && card.ID > 0).Select(EffectiveAttack)
-                .Concat((state.SummonableCards ?? Array.Empty<DynamicCard>()).Where(card => card.Level <= 4).Select(card => card.Attack))
-                .DefaultIfEmpty(0).Max();
-            // Attack position: a tie only trades, so "over" means more ATK. Defence: more than its DEF.
-            bool attackOver = ourBest > hit.GetRealPower();
-            if (attackOver && !locks)
-                return null;
-            if (!Rule(DeckRules.SmashingGround))
-                return null;
-            context.Bot.LogNote($"deck brain: activate Smashing Ground on {CardNames.Get(hit.ID)} ({hit.GetRealPower()}, highest DEF {topDef}): " +
-                                (locks ? "its lock forces our attacks onto it" : $"nothing of ours gets over it (our best {ourBest})"));
-            return smash.MainActivateFromIndex();
+            // A threat by the bot's usual test (IsBigThreatAsync: the Threat tag, ATK over our bar, Extra Deck, a bouncer, beats a monster of
+            // ours worth keeping, a strong effect), not "we can't attack over it": with no monster of ours, that's every monster (user,
+            // 2026-11-26). A lock (Dupe Frog) still counts: it forces our attacks onto it (user, 2026-11-13).
+            if (!locks && !await IsBigThreatAsync(hit))
+                return (false, $"no threat: their highest DEF, {CardNames.Get(hit.ID)} ({hit.GetRealPower()}), isn't a big threat");
+            return (true, $"{CardNames.Get(hit.ID)} ({hit.GetRealPower()}, highest DEF {topDef}): " +
+                          (locks ? "its lock forces our attacks onto it" : "a big threat"));
+        }
+
+        /// <summary>
+        /// Smashing Ground's hold whatever the brain chose (its flow can pick a play before it reaches the staples; seen 2026-11-26: the
+        /// brain set Ryko, the search fired Smashing Ground on Versago with no hold). Not when its flow already recorded it.
+        /// </summary>
+        private async Task HoldSmashingGroundAsync(DecisionContext<IdleCmdData> context)
+        {
+            if (!TryGetActivable(context.StateData, SmashingGround, out _) || _holds.Any(h => h.Rule == DeckRules.SmashingGround))
+                return;
+            if (await SmashingGroundVerdictAsync(context) is (false, string why))
+            {
+                if (!IsSearchTwin)
+                    context.Bot.LogNote($"deck brain: hold Smashing Ground: {why}");
+                Hold(SmashingGround, MainAction.Activate, DeckRules.SmashingGround);
+            }
         }
 
         /// <summary>

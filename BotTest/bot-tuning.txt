@@ -175,6 +175,7 @@ DeckBotBrain.HoldCost.deck.attack-remembered-face-down = 1.5
 DeckBotBrain.HoldCost.deck.avoid-battle-removal = 1.5
 DeckBotBrain.HoldCost.deck.avoid-hand-limit-discard = 1.5
 DeckBotBrain.HoldCost.deck.attack-into-battle-reward = 0.1
+DeckBotBrain.HoldCost.deck.backrow-removal-protects = 1.5
 DeckBotBrain.HoldCost.deck.battle-protection = 1.5
 DeckBotBrain.HoldCost.deck.bottomless-over-torrential = 1.5
 DeckBotBrain.HoldCost.deck.bottomless-trap-hole = 1.5

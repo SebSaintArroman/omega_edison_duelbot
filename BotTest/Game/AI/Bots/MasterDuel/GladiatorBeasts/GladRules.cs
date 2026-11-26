@@ -26,6 +26,9 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
         public const string GladSummon = "glads.glad-summon";
         public const string WarChariot = "glads.war-chariot";
         public const string IndomitableRecycle = "glads.indomitable-recycle";
+        /// <summary>Indomitable's GY effect held while firing it would leave no Gladiator Beast card in the GY (user, 2026-11-26).</summary>
+        [HoldCost(HoldCosts.Standard)]
+        public const string IndomitableKeepOne = "glads.indomitable-keep-one";
         /// <summary>Stack the fewest attack boosts (Skill Successor, Indomitable, its recycles) to get a Glad over their monster.</summary>
         public const string BoostOverWall = "glads.boost-over-wall";
         /// <summary>Raigeki Break on a big threat only (worth two cards): their attacker, or the wall our attacker can't get over.</summary>

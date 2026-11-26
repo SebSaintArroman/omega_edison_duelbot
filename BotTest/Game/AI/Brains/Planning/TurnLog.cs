@@ -53,6 +53,7 @@ namespace BotTest.Game.AI.Brains
         {
             if (IsSearchTwin)
                 return;
+            ForgetLastDuelIfNew(bot);
             if (_trackedBot != bot || _gameField == null)
                 AttachToBot(bot);
             if (_turnStart is { } last && last.Turn < header.CurrentTurn)
@@ -90,7 +91,8 @@ namespace BotTest.Game.AI.Brains
                 bot.LogNote($"turn log: turn {header.CurrentTurn}: snapshot in the Draw Phase; {UndoDraw(view, oursNow, lastHand, lastTheirHand)}");
                 beforeDraw = true;
             }
-            if ((DuelPhase)header.CurrentPhase != DuelPhase.Draw)
+            // Turn 1 too when it reads Draw Phase (no draw on turn 1): the opening hand is what turn 2's draw is measured against.
+            if ((DuelPhase)header.CurrentPhase != DuelPhase.Draw || header.CurrentTurn == 1)
                 (_lastSeenOwnHand, _lastSeenTheirHand) = (view.OwnHand.ToList(), view.EnemyHandCount);
             _turnStart = new TurnStartSnapshot(header.CurrentTurn, beforeDraw, header.CurrentPhase, view);
             RecordPosition(bot, header, view, beforeDraw);
@@ -123,6 +125,11 @@ namespace BotTest.Game.AI.Brains
                 var gained = view.OwnHand.Where(id => !left.Remove(id)).ToList();
                 if (gained.Count == 0)
                     return "our hand hasn't grown since we last saw it: not drawn yet";
+                // No larger, and no single card to call the draw: not drawn yet. Seen 2026-11-26 live, every duel going second: the turn 2
+                // snapshot still had the 5 opening cards (turn 1 had shown them as other ids), one was taken back, and each replay of
+                // the turn was a card short from its first checkpoint.
+                if (gained.Count != 1 && view.OwnHand.Count <= lastHand.Count)
+                    return $"our hand isn't larger than when we last saw it ({view.OwnHand.Count} cards): not drawn yet";
                 if (gained.Count == 1)
                     drawn = gained[0];
             }

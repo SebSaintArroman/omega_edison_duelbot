@@ -28,6 +28,7 @@ GladiatorBeastsBotBrain.HoldCost.glads.gyzarus-for-ryko = 1.5
 GladiatorBeastsBotBrain.HoldCost.glads.gyzarus-tag = 1.5
 GladiatorBeastsBotBrain.HoldCost.glads.heraklinos = 1.5
 GladiatorBeastsBotBrain.HoldCost.glads.heraklinos-negate = 1.5
+GladiatorBeastsBotBrain.HoldCost.glads.indomitable-keep-one = 1.5
 GladiatorBeastsBotBrain.HoldCost.glads.indomitable-recycle = 1.5
 GladiatorBeastsBotBrain.HoldCost.glads.raigeki-threat = 1.5
 GladiatorBeastsBotBrain.HoldCost.glads.shield-warrior-for-raigeki = 0.75

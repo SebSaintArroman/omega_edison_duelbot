@@ -145,6 +145,7 @@
         public const int Shrink = 55713623;
         public const int SkillSuccessor = 73729209;
         public const int SmashingGround = 97169186;
+        public const int VersagoTheDestroyer = 50259460;
         public const int SolemnJudgment = 41420027;
         public const int SpiritualWaterArtAoi = 6540606;
         public const int StardustDragon = 44508094;

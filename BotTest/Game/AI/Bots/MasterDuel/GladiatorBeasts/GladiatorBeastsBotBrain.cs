@@ -342,6 +342,13 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
             if (await TryGyzarusForRykoAsync(context, state, botMonsters, enemyMonsters, enemySpells, hand, grave) is IdleCmdResponse gyzarusRoutine)
                 return gyzarusRoutine;
 
+            // Indomitable's GY effect held while it would leave no Gladiator Beast card in the GY (user, 2026-11-26: "don't want to fire
+            // indomitable's effect too quickly - give it a hold if firing it would leave less than one gladiator beast cards in graveyard").
+            if (TryGetActivable(state, CardId.IndomitableGladiatorBeast, out var heldRecycle) &&
+                heldRecycle.CurrentCoordinates.Location == (byte)CardLocation.Grave &&
+                grave.Count(card => card.IsCode(CardId.GladCards)) - 2 < 1)
+                Hold(heldRecycle.ID, MainAction.Activate, GladRules.IndomitableKeepOne);
+
             // Attack boosts stacked on one Glad to get it over their monster (fewest needed).
             if (await TryBoostOverWallAsync(context, state, botMonsters, enemyMonsters, grave) is IdleCmdResponse boost)
                 return boost;
@@ -356,10 +363,11 @@ namespace BotTest.Game.AI.Bots.MasterDuel.GladiatorBeasts
                 Hold(card.ID, MainAction.Activate, GladRules.BoostOverWall);
 
             // Indomitable Gladiator Beast from the GY: 2 Gladiator Beast cards back to the deck (more tag-ins) for a card in hand.
-            // Any "Gladiator Beast" card pays (War Chariot too; seen 2026-11-11: Laquari + War Chariot went uncounted).
+            // Any "Gladiator Beast" card pays (War Chariot too; seen 2026-11-11: Laquari + War Chariot went uncounted). The brain fires it only
+            // when one is left behind (3 or more; the hold above, user 2026-11-26).
             if (TryGetActivable(state, CardId.IndomitableGladiatorBeast, out var indomitable) &&
                 indomitable.CurrentCoordinates.Location == (byte)CardLocation.Grave &&
-                grave.Count(card => card.IsCode(CardId.GladCards)) >= 2 && Rule(GladRules.IndomitableRecycle))
+                grave.Count(card => card.IsCode(CardId.GladCards)) >= 3 && Rule(GladRules.IndomitableRecycle))
             {
                 Note(context, "Indomitable Gladiator Beast back to the hand: 2 Gladiator Beasts from the GY go back to the deck to tag in again");
                 return indomitable.MainActivateFromIndex();

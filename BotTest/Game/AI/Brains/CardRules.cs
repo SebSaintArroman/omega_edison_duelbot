@@ -97,11 +97,24 @@ namespace BotTest.Game.AI.Brains
             // Lyla's optional effect is declined only in her summon window.
             new(new[] { CardId.LylaLightswornSorceress, CardId.LylaLightswornSorceressPreErrata }, TagRules.Tag.DeclineEffectOnSummon),
     
+            // Versago the Destroyer
+            // Its fusion-substitute effect works from the GY too: 0.5 there (user, 2026-11-26: "versago's effect score should carry on applying
+            // in the graveyard (it's not huge, but it should have one, ~0.5)").
+            new(new[] { CardId.VersagoTheDestroyer }, TagRules.Tag.None, Correction: new(Grave: 0.5)),
+
             // Skill Successor
-            new(new[] { CardId.SkillSuccessor }, TagRules.Tag.StatChangeEffect | TagRules.Tag.DoNotActivate,
-                TagsToDisableWhen: context =>  context.IsDoomed || context.InDamageStep
-                    ? TagRules.Tag.DoNotActivate
-                    : TagRules.Tag.None),
+            // AlwaysSet while a Gladiator Beast of ours is face-up in attack position (user, 2026-11-26: set this turn, it's live for the
+            // next; the lines end before it pays, so ending the turn with it in hand looked as good).
+            new(new[] { CardId.SkillSuccessor }, TagRules.Tag.StatChangeEffect | TagRules.Tag.DoNotActivate | TagRules.Tag.AlwaysSet,
+                TagsToDisableWhen: context =>
+                    (context.IsDoomed || context.InDamageStep ? TagRules.Tag.DoNotActivate : TagRules.Tag.None) |
+                    (context.OwnFaceUpAttackers?.Any(monster => IsGladiatorBeast(monster.Id)) == true ? TagRules.Tag.None : TagRules.Tag.AlwaysSet)),
+
+            // Gladiator Beast War Chariot
+            // AlwaysSet while a Gladiator Beast of ours is face-up, either position (its negate needs one; user, 2026-11-26).
+            new(new[] { CardId.GladiatorBeastWarChariot }, TagRules.Tag.AlwaysSet,
+                TagsToDisableWhen: context =>
+                    context.OwnFaceUpMonsterIds?.Any(IsGladiatorBeast) == true ? TagRules.Tag.None : TagRules.Tag.AlwaysSet),
         
             // Honest
             new(new[] { CardId.Honest }, TagRules.Tag.StatChangeEffect), 
