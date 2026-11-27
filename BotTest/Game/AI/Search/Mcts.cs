@@ -110,6 +110,23 @@ namespace BotTest.Game.AI.Search
         public IReadOnlyDictionary<string, (int Brain, int Rule, int Engine)>? RootMissing { get; init; }
 
         /// <summary>
+        /// Every prompt type: the lines that reached the root, and per answer how many of them had it in their rule-filtered move list
+        /// (MctsNode.RuleAllowed). The rule gate (DeckBotBrain.RuleGate) reads it: an answer the rules leave out at the real prompt is
+        /// never sent (user, 2026-11-26).
+        /// </summary>
+        public int RootRuleArrivals { get; init; }
+        public IReadOnlyDictionary<string, int>? RootRuleAllowed { get; init; }
+        /// <summary>Per answer, the lines whose engine offered it at the root before the rules (MctsNode.EngineOffered).</summary>
+        public IReadOnlyDictionary<string, int>? RootEngineOffered { get; init; }
+
+        /// <summary>
+        /// Whether the rules allow this answer at the root: on offer after the rule filter in more than half as many lines as the most-offered
+        /// answer (not all lines: a card pick's answers are sampled per line, so none is on offer in most of them; DuelSim 2026-11-26).
+        /// </summary>
+        public bool RuleAllows(string key) =>
+            RootRuleArrivals > 0 && RootRuleAllowed is { Count: > 0 } allowed && allowed.TryGetValue(key, out int n) && 2 * n > allowed.Values.Max();
+
+        /// <summary>
         /// For the log: how often this move was in the lines' own move lists at the root, and why it was left out ("" when never left out
         /// or nothing was recorded).
         /// </summary>
@@ -155,6 +172,13 @@ namespace BotTest.Game.AI.Search
         /// </summary>
         public int RootArrivals;
         public Dictionary<string, (int Brain, int Rule, int Engine)>? Missing;
+
+        /// <summary>At a search's root, every prompt type: the lines that reached it and, per answer, how many had it in their rule-filtered
+        /// move list (call under this node's lock). See SearchOutcome.RootRuleAllowed.</summary>
+        public int RuleArrivals;
+        public Dictionary<string, int>? RuleAllowed;
+        /// <summary>Per answer, the lines whose engine offered it at the root (before the rules): tells a rule's removal from a key the line never had.</summary>
+        public Dictionary<string, int>? EngineOffered;
 
         /// <summary>The name of the move to this child here (call under this node's lock).</summary>
         public string LabelOf(string key, MctsNode child) => ChildLabels != null && ChildLabels.TryGetValue(key, out var label) ? label : child.Label;
@@ -706,6 +730,8 @@ namespace BotTest.Game.AI.Search
         /// <summary>Keep every replay miss's reason (DuelSim replay-check), not only the first.</summary>
         public bool CollectReplayMisses { get; init; }
         public ConcurrentBag<string> AllReplayMisses { get; } = new();
+        /// <summary>The play-by-play of the first missed lines (SearchSettings.TraceLines on; DuelSim replay-check --trace).</summary>
+        public ConcurrentBag<string> MissTraces { get; } = new();
 
         /// <param name="start">The node whose decision is the root prompt (the tree's root, or a decision found again).</param>
         /// <param name="priorKey">The real brain's pick at the root (its answer gets the progressive bias there).</param>
@@ -1043,10 +1069,14 @@ namespace BotTest.Game.AI.Search
                     .OrderByDescending(s => s.Visits).ThenByDescending(s => s.Mean).ToList();
             List<(string Key, string Label, MctsNode Node)> rootMoves;
             Dictionary<string, (double Cost, string Rule)>? rootHolds;
-            int rootVisits, rootArrivals;
+            int rootVisits, rootArrivals, ruleArrivals;
             Dictionary<string, (int Brain, int Rule, int Engine)>? rootMissing;
+            Dictionary<string, int>? ruleAllowed, engineOffered;
             lock (_start.Lock)
             {
+                engineOffered = _start.EngineOffered == null ? null : new Dictionary<string, int>(_start.EngineOffered);
+                ruleArrivals = _start.RuleArrivals;
+                ruleAllowed = _start.RuleAllowed == null ? null : new Dictionary<string, int>(_start.RuleAllowed);
                 rootMoves = MoveSnapshot(_start);
                 rootVisits = _start.Visits;
                 rootHolds = _start.Holds == null ? null : new Dictionary<string, (double, string)>(_start.Holds);
@@ -1078,6 +1108,9 @@ namespace BotTest.Game.AI.Search
             {
                 RootArrivals = rootArrivals,
                 RootMissing = rootMissing,
+                RootRuleArrivals = ruleArrivals,
+                RootRuleAllowed = ruleAllowed,
+                RootEngineOffered = engineOffered,
             };
         }
 
@@ -1466,6 +1499,8 @@ namespace BotTest.Game.AI.Search
             var cursor = FromTurnStart is { } fromStart ? new TurnReplay.Cursor(fromStart)
             {
                 IsRoot = (p, h) => IsRootPrompt(p, h, RootKey, rng),
+                RootMismatch = (p, h) => p.State != _rootState ? $"state {p.State}, the root's {_rootState}"
+                    : $"the line's key {DecisionKey.Of(_rootState, h.Summary(0), h.Summary(1), ReplayOptionKeys(p, h, rng))} vs the root's {RootKey}",
             } : null;
             (int Attack, int Links, HashSet<string> Options)? attackResponse = null;
             Prompt? prompt;
@@ -1530,6 +1565,9 @@ namespace BotTest.Game.AI.Search
                         if (miss != null)
                         {
                             Undo();
+                            // DuelSim replay-check --trace: the missed line's play-by-play.
+                            if (trace != null && CollectReplayMisses && MissTraces.Count < 2)
+                                MissTraces.Add(string.Join(Environment.NewLine, trace));
                             return ReplayMiss($"from the turn's start, checkpoint {cursor.Next + 1}: {miss}");
                         }
                         if (!reachedRoot)
@@ -1740,6 +1778,7 @@ namespace BotTest.Game.AI.Search
                             is { Count: > 0 } rawOptions &&
                         (node == _start && LiveRootKeys != null ? AsLiveKeys(rawOptions, LiveRootKeys) : rawOptions) is var options &&
                         (node != _start || NoteOffered(node, prompt, LiveRootKeys)) &&
+                        (node != _start || !ours || NoteRuleAllowed(options, prompt, host, rng)) &&
                         (options.Count > 1 || ours && (prompt.Data is IdleCmdData ||
                          prompt.Data is SelectChainData && (node == _start || FromTurnStart != null) ||
                          // A yes/no a rule answers (one answer in the lines) is still the root when it's the live decision: its lines count.
@@ -2481,6 +2520,29 @@ namespace BotTest.Game.AI.Search
         /// decision's keys where only a zone differs. The cards, not the options: the search's own rules leave some options out on purpose
         /// (DiscardPicks, EffectPicks, no cancel on our cost picks). Always true (used inside a condition).
         /// </summary>
+        /// <summary>A line at the root, any prompt type: the answers its rule filter left on offer (MctsNode.RuleAllowed). Always true.</summary>
+        private bool NoteRuleAllowed(List<Option> options, Prompt prompt, DuelHost host, Random rng)
+        {
+            // The engine's own answers here, before the rules, under the real decision's keys.
+            var engine = ReplayOptionKeys(prompt, host, rng).Distinct().ToList();
+            if (LiveRootKeys != null)
+            {
+                var map = SearchActions.ToLiveKeys(engine, LiveRootKeys);
+                engine = engine.Select(k => map.TryGetValue(k, out var real) ? real : k).ToList();
+            }
+            lock (_start.Lock)
+            {
+                _start.RuleArrivals++;
+                var allowed = _start.RuleAllowed ??= new Dictionary<string, int>();
+                foreach (string key in options.Select(o => o.Key).Distinct())
+                    allowed[key] = allowed.GetValueOrDefault(key) + 1;
+                var offered = _start.EngineOffered ??= new Dictionary<string, int>();
+                foreach (string key in engine.Concat(options.Select(o => o.Key)).Distinct())
+                    offered[key] = offered.GetValueOrDefault(key) + 1;
+            }
+            return true;
+        }
+
         private static bool NoteOffered(MctsNode root, Prompt prompt, IReadOnlyCollection<string>? live)
         {
             var cards = prompt.Data switch
@@ -2559,6 +2621,10 @@ namespace BotTest.Game.AI.Search
 
         private IEnumerable<string> ReplayOptionKeys(Prompt prompt, DuelHost host, Random rng) =>
             prompt.Data is SelectChainData chain ? SearchActions.ChainOptionKeys(chain)
+                // Main phase and battle: every legal move, as the live root key lists them (the rule gate keys them so), not the lines'
+                // rule-filtered ones (DuelSim 2026-11-26: the gate's checks at main-phase prompts never reached the root, "no recorded answer").
+                : prompt.Data is IdleCmdData idle ? SearchActions.IdleOptionKeys(idle)
+                : prompt.Data is BattleCmdData battle ? SearchActions.Battle(battle).Select(c => c.Key)
                 : YesNoLegalKeys(prompt) ?? RawPickKeys(prompt) ?? OptionsFor(prompt, true, rng, host)?.Select(option => option.Key) ?? Enumerable.Empty<string>();
 
         /// <summary>

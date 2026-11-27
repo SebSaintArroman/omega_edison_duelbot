@@ -75,7 +75,9 @@ public sealed class MatchRunner
     public static DeckDefinition FindDeck(string format, string deck) =>
         DeckCatalog.Definitions.FirstOrDefault(d => d.FormatId.Equals(format, StringComparison.OrdinalIgnoreCase) &&
                                                     (d.DeckId.Equals(deck, StringComparison.OrdinalIgnoreCase) ||
-                                                     d.DeckName.Equals(deck, StringComparison.OrdinalIgnoreCase)))
+                                                     d.DeckName.Equals(deck, StringComparison.OrdinalIgnoreCase) ||
+                                                     // A DuelSim bot's name has the deck name without spaces ("MiracleVayu"): replay-check reads it back.
+                                                     d.DeckName.Replace(" ", "").Equals(deck, StringComparison.OrdinalIgnoreCase)))
         ?? throw new UnknownDeckException($"No {format} deck called '{deck}'. Try: {string.Join(", ", DeckCatalog.Definitions.Where(d => d.FormatId.Equals(format, StringComparison.OrdinalIgnoreCase)).Select(d => d.DeckId))}");
 
     public async Task<List<DuelOutcome>> RunAsync(MatchOptions options, CancellationToken ct)

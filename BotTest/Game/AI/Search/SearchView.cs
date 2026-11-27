@@ -32,7 +32,11 @@ namespace BotTest.Game.AI.Search
         /// "until the end of your next turn" (user, 2026-11-18: "lyla is still stuck in defence during my next turn").</summary>
         int PositionLockEnds = 0,
         /// <summary>Ours: the effects used this turn, one bit per description index (id*16+index): their count limits are spent in the rebuild.</summary>
-        int UsedEffectMask = 0);
+        int UsedEffectMask = 0,
+        /// <summary>A face-up Future Fusion waiting to summon: its turn counter at the snapshot (the owner's Standby Phases passed since it was
+        /// activated, -1 unknown) and the Fusion Monster it picked (0 unknown). The rebuild restores what its activation set up (the
+        /// script's rebuild hook); without them its Standby Phase summon never comes (DuelSim 2026-11-26).</summary>
+        int FutureFusionCounter = -1, int FutureFusionCode = 0);
 
     /// <summary>
     /// Everything the bot knows at a decision (only what Omega shows it, plus its own deck list and the deck read), and
@@ -150,6 +154,14 @@ namespace BotTest.Game.AI.Search
         /// <summary>Cards on top of their deck, first = next draw (a replay: the card their turn's draw really gave them).</summary>
         public List<int> EnemyDeckTop { get; } = new();
 
+        /// <summary>Cards known to be somewhere in their deck, not on top (a replay: a monster their effect summoned from the deck this turn,
+        /// e.g. a Gladiator Beast tag-out). Placed mid-deck: their draws don't take them, their deck picks find them.</summary>
+        public List<int> EnemyDeckKnown { get; } = new();
+
+        /// <summary>Their deck's other cards: their likeliest list's unseen main-deck cards (the deck read), mid-deck with EnemyDeckKnown, for
+        /// their deck searches and summons from the deck only; their draws stay inert (user, 2026-11-26).</summary>
+        public List<int> EnemyDeckRest { get; } = new();
+
         /// <summary>The DEF a face-down monster of theirs is assumed to have against a piercing attack: the highest-DEF Normal Summon left in
         /// their likeliest list (OpponentDeckPredictor.HighestSetDefense); -1 unknown.</summary>
         public int EnemyLikelySetDefense { get; set; } = -1;
@@ -165,9 +177,11 @@ namespace BotTest.Game.AI.Search
         {
             var v = Clone();
             for (int i = 0; i < v.OwnMonsters.Count; i++)
-                v.OwnMonsters[i] = v.OwnMonsters[i] with { Attacked = false, ThisTurn = false, NoAttack = false, Battled = false };
+                v.OwnMonsters[i] = v.OwnMonsters[i] with { Attacked = false, ThisTurn = false, NoAttack = false, Battled = false, UsedEffectMask = 0 };
+            // (Nothing used yet in a new turn: the snapshot is taken before the brain's first decision of the turn clears its used-effects
+            // record, so it still had last turn's; DuelSim 2026-11-26, Dark Grepher's effect was never on offer in the replayed turn.)
             for (int i = 0; i < v.OwnSpells.Count; i++)
-                v.OwnSpells[i] = v.OwnSpells[i] with { ThisTurn = false };
+                v.OwnSpells[i] = v.OwnSpells[i] with { ThisTurn = false, UsedEffectMask = 0 };
             for (int i = 0; i < v.EnemyMonsters.Count; i++)
                 v.EnemyMonsters[i] = v.EnemyMonsters[i] with { Attacked = false, ThisTurn = false, Battled = false };
             v.NormalSummonUsed = v.EnemyNormalSummonUsed = v.BattlePhaseDone = v.InBattlePhase = false;
@@ -196,6 +210,8 @@ namespace BotTest.Game.AI.Search
             };
             v.EnemyKnownExtra.AddRange(EnemyKnownExtra);
             v.EnemyDeckTop.AddRange(EnemyDeckTop);
+            v.EnemyDeckKnown.AddRange(EnemyDeckKnown);
+            v.EnemyDeckRest.AddRange(EnemyDeckRest);
             v.KnownTop.AddRange(KnownTop);
             v.ForcedDraws.AddRange(ForcedDraws);
             v.RandomPicks.AddRange(RandomPicks);
@@ -327,7 +343,7 @@ namespace BotTest.Game.AI.Search
                 .Concat(OwnMonsters.Select(c => c.Code)).Concat(OwnSpells.Select(c => c.Code))
                 .Concat(EnemyGrave).Concat(EnemyBanished)
                 .Concat(EnemyMonsters.Select(c => c.Code)).Concat(EnemySpells.Select(c => c.Code))
-                .Concat(EnemyKnownHand).Concat(EnemyKnownExtra).Concat(EnemyDeckTop).Concat(EnemySetMonsterOdds.Values.SelectMany(odds => odds.Select(o => o.Id)))
+                .Concat(EnemyKnownHand).Concat(EnemyKnownExtra).Concat(EnemyDeckTop).Concat(EnemyDeckKnown).Concat(EnemyDeckRest).Concat(EnemySetMonsterOdds.Values.SelectMany(odds => odds.Select(o => o.Id)))
                 .Append(UnknownSetMonster).Append(InertCard);
 
         /// <summary>One complete position: our deck shuffled, their hidden cards dealt from the deck read.</summary>
@@ -370,6 +386,7 @@ namespace BotTest.Game.AI.Search
                 p.Battled = card.Battled && controller == 1;
                 p.DestroyAtOwnersEnd = card.DestroyAtOwnersEnd && controller == 0;
                 p.UsedEffectMask = controller == 0 ? card.UsedEffectMask : 0;
+                (p.FutureFusionCounter, p.FutureFusionCode) = (card.FutureFusionCounter, card.FutureFusionCode);
                 p.PositionLockEndPhases = card.PositionLockEnds > 0 ? Math.Max(0, card.PositionLockEnds - RealTurn + 1) : 0;
                 p.Proper = !card.Improper;
                 p.Counters.AddRange(card.Counters);
@@ -476,7 +493,13 @@ namespace BotTest.Game.AI.Search
             // the right count (seen 2026-11-15: XX-Saber Gottoms' discard was never on offer in the lines, their hand being empty there).
             Pile(Enumerable.Repeat(InertCard, Math.Max(0, EnemyHandCount - knownHand.Count)), 1, SearchPosition.LocHand, SearchPosition.PosFaceDown);
             // Their deck: inert, each at sequence 0 (on top, no shuffle), then the cards we know are on top (EnemyDeckTop), last = top.
-            for (int i = 0; i < 20; i++)
+            for (int i = 0; i < 10; i++)
+                position.Add(InertCard, 1, SearchPosition.LocDeck, 0, SearchPosition.PosFaceDown);
+            // The cards known to be in their deck (EnemyDeckKnown), mid-deck: under 10 inert cards, so their draws don't reach them.
+            foreach (int id in EnemyDeckKnown.Concat(EnemyDeckRest))
+                if (Known(id))
+                    position.Add(id, 1, SearchPosition.LocDeck, 0, SearchPosition.PosFaceDown);
+            for (int i = 0; i < 10; i++)
                 position.Add(InertCard, 1, SearchPosition.LocDeck, 0, SearchPosition.PosFaceDown);
             foreach (int id in Enumerable.Reverse(EnemyDeckTop))
                 if (Known(id))

@@ -75,6 +75,7 @@ namespace BotTest.Game.AI.Brains
                 OpponentMonsterIds: theirs?.Monsters.Select(monster => monster.Code).ToArray(),
                 OwnFaceUpAttackers: own?.Monsters.Where(monster => monster.FaceUp && monster.AttackPosition).Select(monster => (monster.Code, monster.Attack)).ToList(),
                 OwnFaceUpMonsterIds: own?.Monsters.Where(monster => monster.FaceUp).Select(monster => monster.Code).ToArray(),
+                OwnSpellTrapIds: own?.SpellCodes.Select(spell => spell.Code).ToArray(),
                 OpponentMonsters: theirs?.Monsters.Select(monster => (monster.Code, monster.Attack, monster.Defense, monster.FaceUp, monster.AttackPosition)).ToList(),
                 OpponentSetSpellTraps: theirs?.SpellCodes.Count(s => !s.FaceUp) ?? -1,
                 OpponentLikelySetDefense: _view.EnemyLikelySetDefense,
@@ -718,6 +719,8 @@ namespace BotTest.Game.AI.Brains
                 DrawTrapException = drawTrapException,
                 OwnFutureFusionInDrawPhase = OwnFutureFusionInDrawPhase(host, ourSide),
                 BattleAhead = ourTurn && host?.Phase == (int)DuelPhase.Main1,
+                Phase = host?.Phase ?? -1,
+                OpponentSetThisTurn = host?.SetThisTurnSpellTraps(1) ?? -1,
             };
             bool IsDoomed(DynamicCard card)
             {
@@ -746,21 +749,13 @@ namespace BotTest.Game.AI.Brains
                     .Where(index => index >= 0 && CardRules.IsAttackBoost(cards[index].ID, cards[index].CurrentCoordinates.Location)).ToHashSet();
                 if (boosts.Count > 0)
                 {
-                    var allowed = new HashSet<int>();
-                    if (host != null && battlers.Own is { } attacker)
-                    {
-                        var defender = battlers.Opponent;
-                        int required = CardRules.RequiredAttackBoost(attacker, defender, host.IsDirectAttack,
-                            ourTurn, activationContext.OpponentLifePoints);
-                        if (required != int.MaxValue)
-                        {
-                            int pending = host.PendingChainEffects.Where(effect => effect.Player == 0)
-                                .Sum(effect => CardRules.AttackBoost(effect.Code, effect.Location, attacker, defender));
-                            allowed = CardRules.MinimumAttackBoosts(boosts.Select(index => (index,
-                                CardRules.AttackBoost(cards[index].ID, cards[index].CurrentCoordinates.Location,
-                                    attacker, defender))), required - pending);
-                        }
-                    }
+                    // The one attack-boost rule (CardRules.AllowedAttackBoosts), on the line's battle.
+                    var allowed = host != null && battlers.Own is { } attacker
+                        ? CardRules.AllowedAttackBoosts(boosts.Select(index => (index, cards[index].ID, (int)cards[index].CurrentCoordinates.Location)),
+                            attacker, battlers.Opponent, host.IsDirectAttack, ourTurn, activationContext.OpponentLifePoints,
+                            host.PendingChainEffects.Where(effect => effect.Player == 0)
+                                .Sum(effect => CardRules.AttackBoost(effect.Code, effect.Location, attacker, battlers.Opponent)))
+                        : new HashSet<int>();
                     list.RemoveAll(option =>
                     {
                         int index = IndexOf(option);

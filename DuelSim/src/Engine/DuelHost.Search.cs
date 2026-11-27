@@ -359,6 +359,11 @@ internal sealed partial class DuelHost
         QueryList(player, location, Ocg.QueryCode | Ocg.QueryPosition).Where(card => card != null && card.Code > 0)
             .Select(card => (card!.Code, (card.Position & Ocg.PosFaceUp) != 0)).ToList();
 
+    /// <summary>A player's face-down spells/traps set this turn (STATUS_SET_TURN).</summary>
+    internal int SetThisTurnSpellTraps(int player) =>
+        QueryList(player, Ocg.LocSZone, Ocg.QueryCode | Ocg.QueryPosition | Ocg.QueryStatus)
+            .Count(card => card != null && (card.Position & Ocg.PosFaceUp) == 0 && (card.Status & Ocg.StatusSetTurn) != 0);
+
     /// <summary>A player's life points now.</summary>
     internal int LifePointsOf(int player) => _lp[player];
 

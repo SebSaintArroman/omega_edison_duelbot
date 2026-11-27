@@ -592,7 +592,9 @@ namespace BotTest.Game.AI.Brains
         /// The search from the start of the current turn at a prompt of ours (the turn's last checkpoint, not answered yet): the turn's replay
         /// (TurnReplay) is the way to the root. Null when there's no snapshot to start from, or no line reached the decision.
         /// </summary>
-        private async Task<SearchOutcome?> TurnStartSearchAsync(DuelBotWrapper bot, BotState rootState, List<string> options, string brainKey, CancellationToken ct)
+        /// <param name="checkBudgetMs">The rule gate's check (RuleGate): one run of this many ms, no stopping loop, no log of the replay.</param>
+        private async Task<SearchOutcome?> TurnStartSearchAsync(DuelBotWrapper bot, BotState rootState, List<string> options, string brainKey, CancellationToken ct,
+            int? checkBudgetMs = null)
         {
             if (!SearchHost.Available || _turnStart is not { BeforeDraw: true } start || start.Turn != _currentHeader.CurrentTurn || _ownTurnParity < 0 ||
                 _checkpoints.Count == 0 || _checkpoints[^1].Answer != null || !Mcts.SameKind(_checkpoints[^1].State, rootState))
@@ -606,7 +608,8 @@ namespace BotTest.Game.AI.Brains
             replay.Start.BlankNextDraw = !ours;
             var now = _checkpoints[^1].View;
             string rootKey = DecisionKey.Of(rootState, now, options);
-            bot.LogNote($"search: from the turn's start: replaying {checkpoints.Count - 1} prompt(s) of ours this turn to this {rootState}, " +
+            if (checkBudgetMs == null)
+                bot.LogNote($"search: from the turn's start: replaying {checkpoints.Count - 1} prompt(s) of ours this turn to this {rootState}, " +
                         $"lines to the end of {(ours ? "their next turn" : "our next turn (our draw a blank card)")}");
             // The turn's tree, reused while nothing new came out (user, 2026-11-18): the cards the replay deals are the same as when the tree was
             // built, so its earlier lines through this decision still hold; the search continues from this decision's node. Something new
@@ -637,7 +640,7 @@ namespace BotTest.Game.AI.Brains
             session?.Pause();
             try
             {
-                outcome = await ThinkUntilSureAsync(bot, async budgetOrNull =>
+                async Task<SearchOutcome?> RunOnce(int? budgetOrNull)
                 {
                     // The stopping loop's focus (ThinkUntilSureAsync: moves short of lines get the next run's lines) applies here too
                     // (line-time audit 2026-11-25: without it, 59 turn-start decisions ran into the 30 s limit with a move starved of lines).
@@ -653,7 +656,22 @@ namespace BotTest.Game.AI.Brains
                     misses += search.ReplayMisses;
                     firstMiss ??= search.FirstReplayMiss;
                     return more;
-                }, brainKey, options.ToHashSet(), rootState);
+                }
+                if (checkBudgetMs is int checkMs)
+                {
+                    var settings = new SearchSettings(BudgetMs: checkMs, Threads: DefaultSearchThreads, Horizon: DefaultSearchHorizon);
+                    var check = new Mcts(replay.Start, tree, root, rootState, brainKey, Array.Empty<int>(), settings, evaluator, SearchBrains(bot), holds)
+                    {
+                        MayChoose = PlanMayChoose, Suggestions = PlanSuggestions, FromTurnStart = replay, RootKey = rootKey,
+                        LiveRootKeys = options,
+                    };
+                    int checkSeed = Interlocked.Increment(ref _searchSeed);
+                    outcome = await Task.Run(() => check.Run(checkSeed, ct), ct);
+                    misses += check.ReplayMisses;
+                    firstMiss ??= check.FirstReplayMiss;
+                }
+                else
+                    outcome = await ThinkUntilSureAsync(bot, RunOnce, brainKey, options.ToHashSet(), rootState);
             }
             finally
             {

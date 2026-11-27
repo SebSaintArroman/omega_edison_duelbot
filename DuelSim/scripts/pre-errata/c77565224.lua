@@ -7,6 +7,8 @@
 --sends nothing until the next Standby Phase, so the play search's replays of Omega's picks never matched (2026-11-18: "pick Chimeratech
 --Overdragon not on offer"). As Omega asks it: "select 1-1 for CONFIRM" (the Fusion), then select/unselect for FMATERIAL (the materials).
 local s,id=GetID()
+--Each card's activation effect (its pick and materials live there), for the rebuild hook.
+s.acts=s.acts or setmetatable({},{__mode='k'})
 function s.initial_effect(c)
 	--Activate: pick the Fusion and send its materials
 	local e1=Effect.CreateEffect(c)
@@ -17,6 +19,7 @@ function s.initial_effect(c)
 	e1:SetTarget(s.target)
 	e1:SetOperation(s.activate)
 	c:RegisterEffect(e1)
+	s.acts[c]=e1
 	--2nd Standby Phase: summon it
 	local e3=Effect.CreateEffect(c)
 	e3:SetCategory(CATEGORY_SPECIAL_SUMMON+CATEGORY_FUSION_SUMMON)
@@ -138,4 +141,25 @@ function s.descon2(e,tp,eg,ep,ev,re,r,rp)
 end
 function s.desop2(e,tp,eg,ep,ev,re,r,rp)
 	Duel.Destroy(e:GetHandler(),REASON_EFFECT)
+end
+--DuelSim's rebuild (SearchPosition): a face-up Future Fusion placed by the puzzle never resolved, so what its activation set up is restored here:
+--the turn counter (the owner's Standby Phases passed since it was activated) with the effect that advances it, the picked Fusion Monster, and
+--materials for its summon (graveyard monsters stand in for the ones it sent).
+function s.rebuild(c,counter,code)
+	local tp=c:GetControler()
+	c:SetTurnCounter(counter)
+	local e1=Effect.CreateEffect(c)
+	e1:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)
+	e1:SetCode(EVENT_PHASE_START|PHASE_STANDBY)
+	e1:SetCountLimit(1)
+	e1:SetOperation(s.ctop)
+	Duel.RegisterEffect(e1,tp)
+	c:CreateEffectRelation(e1)
+	local act=s.acts[c]
+	if not act then return end
+	act:SetLabel(code)
+	local mat=Duel.GetMatchingGroup(Card.IsMonster,tp,LOCATION_GRAVE,0,nil)
+	if #mat==0 then mat=Group.FromCards(c) end
+	mat:KeepAlive()
+	act:SetLabelObject(mat)
 end

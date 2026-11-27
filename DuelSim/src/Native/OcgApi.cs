@@ -146,6 +146,7 @@ internal static class Ocg
 
     public const uint ReasonSpSummon = 0x800;
     public const uint StatusDisabled = 0x1;
+    public const uint StatusSetTurn = 0x10;
 
     // Duel rule flags.
     public const ulong DuelPZone = 0x800, DuelSeparatePZone = 0x1000, DuelEmZone = 0x2000, DuelFsxMmZone = 0x4000,

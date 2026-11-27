@@ -98,6 +98,32 @@ namespace BotTest.Game.AI.Search
         public static TurnReplay Prepare(SearchView snapshot, bool ours, int realTurn, IReadOnlyList<ReplayCheckpoint> checkpoints)
         {
             var v = snapshot.AtTurnStart();
+            // A face-up Future Fusion whose Fusion Monster turned up on its side this turn: this is its summoning turn, so at the turn's start
+            // its counter stood at 1 and the monster is its pick (the rebuild's hook restores them; DuelSim 2026-11-26, Chimeratech
+            // Overdragon never came in the replayed Standby Phase).
+            static bool FutureFusion(int code) => SearchHost.Is(code, 77565204);
+            void PinFutureFusion(List<ViewCard> spells, Func<SearchView, IEnumerable<ViewCard>> monsters, IEnumerable<ViewCard> startMonsters)
+            {
+                int at = spells.FindIndex(s => s.Code > 0 && FutureFusion(s.Code) && FaceUp(s.Position) && s.FutureFusionCode <= 0);
+                if (at < 0)
+                    return;
+                var before = startMonsters.Where(m => m.Code > 0).Select(m => Canon(m.Code)).ToList();
+                int fusion = checkpoints.SelectMany(cp => monsters(cp.View)).Where(m => m.Code > 0 && FaceUp(m.Position) && ExtraDeckMonster(m.Code))
+                    .Select(m => Canon(m.Code)).FirstOrDefault(code => !before.Contains(code));
+                // Ours, before it lands: our pick of it in the Standby Phase (Future Fusion's summon asks which one).
+                if (fusion <= 0 && ReferenceEquals(spells, v.OwnSpells))
+                    fusion = checkpoints.Where(cp => cp.Phase == (int)DuelPhase.Standby && cp.Answer is { Key: var k } && k.StartsWith("pick:"))
+                        .Select(cp => Canon(SearchActions.KeyCardId(cp.Answer!.Key))).FirstOrDefault(ExtraDeckMonster);
+                if (fusion > 0)
+                    spells[at] = spells[at] with { FutureFusionCounter = 1, FutureFusionCode = fusion };
+            }
+            PinFutureFusion(v.OwnSpells, view => view.OwnMonsters, snapshot.OwnMonsters);
+            PinFutureFusion(v.EnemySpells, view => view.EnemyMonsters, snapshot.EnemyMonsters);
+            // More known hand cards than their hand holds: the extra are stale (a card we knew of went back to their deck unseen, e.g. a Gladiator
+            // Beast's tag-out), so they're dropped; else the replay put them on top of their deck as the turn's draw (DuelSim 2026-11-26: their
+            // empty hand still "held" Equeste, which the replay drew instead of the real Darius).
+            if (v.EnemyKnownHand.Count > v.EnemyHandCount)
+                v.EnemyKnownHand.RemoveRange(v.EnemyHandCount, v.EnemyKnownHand.Count - v.EnemyHandCount);
             v.RealTurn = realTurn;
             // Our turn: engine turn 3 (2 skipped, with its draw), or turn 1 for the duel's first turn (no attacks there). Theirs: engine turn 2.
             v.SkipTurns = !ours ? 1 : realTurn == 1 ? 0 : 2;
@@ -139,6 +165,7 @@ namespace BotTest.Game.AI.Search
                 var mills = new List<int>();
                 ReplayStep? before = null; // our answer just before this checkpoint
                 bool drawPending = false;  // a draw card of ours played whose draw hasn't shown yet
+                int playedFromHand = 0;    // a card our answer played from the hand, until it reaches the graveyard
                 foreach (var cp in checkpoints)
                 {
                     var deckNow = Raw(cp.View.OwnDeck);
@@ -146,9 +173,17 @@ namespace BotTest.Game.AI.Search
                     var goneNow = Raw(cp.View.OwnGrave.Concat(cp.View.OwnBanished));
                     // A copy our last answer played from the hand left it: one drawn in its place keeps the count level (seen 2026-11-18: Pot of
                     // Greed drew the second Pot of Greed, which was taken for a mill and the draws slid one card).
+                    // (Counted once the played card has reached the graveyard, not at the very next checkpoint: that can be its zone prompt, before
+                    // its draw; DuelSim 2026-11-26, Pot of Greed drew a second Pot of Greed and the replay never dealt it.)
                     if (before is { Key: var played } && played.Contains("@hand") && SearchActions.KeyCardId(played) is > 0 and var playedId)
-                        foreach (int id in hand.Keys.Where(id => Canon(id) == playedId).Take(1).ToList())
+                        playedFromHand = Canon(playedId);
+                    if (playedFromHand > 0 && goneNow.Where(kv => Canon(kv.Key) == playedFromHand).Sum(kv => kv.Value) >
+                                              gone.Where(kv => Canon(kv.Key) == playedFromHand).Sum(kv => kv.Value))
+                    {
+                        foreach (int id in hand.Keys.Where(id => Canon(id) == playedFromHand && hand[id] > 0).Take(1).ToList())
                             hand[id]--;
+                        playedFromHand = 0;
+                    }
                     // The last draw card of ours played (its draw may come a pick or two later: Pot of Avarice's targets first).
                     if (before?.Key is { } playedKey && !playedKey.StartsWith("card") && SearchActions.KeyCardId(playedKey) is > 0 and var playedCard &&
                         Brains.LineTally.Draws(playedCard))
@@ -236,18 +271,27 @@ namespace BotTest.Game.AI.Search
                 theirHandBefore = view.EnemyHandCount;
                 // (Their hand cards we know count too: seen 2026-11-18, our Trap Dustshoot showed their whole hand, Battle Fader went back to
                 // their deck and was never on the field.)
+                // (Their known hand only as the last checkpoint has it: an earlier one can be stale, a card we thought in their hand that had gone
+                // back to their deck unseen; DuelSim 2026-11-26, a tagged-out Equeste "in hand" was dealt as their draw instead of Darius. A card
+                // they played since still counts, on the field or in the graveyard.)
                 var seen = Count(view.EnemyMonsters.Select(m => m.Code).Concat(view.EnemySpells.Select(s => s.Code)).Concat(view.EnemyGrave)
-                    .Concat(view.EnemyBanished).Concat(view.EnemyKnownHand));
+                    .Concat(view.EnemyBanished).Concat(ReferenceEquals(cp, checkpoints[^1]) ? view.EnemyKnownHand : Enumerable.Empty<int>()));
                 // Cards on the field first: they took the cards that left the hand, so what else turned up came from the deck (seen 2026-11-18:
                 // Armageddon Knight from hand, Plaguespreader Zombie from the deck by its effect).
                 var onField = view.EnemyMonsters.Concat(view.EnemySpells).Where(c => c.Code > 0).Select(c => Canon(c.Code)).ToHashSet();
                 // A searcher or draw card that turned up added unseen cards to their hand, so more cards left it than the count shows (seen
                 // 2026-11-18: Machina Gearframe searched, and Cyber Dragon, discarded for Machina Fortress, was taken for a mill; Pot of Greed x2
                 // and Brain Control too).
+                // (A monster only counts when it's on the field: its search came with its summon. One that went straight to the graveyard was milled;
+                // DuelSim 2026-11-26: Machina Gearframe, milled by their Ryko, was dealt to their hand as if it had searched.)
                 foreach (var (code, n) in seen)
-                    if (n > known.GetValueOrDefault(code))
+                    if (n > known.GetValueOrDefault(code) && ((SearchHost.Type(code) & 0x1) == 0 || onField.Contains(code)))
                         handLeft += (n - known.GetValueOrDefault(code)) * HandGain(code);
-                foreach (var (code, n) in seen.OrderBy(kv => onField.Contains(kv.Key) ? 0 : 1))
+                // Then a card whose text discards first: it's the one activated, so it claims a vanished set zone before the card it discarded
+                // (DuelSim 2026-11-26: their set Raigeki Break discarded Skill Successor; the zone went to Skill Successor and Raigeki to the hand).
+                foreach (var (code, n) in seen.OrderBy(kv => onField.Contains(kv.Key) ? 0 : 1)
+                             .ThenBy(kv => SearchHost.Available && SearchHost.Cards.Get(kv.Key)?.Text is { } text &&
+                                           text.Contains("discard", StringComparison.OrdinalIgnoreCase) ? 0 : 1))
                     for (int extra = n - known.GetValueOrDefault(code); extra > 0; extra--)
                     {
                         known[code] = known.GetValueOrDefault(code) + 1;
@@ -276,6 +320,22 @@ namespace BotTest.Game.AI.Search
                                 v.EnemySpells[at] = v.EnemySpells[at] with { Code = spell.Code };
                             continue;
                         }
+                        // A monster that turned up in their graveyard (or banished), never seen on the field, while one of their set monsters from the
+                        // start left its zone: that set monster, destroyed face-down (DuelSim 2026-11-26: their set Lyla, run over by our attack, was
+                        // dealt to their hand or deck, and the set body the replay put there went to the graveyard instead).
+                        if ((SearchHost.Type(code) & 0x1) != 0 && view.EnemyGrave.Concat(view.EnemyBanished).Any(id => Canon(id) == code) &&
+                            !view.EnemyMonsters.Any(m => m.Code > 0 && Canon(m.Code) == code) &&
+                            setMonsterZones.Where(z => !view.EnemyMonsters.Any(m => m.Sequence == z && (m.Code <= 0 || !FaceUp(m.Position))))
+                                .DefaultIfEmpty(-1).First() is var lostZone and >= 0)
+                        {
+                            setMonsterZones.Remove(lostZone);
+                            int at = v.EnemyMonsters.FindIndex(m => m.Sequence == lostZone);
+                            if (at >= 0)
+                            {
+                                v.EnemyMonsters[at] = v.EnemyMonsters[at] with { Code = code };
+                                continue;
+                            }
+                        }
                         // A spell/trap that turned up in their graveyard (or banished) while one of their set cards from the start left its zone:
                         // that set card (seen 2026-11-18: their set Trap Dustshoot, used in the Draw Phase, was an inert card in the replay).
                         int vanished = (SearchHost.Type(code) & 0x6) == 0 ? -1
@@ -298,6 +358,18 @@ namespace BotTest.Game.AI.Search
                         if (gone && handLeft == 0)
                         {
                             milled.Add(code);
+                            continue;
+                        }
+                        // A monster face-up now with no card left their hand for it: their effect summoned it from the deck (a Gladiator Beast
+                        // tag-out, a recruit). It stays in their deck for that pick (DuelSim 2026-11-26: Equeste tagged out into a Laquari; the
+                        // replay dealt that Laquari into their hand, the deck had none, and the tag-out summoned something else).
+                        if (handLeft == 0 && (SearchHost.Type(code) & 0x1) != 0 && onField.Contains(code))
+                        {
+                            // (Already in their deck's rest, from the deck read: that copy is it.)
+                            int rest = v.EnemyDeckRest.FindIndex(id => Canon(id) == code);
+                            if (rest >= 0)
+                                v.EnemyDeckRest.RemoveAt(rest);
+                            v.EnemyDeckKnown.Add(code);
                             continue;
                         }
                         if (handLeft > 0)
@@ -406,6 +478,8 @@ namespace BotTest.Game.AI.Search
             public bool Done => _next >= _r.Checkpoints.Count;
             /// <summary>The searched decision (a prompt of ours whose board is the last checkpoint's): also its options must be the real ones.</summary>
             public Func<Prompt, DuelHost, bool>? IsRoot { get; init; }
+            /// <summary>Why this prompt isn't the root (its key against the root's), for the miss message.</summary>
+            public Func<Prompt, DuelHost, string?>? RootMismatch { get; init; }
 
             /// <summary>The line's turn ended: null when every checkpoint left only declined (the engine gave no window), else why it's a miss.</summary>
             public string? TurnEnded(DuelHost host) =>
@@ -448,7 +522,8 @@ namespace BotTest.Game.AI.Search
                             }
                             if (IsRoot != null && Mcts.Passive(prompt) is { } notYet && _extra++ < MaxExtraPerGap)
                                 return (notYet, false, null);
-                            return (null, false, "no recorded answer");
+                            return (null, false, k == checkpoints.Count - 1 && RootMismatch?.Invoke(prompt, host) is string why
+                                ? $"the decision's own prompt, but not the root: {why}" : "no recorded answer");
                         }
                         if (ReplayKeys.Packet(prompt.Data, cp.Answer) is not { } packet)
                         {
@@ -595,8 +670,10 @@ namespace BotTest.Game.AI.Search
                 ? new(theirAttack ? 1 : 0, attacker, target) : null;
         }
 
+        // A card the chooser can't see (our face-down monster at their attack-target pick: id 0 in their view) matches by zone (DuelSim
+        // 2026-11-26: their attack on our set Ryko was "unavailable" in every line, so no line reached the windows after it).
         private static bool SameBattler(SearchView.BattleCard expected, SearchView.BattleCard actual, List<ViewCard> field) =>
-            expected.Code <= 0 ? expected.Zone == actual.Zone :
+            expected.Code <= 0 || actual.Code <= 0 ? expected.Zone == actual.Zone :
             Canon(expected.Code) == Canon(actual.Code) &&
             (expected.Zone == actual.Zone || field.Count(c => Canon(c.Code) == Canon(expected.Code)) == 1);
 
@@ -746,8 +823,16 @@ namespace BotTest.Game.AI.Search
         private (byte[]? Packet, string? Stuck) Guide(Prompt prompt, DuelHost host, int next, Dictionary<int, int> attacked,
             SearchView.BattleCard? declaredAttacker)
         {
-            var cp = Checkpoints[next];
             var enemy = host.Summary(1);
+            // A chain window we only passed, their side already the same: the line may never offer it (the engine gives no window with nothing
+            // to chain), and Match skips it anyway; their moves aim at the checkpoint after it (DuelSim 2026-11-26: our window at Equeste's
+            // tag-out never came in the line, and their main prompt stood still toward it).
+            while (next < Checkpoints.Count - 1 && Checkpoints[next] is { State: BotState.SelectChain } passed && Declined(passed) && passed.View.AttackInProgress == null &&
+                   NeedsFor(enemy, passed.View) is var passedNeeds && passedNeeds.UpMonsters.Count == 0 && passedNeeds.UpSpells.Count == 0 &&
+                   passedNeeds.SetMonsters <= 0 && passedNeeds.SetSpells <= 0 && passedNeeds.Grave.Count == 0 &&
+                   passedNeeds.Defense.Count == 0 && passedNeeds.Attack.Count == 0)
+                next++;
+            var cp = Checkpoints[next];
             var needs = NeedsFor(enemy, cp.View);
             switch (prompt.Data)
             {
@@ -762,13 +847,38 @@ namespace BotTest.Game.AI.Search
                     }
                     // A card that can summon itself is special summoned (keeping the Normal Summon, as a player would: seen 2026-11-18, the replay
                     // normal summoned Infernal Prodigy and then had no Normal Summon left for the real Raiza).
-                    var found = Pick(MainAction.SpSummon, c => needs.UpMonsters.GetValueOrDefault(c) > 0)
+                    // A plain spell already resolved into their graveyard by the checkpoint was played before its window, so first (DuelSim
+                    // 2026-11-26: they played Pot of Greed, then summoned Lyla; the replay summoned first, and at our chain window Pot wasn't in
+                    // their graveyard yet).
+                    // (Not a spell that summons: a Fusion's materials come first; DuelSim 2026-11-26, Overload Fusion banished the Peacekeeper they
+                    // had just summoned.)
+                    static bool PlainSpell(int c) => (SearchHost.Type(c) & 0x2) != 0 && (SearchHost.Type(c) & (0x20000 | 0x40000 | 0x80000)) == 0 &&
+                        !(SearchHost.Cards.Get(c)?.Text ?? "").Contains("Summon", StringComparison.OrdinalIgnoreCase);
+                    static bool UsesMaterials(int c) => (SearchHost.Cards.Get(c)?.Text ?? "").Contains("material", StringComparison.OrdinalIgnoreCase);
+                    bool NeededSummonSpell(int c) => (SearchHost.Type(c) & 0x2) != 0 &&
+                        (SearchHost.Cards.Get(c)?.Text ?? "").Contains("Summon", StringComparison.OrdinalIgnoreCase) &&
+                        (needs.UpSpells.GetValueOrDefault(c) > 0 || needs.Grave.GetValueOrDefault(c) > 0);
+                    var found = Pick(MainAction.Activate, c => PlainSpell(c) && needs.Grave.GetValueOrDefault(c) > 0 && needs.UpSpells.GetValueOrDefault(c) <= 0)
+                                ?? Pick(MainAction.SpSummon, c => needs.UpMonsters.GetValueOrDefault(c) > 0)
                                 ?? Pick(MainAction.Activate, c => needs.UpMonsters.GetValueOrDefault(c) > 0 && SummonsItself(c)) // an effect that summons itself
                                 // A flip summon before a Normal Summon: it keeps the Normal Summon too, and their set copy is the one that turns
                                 // up (live 2026-11-25, Blackwing #58: their set XX-Saber Darksoul was flipped; the replay normal summoned a Darksoul
                                 // from hand and kept a set monster the real game no longer had).
+                                // ...but a Normal Summon of another needed card goes first: a flip opens its effect's window, the checkpoint (DuelSim
+                                // 2026-11-26: they summoned Murmillo, then flipped Ryko; the replay flipped Ryko first and reached our pick without Murmillo).
+                                ?? Pick(MainAction.Summon, c => needs.UpMonsters.GetValueOrDefault(c) > 0 &&
+                                    !options.Any(o => o.Key.StartsWith($"{(int)MainAction.Repos}:") && Canon(SearchActions.KeyCardId(o.Key)) == c) &&
+                                    options.Any(o => o.Key.StartsWith($"{(int)MainAction.Repos}:") && needs.UpMonsters.GetValueOrDefault(Canon(SearchActions.KeyCardId(o.Key))) > 0))
                                 ?? Pick(MainAction.Repos, c => needs.UpMonsters.GetValueOrDefault(c) > 0) // a flip summon
                                 ?? Pick(MainAction.Summon, c => needs.UpMonsters.GetValueOrDefault(c) > 0)
+                                // A needed spell that summons (a Fusion spell) on offer: the cards known to have left their hand go to the field first as its
+                                // materials, then the spell; before any graveyard effect below (DuelSim 2026-11-26: Machina summoned Peacekeeper, then Overload
+                                // Fusion banished it for Chimeratech Overdragon; the replay used Plaguespreader's revive and put Overload back on their deck).
+                                ?? (options.Any(o => o.Key.StartsWith($"{(int)MainAction.Activate}:") && NeededSummonSpell(Canon(SearchActions.KeyCardId(o.Key))))
+                                    ? (UsesMaterials(options.Where(o => o.Key.StartsWith($"{(int)MainAction.Activate}:")).Select(o => Canon(SearchActions.KeyCardId(o.Key))).First(NeededSummonSpell))
+                                        ? Pick(MainAction.Summon, Played) ?? Pick(MainAction.SpSummon, Played) ?? Pick(MainAction.SetMonster, Played) : null)
+                                      ?? Pick(MainAction.Activate, NeededSummonSpell)
+                                    : null)
                                 // An Extra Deck monster to appear that nothing summons directly: a graveyard effect that brings it out (Vayu's, seen
                                 // 2026-11-18: Blackwing Armed Wing).
                                 ?? (needs.UpMonsters.Keys.Any(ExtraDeckMonster) && options.FirstOrDefault(o => o.Key.StartsWith($"{(int)MainAction.Activate}:") && o.Key.Contains("@0.16.")) is { } fromGrave
@@ -909,6 +1019,13 @@ namespace BotTest.Game.AI.Search
                         attacked[code] = attacked.GetValueOrDefault(code) + 1;
                         return (SearchActions.Packet(outcome.Response), null);
                     }
+                    // Our next prompt is still in the Battle Phase and nothing of theirs is left to attack: they ended the battle; its end step gives
+                    // the window, and what it still needs comes from end-of-battle effects (DuelSim 2026-11-26: Mirror Force took both Laquari, then
+                    // the Battle Phase ended; Equeste's tag-out at the end of the Battle Phase. The replay stood still both times).
+                    if (cp.State is BotState.SelectChain or BotState.SelectCard or BotState.SelectEffectYn && IsBattle(cp.Phase) && IsBattle(host.Phase) &&
+                        !options.Any(o => o.Key.StartsWith("attack:")) &&
+                        (options.FirstOrDefault(o => o.Key == "main2") ?? options.FirstOrDefault(o => o.Key == "end")) is { } leave)
+                        return (SearchActions.Packet(leave.Response), null);
                     string? phaseKey =(DuelPhase)(matched ? PhaseAhead(next, host.Phase) : cp.Phase) switch
                     {
                         DuelPhase.Main2 => "main2",
@@ -943,6 +1060,21 @@ namespace BotTest.Game.AI.Search
                             !AlreadyUp(cards[i], needs) && !(fieldNeeds && host.Phase < cp.Phase && SetForGraveOnly(cards[i], needs)) &&
                             !FieldMonsterOnlyToGrave(cards[i], needs))
                             return (BitConverter.GetBytes(i), null);
+                    // A face-down monster still to appear on their side: their monster's effect that summons from the deck brings it (DuelSim
+                    // 2026-11-26: their flipped Super-Nimble Mega Hamster set a Ryko from the deck; the replay never used Hamster's effect).
+                    if (needs.SetMonsters > 0)
+                        for (int i = 0; i < cards.Length; i++)
+                            if (cards[i].CurrentCoordinates.Location == (byte)CardLocation.MonsterZone &&
+                                (SearchHost.Cards.Get(cards[i].ID)?.Text ?? "").Contains("from your Deck", StringComparison.OrdinalIgnoreCase) &&
+                                (SearchHost.Cards.Get(cards[i].ID)?.Text ?? "").Contains("Special Summon", StringComparison.OrdinalIgnoreCase))
+                                return (BitConverter.GetBytes(i), null);
+                    // A card of theirs in the graveyard the checkpoint has banished: its graveyard effect banishes it (DuelSim 2026-11-26: Shield
+                    // Warrior saved Equeste from our attack; the replay never chained it and Equeste was destroyed).
+                    var lineBanished = Count(host.BanishedCodes(1));
+                    var banishedNeed = Count(cp.View.EnemyBanished).Where(kv => kv.Value > lineBanished.GetValueOrDefault(kv.Key)).Select(kv => kv.Key).ToHashSet();
+                    for (int i = 0; i < cards.Length; i++)
+                        if (cards[i].CurrentCoordinates.Location == (byte)CardLocation.Grave && banishedNeed.Contains(Canon(cards[i].ID)))
+                            return (BitConverter.GetBytes(i), null);
                     // Their trigger that changes only our side (Raiza's bounce): a face-up card of theirs on the field, not a card from their hand
                     // or a set one (seen 2026-11-18: their Mystical Space Typhoon chained from hand to their own Pot of Greed in the replay).
                     if (TheirEffectOnUs(host, cp, needs))
@@ -952,7 +1084,10 @@ namespace BotTest.Game.AI.Search
                     return (chain.Forced ? BitConverter.GetBytes(0) : BitConverter.GetBytes(-1), null);
                 }
                 case SelectEffectYnData:
-                    return (new[] { (byte)(TheirEffectOnUs(host, cp, needs) || OwnTrigger(host, cp) ? 1 : 0) }, null);
+                    // ...also in our turn, when a monster still has to appear on their side: their trigger brings it (DuelSim 2026-11-26: their
+                    // Gladiator Beast tagged out into Laquari in our Battle Phase; the replay declined the tag-out).
+                    return (new[] { (byte)(TheirEffectOnUs(host, cp, needs) || OwnTrigger(host, cp) ||
+                                           host.TurnPlayer == 0 && (needs.UpMonsters.Count > 0 || needs.SetMonsters > 0) ? 1 : 0) }, null);
                 // Their number for a mill cost (Card Trooper's 1-3): as many as the graveyard cards the checkpoint still needs.
                 case AnnounceNumberData announce when needs.Grave.Values.Sum() is int milling and > 0 &&
                                                       Array.IndexOf(announce.SelectableOptions ?? Array.Empty<int>(), milling) is int at and >= 0:
@@ -1037,8 +1172,10 @@ namespace BotTest.Game.AI.Search
         }
 
         /// <summary>Their own turn, the checkpoint in the line's phase, and the board not yet the checkpoint's: their triggers are used.</summary>
+        // (An end-of-battle trigger is asked as the game moves on to Main Phase 2, the window it opens still read as the Battle Phase: DuelSim
+        // 2026-11-26, Darius's tag-out was declined there and our window at it never came.)
         private static bool OwnTrigger(DuelHost host, ReplayCheckpoint cp) =>
-            host.TurnPlayer == 1 && (IsBattle(cp.Phase) ? IsBattle(host.Phase) : cp.Phase == host.Phase) &&
+            host.TurnPlayer == 1 && (IsBattle(cp.Phase) ? IsBattle(host.Phase) || host.Phase == (int)DuelPhase.Main2 : cp.Phase == host.Phase) &&
             Key(BotState.SelectChain, host) != Key(BotState.SelectChain, cp.View);
 
         /// <summary>
@@ -1128,8 +1265,15 @@ namespace BotTest.Game.AI.Search
                 var tOurHand = Count(t.OwnHand);
                 var lOurHand = Count(lines[0].HandCodes);
                 var chosen = new List<byte>();
-                for (int i = 0; i < cards.Length && chosen.Count < Math.Max(1, max); i++)
+                // Their hand cards the checkpoint has in their graveyard first: a cost or discard sends one there, not the card they still play
+                // (DuelSim 2026-11-26: Machina Fortress's discard took Card Trooper, which they then normal summoned, not Peacekeeper).
+                var order = Enumerable.Range(0, cards.Length).OrderBy(i =>
+                    cards[i].CurrentCoordinates is { Location: (byte)CardLocation.Hand } hand && (hand.Controller == 0 ? player : 1 - player) == 1 &&
+                    tGrave[1].GetValueOrDefault(Canon(cards[i].ID)) > lGrave[1].GetValueOrDefault(Canon(cards[i].ID)) ? 0 : 1).ToList();
+                foreach (int i in order)
                 {
+                    if (chosen.Count >= Math.Max(1, max))
+                        break;
                     var at = cards[i].CurrentCoordinates;
                     int side = at.Controller == 0 ? player : 1 - player; // the prompt sees the board from the picking player's side
                     // Our hand card in their pick is hidden from them (Trap Dustshoot's pick, seen 2026-11-18: the line sent back a random card):

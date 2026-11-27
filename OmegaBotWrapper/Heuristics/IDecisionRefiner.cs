@@ -74,6 +74,12 @@ namespace OmegaBotWrapper.Heuristics
         /// <summary>Our answer to a "use this effect?" prompt is being sent.</summary>
         void EffectYnAnswered(SelectEffectYnData data, bool used) { }
 
+        /// <summary>
+        /// The rule gate: every answer, whatever produced it, just before it's sent. Null: it goes as it is; otherwise the answer to send
+        /// instead (same type). The adapter calls it on every keyed prompt (user, 2026-11-26: no way of ignoring the rules).
+        /// </summary>
+        Task<object?> GateAsync(BotState state, object data, object answer, CancellationToken ct = default) => Task.FromResult<object?>(null);
+
         /// <summary>The turn plan's next battle step, asked before the brain (see PlannedIdleAsync). Null: the brain decides.</summary>
         Task<BattleCmdResponse?> PlannedBattleAsync(DecisionContext<BattleCmdData> context) => Task.FromResult<BattleCmdResponse?>(null);
     }

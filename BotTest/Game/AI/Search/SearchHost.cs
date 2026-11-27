@@ -79,7 +79,7 @@ namespace BotTest.Game.AI.Search
                 if (!File.Exists(paths.CardDb) || !Directory.Exists(paths.Scripts))
                     return new Stores(null, null, $"card database or scripts missing under {paths.Vendor}");
                 OcgDuel.Version(); // loads ocgcore.dll (throws when it's missing)
-                var cards = CardStore.Load(paths.CardDb);
+                var cards = CardStore.Load(paths.CardDbs);
                 var scripts = new ScriptStore(paths.Scripts, paths.CustomScripts);
                 return new Stores(cards, scripts, null);
             }

@@ -44,6 +44,9 @@ namespace BotTest.Game.AI.Brains
         [Tunable("Banishing a card with a graveyard effect: chance taken off per copy already in their graveyard.")]
         public static readonly Tuned<double> GraveBanishPerCopy = new(0.25);
 
+        // "Can be used as a substitute for any 1 Fusion Material" (Versago the Destroyer).
+        private static readonly Regex FusionSubstitute = R(@"substitute for any 1 fusion material");
+
         private static readonly Rule[] Rules =
         {
             new("searches the deck", R(@"from your deck to your hand|add .{0,80}? from your deck"), V("searches the deck", 4)),
@@ -60,8 +63,11 @@ namespace BotTest.Game.AI.Brains
             new("recovers from the graveyard", R(@"from your (graveyard|gy) to your hand|add .{0,80}? from your (graveyard|gy)"), V("recovers from the graveyard", 2)),
             new("protects itself", R(@"cannot be destroyed"), V("protects itself", 1.5)),
             new("inflicts damage", R(@"inflict .{0,30}? damage"), V("inflicts damage", 1)),
-            new("discards the opponent's hand", R(@"discard .{0,40}? (from|in) your opponent's hand|your opponent discards"), V("discards the opponent's hand", 3))
+            new("discards the opponent's hand", R(@"discard .{0,40}? (from|in) your opponent's hand|your opponent discards"), V("discards the opponent's hand", 3)),
+            // A Fusion Material substitute (Versago): the same small score wherever it works, hand, field and GY (user, 2026-11-26).
+            new("substitutes for a Fusion Material", FusionSubstitute, V("substitutes for a Fusion Material", 0.3))
         };
+
 
         /// <summary>
         /// Cards whose keywords mislead the scorer, with a correction and the reason. E.g. Mist Valley Falcon's "return 1
@@ -285,7 +291,8 @@ namespace BotTest.Game.AI.Brains
                 // From the graveyard only what works there counts (whatever the card would do on the field or from the hand can't).
                 if (inGrave)
                 {
-                    sentences = sentences.Where(s => GraveyardEffect.IsMatch(s) || IsGraveyardPlaySentence(s)).ToList();
+                    sentences = sentences.Where(s => GraveyardEffect.IsMatch(s) || IsGraveyardPlaySentence(s) ||
+                                                     ReferenceEquals(rule.Pattern, FusionSubstitute) && MentionsGrave.IsMatch(s)).ToList();
                     if (sentences.Count == 0)
                         continue;
                 }
@@ -453,7 +460,8 @@ namespace BotTest.Game.AI.Brains
             @"this card is in (the|your) (graveyard|gy)|banish this card (and [^.]*? )?from (the|your) (graveyard|gy)");
 
         /// <summary>Whether the card text has an effect that works while the card is in the graveyard.</summary>
-        public static bool HasGraveyardEffect(string cardText) => GraveyardEffect.IsMatch(cardText);
+        public static bool HasGraveyardEffect(string cardText) =>
+            GraveyardEffect.IsMatch(cardText) || FusionSubstitute.IsMatch(cardText) && MentionsGrave.IsMatch(cardText);
 
         // THIS card works from the graveyard: "if this card is in your GY", "banish this card from your GY", "Special Summon
         // this card (from your hand or GY)" / "this card from your GY". Not effects on other graveyard cards (Chaos

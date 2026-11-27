@@ -12,6 +12,8 @@ namespace DuelSim.Match;
 /// </summary>
 internal static class ReplayCheck
 {
+    private static bool s_trace;
+
     public static int Run(string[] args, Action<string> write)
     {
         if (args.Length < 2)
@@ -25,6 +27,7 @@ internal static class ReplayCheck
             return 1;
         }
         string target = args[1];
+        s_trace = args.Contains("--trace");
         int lines = int.Parse(Option(args, "--lines", "200"));
         int ms = int.Parse(Option(args, "--ms", "0"));
         int seed = int.Parse(Option(args, "--seed", "1"));
@@ -91,7 +94,9 @@ internal static class ReplayCheck
         }
 
         // A searched decision: the live search from the turn's start, with the deck's brain in the lines.
-        var deckDef = MatchRunner.FindDeck("MasterDuel", dump.Deck);
+        // A DuelSim bot's deck name is "BOTvBOT_<deck>-P<seat>_vs_<opponent>": the deck is the part before "-P".
+        var deckName = System.Text.RegularExpressions.Regex.Match(dump.Deck, @"^BOTvBOT_(.+?)-P\d_vs_") is { Success: true } sim ? sim.Groups[1].Value : dump.Deck;
+        var deckDef = MatchRunner.FindDeck("MasterDuel", deckName);
         var deckBrain = Tuning.BrainParams.FindBrain(deckDef.Factory()) as DeckBotBrain;
         Func<SearchBrain>? brains = deckBrain == null ? null
             : () => new SearchBrain(deckBrain, deckDef.DeckName, deckDef.Factory().DeckHash, true);
@@ -103,7 +108,8 @@ internal static class ReplayCheck
             OwnMonsters = view.OwnMonsters.Select(c => c.Code).Where(c => c > 0).ToList(),
             TheirStartLp = view.LifePoints[1], OurStartLp = view.LifePoints[0],
         };
-        var settings = new SearchSettings(BudgetMs: ms > 0 ? ms : 0, Threads: 1, MaxIterations: ms > 0 ? int.MaxValue : lines, Horizon: 1);
+        var settings = new SearchSettings(BudgetMs: ms > 0 ? ms : 0, Threads: 1, MaxIterations: ms > 0 ? int.MaxValue : lines, Horizon: 1,
+            TraceLines: s_trace ? 1 : 0);
         var tree = new MctsTree { Label = "replay-check" };
         string brainKey = dump.MidChain?.BrainKey is { Length: > 0 } planned ? planned : dump.Options.FirstOrDefault() ?? "";
         var search = replay != null
@@ -127,6 +133,8 @@ internal static class ReplayCheck
               $"{(outcome.Failures > 0 ? $", {outcome.Failures} failed ({outcome.FirstFailure})" : "")}");
         foreach (var g in search.AllReplayMisses.GroupBy(m => m).OrderByDescending(g => g.Count()).Take(verbose ? 12 : 3))
             write($"    {g.Count()}x {g.Key}");
+        foreach (var missTrace in search.MissTraces.Take(1))
+            write("    trace of a missed line:" + Environment.NewLine + missTrace);
         if (verbose)
             foreach (var stat in outcome.Root.Take(8))
                 write($"    {stat.Label,-50} {BoardEvaluator.CuPm(stat.Mean, stat.StdErr)} card units ({stat.Visits} lines)");

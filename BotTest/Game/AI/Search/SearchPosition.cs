@@ -47,6 +47,8 @@ namespace BotTest.Game.AI.Search
         public int PositionLockEndPhases;
         /// <summary>Ours: the effects (bit = description index, id*16+index) already used this turn (ViewCard.UsedEffectMask): their count limits start spent.</summary>
         public int UsedEffectMask;
+        /// <summary>A face-up Future Fusion's turn counter and picked Fusion Monster (ViewCard.FutureFusionCounter), for its rebuild hook.</summary>
+        public int FutureFusionCounter = -1, FutureFusionCode;
     }
 
     /// <summary>
@@ -203,6 +205,13 @@ namespace BotTest.Game.AI.Search
                 if (card.EquippedTo >= 0)
                     lua.Append("if c[").Append(i + 1).Append("] and c[").Append(card.EquippedTo + 1).Append("] then Debug.PreEquip(c[")
                         .Append(i + 1).Append("],c[").Append(card.EquippedTo + 1).Append("]) ")
+                        // A monster equipped is an Equip Spell, as the engine's own equip makes it (operations.cpp equip: EFFECT_CHANGE_TYPE);
+                        // PreEquip doesn't, so a rebuilt union stayed a monster card and Heavy Storm passed it by (DuelSim 2026-11-26: our
+                        // equipped Machina Gearframe survived our own Heavy Storm in every line).
+                        .Append("if c[").Append(i + 1).Append("]:IsOriginalType(TYPE_MONSTER) then local te=Effect.CreateEffect(c[").Append(i + 1)
+                        .Append("]) te:SetType(EFFECT_TYPE_SINGLE) te:SetCode(EFFECT_CHANGE_TYPE) te:SetProperty(EFFECT_FLAG_CANNOT_DISABLE) ")
+                        .Append("te:SetValue(TYPE_EQUIP+TYPE_SPELL+(c[").Append(i + 1).Append("]:IsOriginalType(TYPE_UNION) and TYPE_UNION or 0)) ")
+                        .Append("te:SetReset(RESET_EVENT+RESETS_STANDARD) c[").Append(i + 1).Append("]:RegisterEffect(te) end ")
                         // A union equipped by its own effect also gets its union state (equip limit + union status); a bare
                         // PreEquip leaves an equip the engine destroys at once as illegal (round-robin entry 6: Gearframe
                         // vanished from every rebuilt board). With the state, unequipping it is on offer too.
@@ -216,6 +225,12 @@ namespace BotTest.Game.AI.Search
                         .Append(type).Append(',').Append(count).Append(") end\n");
             }
             lua.Append("Debug.ReloadFieldEnd()\n");
+            // A face-up Future Fusion waiting to summon: its script's rebuild hook restores the turn counter and the picked Fusion Monster
+            // its activation set up (DuelSim/scripts/pre-errata/c77565224.lua: s.rebuild).
+            for (int i = 0; i < Cards.Count; i++)
+                if (Cards[i].FutureFusionCounter >= 0 && Cards[i].FutureFusionCode > 0 && Cards[i].Location == LocSZone)
+                    lua.Append($"if c[{i + 1}] then local fs=_G[\"c\"..c[{i + 1}]:GetOriginalCode()] if fs and fs.rebuild then ")
+                        .Append($"fs.rebuild(c[{i + 1}],{Cards[i].FutureFusionCounter},{Cards[i].FutureFusionCode}) end end\n");
             lua.Append("_st_hide_new=false _st_known_deck={} _st_blanks={} _st_blind_groups=setmetatable({},{__mode='k'})\n");
             for (int i = 0; i < Cards.Count; i++)
                 if (Cards[i].KnownDeckTop)

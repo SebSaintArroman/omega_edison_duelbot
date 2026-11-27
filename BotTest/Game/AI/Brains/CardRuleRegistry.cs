@@ -39,7 +39,12 @@ namespace BotTest.Game.AI.Brains
             // Honest known or suspected in their hand (DeckBotBrain.HonestSuspected: the deck read's chance at HonestSuspectChance or more).
             bool HonestSuspected = false,
             // Our face-up monsters, either position (War Chariot's set rule). Null when the caller doesn't know.
-            IReadOnlyCollection<int>? OwnFaceUpMonsterIds = null)
+            IReadOnlyCollection<int>? OwnFaceUpMonsterIds = null,
+            // Our spells/traps on the field, set or face-up (a set Raigeki Break's discard). Null when the caller doesn't know.
+            IReadOnlyCollection<int>? OwnSpellTrapIds = null,
+            // The phase (DuelPhase as int; -1 unknown) and how many of their face-down spells/traps were set this turn (-1 unknown): MST's
+            // End Phase snipe (user, 2026-11-26).
+            int Phase = -1, int OpponentSetThisTurn = -1)
         {
             /// <summary>
             /// Stardust Dragon on their field: the flag a caller set, or read from their monsters when the caller listed them (user,

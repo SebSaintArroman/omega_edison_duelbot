@@ -355,20 +355,18 @@ namespace BotTest.Game.AI.Brains
 
             DynamicCard? defender = enemy.CurrentCoordinates.Location == (byte)CardLocation.MonsterZone ? enemy : null;
             int lp = await CurrentField.GetBotLifePoints(isOwnSide: false);
-            int required = CardRules.RequiredAttackBoost(battler, defender, defender == null, ourTurn, lp);
-            if (required == int.MaxValue)
-                return brainIndex >= 0 ? -1 : null;
-
             int pending = (await GetPlayerCardsInZoneAsync(CardLocation.SpellZone))
                 .Where(card => card.IsFaceup() && (card.CurrentChainTargets ?? Array.Empty<CardCoordinate>()).Any(target =>
                     target.Controller == 0 && target.Location == (byte)CardLocation.MonsterZone &&
                     target.Sequence == battler.CurrentCoordinates.Sequence))
                 .Sum(card => CardRules.AttackBoost(card.ID, card.CurrentCoordinates.Location, battler, defender));
-            var offers = boosts.Select(offer => (offer.Index, Amount: CardRules.AttackBoost(offer.Card.ID,
-                offer.Card.CurrentCoordinates.Location, battler, defender))).ToArray();
-            var allowed = CardRules.MinimumAttackBoosts(offers, required - pending);
+            // The one attack-boost rule (CardRules.AllowedAttackBoosts), on the real battle.
+            var allowed = CardRules.AllowedAttackBoosts(boosts.Select(offer => (offer.Index, offer.Card.ID, (int)offer.Card.CurrentCoordinates.Location)),
+                battler, defender, defender == null, ourTurn, lp, pending);
             if (allowed.Count == 0)
                 return brainIndex >= 0 ? -1 : null;
+            var offers = boosts.Select(offer => (offer.Index, Amount: CardRules.AttackBoost(offer.Card.ID,
+                offer.Card.CurrentCoordinates.Location, battler, defender))).ToArray();
 
             int chosen = allowed.Contains(brainIndex) ? brainIndex : offers.Where(offer => allowed.Contains(offer.Index))
                 .OrderByDescending(offer => offer.Amount).First().Index;

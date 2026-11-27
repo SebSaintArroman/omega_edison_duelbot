@@ -173,7 +173,9 @@ namespace BotTest.Game.AI.Search
                     foreach (string w in exactPick[5..].Split('+'))
                     {
                         int at = Array.FindIndex(cardsToPick, c => SearchActions.CardKey(c) == w);
-                        if (at < 0 || exactChosen.Contains((byte)at))
+                        // (Not a card a chain link already targets: the line's graveyard order differs, and the recorded place can hold the
+                        // copy an earlier Jinzo - Returner took.)
+                        if (at < 0 || exactChosen.Contains((byte)at) || (cardsToPick[at].ChainOnlyOwnTargets?.Length ?? 0) > 0)
                         {
                             exactChosen.Clear();
                             break;
@@ -189,12 +191,16 @@ namespace BotTest.Game.AI.Search
                 foreach (string w in wanted)
                 {
                     int found = -1;
-                    for (int i = 0; i < cardsToPick.Length; i++)
-                        if (!used.Contains(i) && Loose(cardsToPick[i]) == w)
-                        {
-                            found = i;
-                            break;
-                        }
+                    // A copy no chain link targets yet first: three Jinzo - Returners in one chain each target a different Jinzo (DuelSim
+                    // 2026-11-26: the graveyard's order differs in the line, the exact picks missed, and all three took the first copy).
+                    for (int pass = 0; pass < 2 && found < 0; pass++)
+                        for (int i = 0; i < cardsToPick.Length; i++)
+                            if (!used.Contains(i) && Loose(cardsToPick[i]) == w &&
+                                (pass == 1 || (cardsToPick[i].ChainOnlyOwnTargets?.Length ?? 0) == 0))
+                            {
+                                found = i;
+                                break;
+                            }
                     if (found < 0)
                         return null;
                     used.Add(found);

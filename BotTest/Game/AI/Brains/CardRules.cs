@@ -10,40 +10,6 @@ namespace BotTest.Game.AI.Brains
     /// <summary>Per-card rules. Shared keyword behavior is defined in TagRules.cs.</summary>
     internal static partial class CardRules
     {
-
-        internal static bool ThreatTriggersOnNormalSummon(int code) =>
-            Search.SearchHost.Available && Search.SearchHost.Cards.Get(code)?.Text is { } text &&
-            text.Contains("Normal Summoned", StringComparison.OrdinalIgnoreCase) &&
-            (text.Contains("If this card", StringComparison.OrdinalIgnoreCase) ||
-             text.Contains("When this card", StringComparison.OrdinalIgnoreCase));
-
-        internal static bool ReinforcementCanSearch(int type, long race, int level) =>
-            (type & (int)CardType.Monster) != 0 && (race & (int)CardRace.Warrior) != 0 && level is > 0 and <= 4;
-
-        /// <summary>A DARK monster with the GoodDiscard tag: what Dark Grepher's effect can discard and is happy to.</summary>
-        internal static bool IsGoodDarkDiscard(int id) =>
-            CardRuleRegistry.AnyCardWithTag(new[] { id }, TagRules.Tag.GoodDiscard) &&
-            (Search.SearchHost.Type(id) & 0x1) != 0 && (Search.SearchHost.Attribute(id) & 0x20) != 0;
-
-        internal static bool ReinforcementNeedsGardna(CardRuleRegistry.Context context) =>
-            context.DarkGrepherAvailable && context.OwnDeck.Any(id => Search.SearchHost.Is(id, NecroGardna)) &&
-            !context.OwnHand.Any(IsGoodDarkDiscard);
-
-        internal static readonly int[] SwapFrogDeckTargets = { CardId.TreebornFrog, CardId.SwapFrog, CardId.DupeFrog, CardId.Unifrog, CardId.FlipFlopFrog, CardId.Substitoad };
-
-        internal static bool IsGladiatorBeast(int id) =>
-            (Search.SearchHost.Type(id) & 0x1) != 0 &&
-            Search.SearchHost.Cards.Get(id)?.SetCodes().Any(code => (code & 0x0fff) == 0x19) == true;
-
-        internal static bool GladiatorWouldBeDestroyed(DynamicCard own, DynamicCard opponent)
-        {
-            if (!IsGladiatorBeast(own.ID) || (opponent.Position & (byte)CardPosition.FaceUpAttack) == 0)
-                return false;
-            return (own.Position & (byte)CardPosition.FaceUpAttack) != 0
-                ? opponent.Attack >= own.Attack
-                : opponent.Attack > own.Defense;
-        }
-
         internal static readonly CardRuleRegistry.Rule[] Definitions =
         {
             // Ryko, Lightsworn Hunter
@@ -97,24 +63,22 @@ namespace BotTest.Game.AI.Brains
             // Lyla's optional effect is declined only in her summon window.
             new(new[] { CardId.LylaLightswornSorceress, CardId.LylaLightswornSorceressPreErrata }, TagRules.Tag.DeclineEffectOnSummon),
     
-            // Versago the Destroyer
-            // Its fusion-substitute effect works from the GY too: 0.5 there (user, 2026-11-26: "versago's effect score should carry on applying
-            // in the graveyard (it's not huge, but it should have one, ~0.5)").
-            new(new[] { CardId.VersagoTheDestroyer }, TagRules.Tag.None, Correction: new(Grave: 0.5)),
-
             // Skill Successor
             // AlwaysSet while a Gladiator Beast of ours is face-up in attack position (user, 2026-11-26: set this turn, it's live for the
             // next; the lines end before it pays, so ending the turn with it in hand looked as good).
-            new(new[] { CardId.SkillSuccessor }, TagRules.Tag.StatChangeEffect | TagRules.Tag.DoNotActivate | TagRules.Tag.AlwaysSet,
+            // GoodDiscard: it works from the GY (user, 2026-11-26). AlwaysSet off while it's Raigeki Break's only discard.
+            new(new[] { CardId.SkillSuccessor }, TagRules.Tag.StatChangeEffect | TagRules.Tag.DoNotActivate | TagRules.Tag.AlwaysSet | TagRules.Tag.GoodDiscard,
                 TagsToDisableWhen: context =>
                     (context.IsDoomed || context.InDamageStep ? TagRules.Tag.DoNotActivate : TagRules.Tag.None) |
-                    (context.OwnFaceUpAttackers?.Any(monster => IsGladiatorBeast(monster.Id)) == true ? TagRules.Tag.None : TagRules.Tag.AlwaysSet)),
+                    (context.OwnFaceUpAttackers?.Any(monster => IsGladiatorBeast(monster.Id)) == true && !KeptForRaigeki(context, CardId.SkillSuccessor)
+                        ? TagRules.Tag.None : TagRules.Tag.AlwaysSet)),
 
             // Gladiator Beast War Chariot
             // AlwaysSet while a Gladiator Beast of ours is face-up, either position (its negate needs one; user, 2026-11-26).
             new(new[] { CardId.GladiatorBeastWarChariot }, TagRules.Tag.AlwaysSet,
                 TagsToDisableWhen: context =>
-                    context.OwnFaceUpMonsterIds?.Any(IsGladiatorBeast) == true ? TagRules.Tag.None : TagRules.Tag.AlwaysSet),
+                    context.OwnFaceUpMonsterIds?.Any(IsGladiatorBeast) == true && !KeptForRaigeki(context, CardId.GladiatorBeastWarChariot)
+                        ? TagRules.Tag.None : TagRules.Tag.AlwaysSet),
         
             // Honest
             new(new[] { CardId.Honest }, TagRules.Tag.StatChangeEffect), 
@@ -186,15 +150,26 @@ namespace BotTest.Game.AI.Brains
                     ? TagRules.Tag.DoNotActivate
                     : TagRules.Tag.None),
 
-            // Mystical Space Typhoon
+            // Mystical Space Typhoon and Dust Tornado
             // Not activated with no spell/trap of theirs worth removing: it could only destroy our own card (DuelSim 2026-11-24: lines
             // fired it at our own set cards, so setting looked worse than ending the turn; once for real, on our Torrential mid-battle).
             // It never targets our own cards, even when it's about to be removed anyway (user, 2026-11-24); the one exception is our own
             // Future Fusion in the Draw Phase (Machina Jinzo). Also lifted when the caller can't count their spells/traps (-1).
-            new(new[] { MysticalSpaceTyphoon }, TagRules.Tag.Bait | TagRules.Tag.DoNotActivate,
-                TagsToDisableWhen: context => context.OpponentRemovableSpellTraps != 0 || context.OwnFutureFusionInDrawPhase
-                    ? TagRules.Tag.DoNotActivate
-                    : TagRules.Tag.None),
+            // Fired in their End Phase (ActivateAtFirstOpportunity) when they have exactly one set spell/trap, set that turn, and we have a
+            // threat in hand or on the field: the Threat tag, an Extra Deck monster, or 2000+ ATK (user, 2026-11-26).
+            new(new[] { MysticalSpaceTyphoon, CardId.DustTornado }, TagRules.Tag.Bait | TagRules.Tag.DoNotActivate | TagRules.Tag.ActivateAtFirstOpportunity,
+                TagsToDisableWhen: context =>
+                {
+                    var disabled = context.OpponentRemovableSpellTraps != 0 || context.OwnFutureFusionInDrawPhase
+                        ? TagRules.Tag.DoNotActivate : TagRules.Tag.None;
+                    bool theirFreshSet = !context.IsOurTurn && context.Phase == (int)DuelPhase.End &&
+                        context.OpponentSetSpellTraps == 1 && context.OpponentSetThisTurn == 1;
+                    bool ourThreat = context.OwnHand.Concat(context.OwnMonsterIds ?? Array.Empty<int>()).Any(id =>
+                        id > 0 && (CardRuleRegistry.AnyCardWithTag(new[] { id }, TagRules.Tag.Threat) ||
+                            Search.SearchHost.Available && Search.SearchHost.Cards.Get(id) is { } card && (card.Type & 0x1) != 0 &&
+                            ((card.Type & (0x40 | 0x2000 | 0x800000 | 0x4000000)) != 0 || card.Attack >= 2000)));
+                    return disabled | (theirFreshSet && ourThreat ? TagRules.Tag.None : TagRules.Tag.ActivateAtFirstOpportunity);
+                }),
 
             // Waboku
             new(new[] { CardId.Waboku }, TagRules.Tag.ProtectsMonsters | TagRules.Tag.DoNotActivate,
@@ -231,7 +206,12 @@ namespace BotTest.Game.AI.Brains
                     : TagRules.Tag.None),
 
             // The engine only offers Returner's graveyard trigger and legal Jinzo targets.
-            new(new[] { CardId.JinzoReturner }, TagRules.Tag.ActivateAtFirstOpportunity),
+            // GoodDiscard: in the GY it revives a Jinzo (user, 2026-11-26: Armageddon Knight may send it).
+            new(new[] { CardId.JinzoReturner }, TagRules.Tag.ActivateAtFirstOpportunity | TagRules.Tag.GoodDiscard),
+
+            // Jinzo
+            // GoodDiscard: in the GY it's Jinzo - Returner's revive target (user, 2026-11-26: Armageddon Knight may send it).
+            new(new[] { CardId.Jinzo }, TagRules.Tag.GoodDiscard),
 
             // Plaguespreader Zombie: revive for a Synchro that answers a threat or goes for game,
             // or when the board can already leave the opponent below 400 LP.

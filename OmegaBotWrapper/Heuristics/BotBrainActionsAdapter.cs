@@ -59,9 +59,28 @@ namespace OmegaBotWrapper.Heuristics
             var context = CreateContext(BotState.SelectBattleCmd, state, includeFieldSnapshot: true);
             // The turn plan's step, if one is being followed: the brain's rules had their say when the plan was chosen.
             if (_brain is IDecisionRefiner planner && await planner.PlannedBattleAsync(context) is BattleCmdResponse planned)
-                return planned;
+                return await Gate(BotState.SelectBattleCmd, state, planned);
             var choice = await _brain.OnBattleCmdAsync(context);
-            return _brain is IDecisionRefiner refiner ? await refiner.RefineBattleAsync(context, choice) : choice;
+            return await Gate(BotState.SelectBattleCmd, state, _brain is IDecisionRefiner refiner ? await refiner.RefineBattleAsync(context, choice) : choice);
+        }
+
+        /// <summary>
+        /// Every answer passes the brain's rule gate before it's sent (IDecisionRefiner.GateAsync; user, 2026-11-26: "there should categorically
+        /// not be any way of the bot ignoring our rules"), whatever produced it: a plan's step, the search, the brain.
+        /// </summary>
+        private async Task<T> Gate<T>(BotState state, object data, T answer)
+        {
+            if (answer is null || _brain is not IDecisionRefiner refiner)
+                return answer;
+            try
+            {
+                return await refiner.GateAsync(state, data, answer) is T replaced ? replaced : answer;
+            }
+            catch (Exception ex)
+            {
+                BotWrapper?.LogNote($"search: RULE GATE UNCHECKED: {ex.Message}");
+                return answer;
+            }
         }
 
         public async Task<IdleCmdResponse> OnIdleCmd(IdleCmdData state)
@@ -69,9 +88,9 @@ namespace OmegaBotWrapper.Heuristics
             (_brain as IDecisionRefiner)?.BeginDecision();
             var context = CreateContext(BotState.SelectIdleCmd, state, includeFieldSnapshot: true);
             if (_brain is IDecisionRefiner planner && await planner.PlannedIdleAsync(context) is IdleCmdResponse planned)
-                return planned;
+                return await Gate(BotState.SelectIdleCmd, state, planned);
             var choice = await _brain.OnIdleCmdAsync(context);
-            return _brain is IDecisionRefiner refiner ? await refiner.RefineIdleAsync(context, choice) : choice;
+            return await Gate(BotState.SelectIdleCmd, state, _brain is IDecisionRefiner refiner ? await refiner.RefineIdleAsync(context, choice) : choice);
         }
 
         public async Task<int> OnSelectChain(SelectChainData state)
@@ -81,6 +100,7 @@ namespace OmegaBotWrapper.Heuristics
             // The play search replans mid-chain when something new was revealed (DeckBotBrain.MidChain).
             if (_brain is IDecisionRefiner chainRefiner && await chainRefiner.RefineChainAsync(context, index) is int refined)
                 index = refined;
+            index = await Gate(BotState.SelectChain, state, index);
             if (state.Forced && state.SelectableCards is { } cards && index >= 0 && index < cards.Length)
                 context.Bot.LogNote($"mandatory action: activate {Logging.CardNames.Get(cards[index].ID)} (the game requires a chain response)");
             (_brain as IDecisionRefiner)?.ChainAnswered(context, index);
@@ -95,18 +115,18 @@ namespace OmegaBotWrapper.Heuristics
         {
             // The attack decision already commits to attacking. The plan only chooses a defender.
             bool attackTarget = state.SelectionHint == (int)DHint.ATTACKTARGET;
-            return await RefinedPick(BotState.SelectCard, state) ??
+            return await Gate(BotState.SelectCard, state, await RefinedPick(BotState.SelectCard, state) ??
             (Planned(BotState.SelectCard, state.SelectableCards, attackTarget ? Math.Max(1, state.Minimum) : state.Minimum,
                 state.Maximum, state.Cancelable && !attackTarget) is { } planned
                 ? planned
-                : await _brain.OnSelectCardAsync(CreateContext(BotState.SelectCard, state, includeFieldSnapshot: true)));
+                : await _brain.OnSelectCardAsync(CreateContext(BotState.SelectCard, state, includeFieldSnapshot: true))));
         }
 
         public async Task<IList<byte>?> OnSelectTribute(SelectTributeData state) =>
-            await RefinedPick(BotState.SelectTribute, state) ??
+            await Gate(BotState.SelectTribute, state, await RefinedPick(BotState.SelectTribute, state) ??
             (Planned(BotState.SelectTribute, state.SelectableCards, state.Minimum, state.Maximum, state.Cancelable) is { } planned
                 ? planned
-                : await _brain.OnSelectTributeAsync(CreateContext(BotState.SelectTribute, state)));
+                : await _brain.OnSelectTributeAsync(CreateContext(BotState.SelectTribute, state))));
 
         public Task<IList<byte>?> OnSelectSum(SelectSumData state) =>
             _brain.OnSelectSumAsync(CreateContext(BotState.SelectSum, state));
@@ -127,10 +147,10 @@ namespace OmegaBotWrapper.Heuristics
             _brain.OnAnnounceCardFilterAsync(CreateContext(BotState.AnnounceCardFilter, state));
 
         public async Task<IList<byte>?> OnSelectUnselectCard(SelectUnselectCardData state) =>
-            await RefinedPick(BotState.SelectUnselectCard, state) ??
+            await Gate(BotState.SelectUnselectCard, state, await RefinedPick(BotState.SelectUnselectCard, state) ??
             (Planned(BotState.SelectUnselectCard, state.SelectableCards, Math.Min(state.Minimum, 1), 1, state.Minimum == 0 || state.Cancelable) is { } planned
                 ? planned
-                : await _brain.OnSelectUnselectCardAsync(CreateContext(BotState.SelectUnselectCard, state)));
+                : await _brain.OnSelectUnselectCardAsync(CreateContext(BotState.SelectUnselectCard, state))));
 
         public Task<IList<short>> OnSelectCounter(SelectCounterData state) =>
             _brain.OnSelectCounterAsync(CreateContext(BotState.SelectCounter, state));
@@ -149,6 +169,7 @@ namespace OmegaBotWrapper.Heuristics
                 : (_brain as IDecisionRefiner)?.PlannedEffectYn(state) is bool planned
                     ? planned
                     : await _brain.OnSelectEffectYnAsync(CreateContext(BotState.SelectEffectYn, state));
+            used = await Gate(BotState.SelectEffectYn, state, used);
             if (!used && _brain is IDecisionRefiner always && always.AlwaysUses(state))
                 used = true;
             (_brain as IDecisionRefiner)?.EffectYnAnswered(state, used);
@@ -161,11 +182,14 @@ namespace OmegaBotWrapper.Heuristics
         private async Task<bool?> SearchedYesNo(BotState state) =>
             _brain is IDecisionRefiner refiner && await refiner.SearchedChoiceAsync(state, YesNoKeys) is string key ? key == "yes" : null;
 
-        public async Task<bool> OnSelectYesNo(SelectYesNoData state) =>
-            state.Description != 31 && await SearchedYesNo(BotState.SelectYesNo) is bool searched ? searched // (31: "attack directly?", always yes)
-            : (_brain as IDecisionRefiner)?.PlannedYesNo(BotState.SelectYesNo) is bool planned
-                ? planned
-                : await _brain.OnSelectYesNoAsync(CreateContext(BotState.SelectYesNo, state));
+        public async Task<bool> OnSelectYesNo(SelectYesNoData state)
+        {
+            bool answer = state.Description != 31 && await SearchedYesNo(BotState.SelectYesNo) is bool searched ? searched // (31: "attack directly?", always yes)
+                : (_brain as IDecisionRefiner)?.PlannedYesNo(BotState.SelectYesNo) is bool planned
+                    ? planned
+                    : await _brain.OnSelectYesNoAsync(CreateContext(BotState.SelectYesNo, state));
+            return state.Description == 31 ? answer : await Gate(BotState.SelectYesNo, state, answer);
+        }
 
         public async Task<int> OnSelectOption(SelectOptionData state)
         {
@@ -174,11 +198,11 @@ namespace OmegaBotWrapper.Heuristics
             {
                 int index = Array.FindIndex(options, o => $"option:{o}" == key);
                 if (index >= 0)
-                    return index;
+                    return await Gate(BotState.SelectOption, state, index);
             }
             if ((_brain as IDecisionRefiner)?.PlannedOption(options) is int planned)
-                return planned;
-            return await _brain.OnSelectOptionAsync(CreateContext(BotState.SelectOption, state));
+                return await Gate(BotState.SelectOption, state, planned);
+            return await Gate(BotState.SelectOption, state, await _brain.OnSelectOptionAsync(CreateContext(BotState.SelectOption, state)));
         }
 
         public Task<byte> OnSelectRockPaperScissors() =>
@@ -198,9 +222,9 @@ namespace OmegaBotWrapper.Heuristics
                 }
                 string? key = await refiner.SearchedChoiceAsync(BotState.SelectPosition, keys) ?? refiner.PlannedChoice(BotState.SelectPosition, keys);
                 if (key != null && byte.TryParse(key.AsSpan(4), out byte position))
-                    return (CardPosition)position;
+                    return await Gate(BotState.SelectPosition, state, (CardPosition)position);
             }
-            return await _brain.OnSelectPositionAsync(CreateContext(BotState.SelectPosition, state));
+            return await Gate(BotState.SelectPosition, state, await _brain.OnSelectPositionAsync(CreateContext(BotState.SelectPosition, state)));
         }
 
         public Task<IList<byte>> OnSortCard(SortCardData state) =>

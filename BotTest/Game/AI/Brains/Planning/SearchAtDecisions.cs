@@ -2123,7 +2123,11 @@ namespace BotTest.Game.AI.Brains
             }
             // A face-down monster of theirs against Bora's pierce (Sirocco's lethal check): the highest-DEF Normal Summon in their list.
             lock (OpponentDeck)
+            {
                 view.EnemyLikelySetDefense = OpponentDeck.HighestSetDefense() ?? -1;
+                // Their deck's real cards (their likeliest list, unseen), for deck searches and summons in the lines (user, 2026-11-26).
+                view.EnemyDeckRest.AddRange(OpponentDeck.RemainingDeck());
+            }
             var faceUpSpells = (await CurrentField.GetBotCardsInZone(CardLocation.SpellZone, false)).ToDictionary(c => (int)c.CurrentCoordinates.Sequence);
             var spellZones = enemy.SpellZones ?? Array.Empty<CardArray>();
             for (int z = 0; z < spellZones.Length; z++)

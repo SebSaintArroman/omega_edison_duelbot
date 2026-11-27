@@ -32,6 +32,8 @@ Copy-Item (Join-Path $repo 'DuelSim\DuelSim.csproj') $sim
 Copy-Item (Join-Path $repo 'DuelSim\vendor\cdb\cards.cdb') (Join-Path $sim 'vendor\cdb')
 Copy-Item (Join-Path $repo 'DuelSim\vendor\scripts') (Join-Path $sim 'vendor') -Recurse
 if (Test-Path (Join-Path $repo 'DuelSim\scripts')) { Copy-Item (Join-Path $repo 'DuelSim\scripts') $sim -Recurse }
+# Cards newer than the vendored database (Mutiny in the Sky): loaded after it.
+if (Test-Path (Join-Path $repo 'DuelSim\cards-extra.cdb')) { Copy-Item (Join-Path $repo 'DuelSim\cards-extra.cdb') $sim }
 
 # 3. The user-facing scripts and the readme.
 Copy-Item (Join-Path $PSScriptRoot 'package\*') $out -Recurse

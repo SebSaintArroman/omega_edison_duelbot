@@ -293,6 +293,12 @@ namespace BotTest.Game.AI.Brains
                         int lost = count - now.GetValueOrDefault(id);
                         if (lost <= 0 || Data.Value.Kinds.TryGetValue(id, out char kind) && kind == 'X')
                             continue;
+                        // A card that returns itself to the deck (a Gladiator Beast's tag-out: "shuffle it into the Deck") went there, not to
+                        // the hand; the monster it brought out came from the deck (DuelSim 2026-11-26: a tagged-out Equeste stayed "in their hand",
+                        // and the search's replay drew it instead of their real draw).
+                        if (Search.SearchHost.Available && Search.SearchHost.Cards.Get(id)?.Text is { } text &&
+                            System.Text.RegularExpressions.Regex.IsMatch(text, @"(return|shuffle) (this card|it) (in)?to the Deck", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                            continue;
                         int back = Math.Min(lost, grew);
                         _knownHand[id] = _knownHand.GetValueOrDefault(id) + back;
                         grew -= back;
@@ -500,6 +506,22 @@ namespace BotTest.Game.AI.Brains
         }
 
         // Unseen copies of a card in one list (in their deck, hand or set), not counting known hand cards.
+        /// <summary>
+        /// The main-deck cards of their likeliest list not yet seen (nor known in their hand): what their deck holds, for the search's deck
+        /// searches and summons from the deck (user, 2026-11-26: a tag-out or recruiter can only follow the real game with real cards there).
+        /// Empty without list data.
+        /// </summary>
+        public List<int> RemainingDeck()
+        {
+            if (!HasListData)
+                return new List<int>();
+            var weights = Weights();
+            if (weights.Count == 0)
+                return new List<int>();
+            var deck = weights.OrderByDescending(kv => kv.Value).First().Key;
+            return deck.Main.Keys.SelectMany(id => Enumerable.Repeat(id, Remaining(deck, id))).ToList();
+        }
+
         private int Remaining(ListDeck deck, int id) =>
             Math.Max(0, deck.Main.GetValueOrDefault(id) - _seen.GetValueOrDefault(id) - _knownHand.GetValueOrDefault(id));
 

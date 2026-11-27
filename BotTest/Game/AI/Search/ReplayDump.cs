@@ -132,6 +132,8 @@ namespace BotTest.Game.AI.Search
             public bool DestroyAtOwnersEnd { get; set; }
             public int PositionLockEnds { get; set; }
             public int UsedEffectMask { get; set; }
+            public int FutureFusionCounter { get; set; } = -1;
+            public int FutureFusionCode { get; set; }
 
             public static CardDto Of(ViewCard c) => new()
             {
@@ -142,6 +144,7 @@ namespace BotTest.Game.AI.Search
                 Improper = c.Improper, ThisTurn = c.ThisTurn, NoAttack = c.NoAttack, BaseAttack = c.BaseAttack, BaseDefense = c.BaseDefense,
                 Battled = c.Battled, Attack = c.Attack, Defense = c.Defense, Borrowed = c.Borrowed, DestroyAtOwnersEnd = c.DestroyAtOwnersEnd,
                 PositionLockEnds = c.PositionLockEnds, UsedEffectMask = c.UsedEffectMask,
+                FutureFusionCounter = c.FutureFusionCounter, FutureFusionCode = c.FutureFusionCode,
             };
 
             public ViewCard ToCard() => new(Code, Sequence, Position, Owner, Attacked,
@@ -149,7 +152,7 @@ namespace BotTest.Game.AI.Search
                 Targets.Where(t => t.Length == 3).Select(t => (t[0], t[1], t[2])).ToList(),
                 Counters.Where(t => t.Length == 2).Select(t => (t[0], t[1])).ToList(),
                 Improper, ThisTurn, NoAttack, BaseAttack, BaseDefense, Battled, Attack, Defense, Borrowed, DestroyAtOwnersEnd,
-                PositionLockEnds, UsedEffectMask);
+                PositionLockEnds, UsedEffectMask, FutureFusionCounter, FutureFusionCode);
         }
 
         internal sealed class ViewDto
@@ -195,6 +198,8 @@ namespace BotTest.Game.AI.Search
             public bool BlankNextDraw { get; set; }
             public List<int> EnemyKnownExtra { get; set; } = new();
             public List<int> EnemyDeckTop { get; set; } = new();
+            public List<int> EnemyDeckKnown { get; set; } = new();
+            public List<int> EnemyDeckRest { get; set; } = new();
             public int EnemyLikelySetDefense { get; set; } = -1;
             public bool EnemyHonestSuspected { get; set; }
 
@@ -217,7 +222,7 @@ namespace BotTest.Game.AI.Search
                 ActivatedThisTurn = v.ActivatedThisTurn.ToList(), LylaEffectUsed = v.LylaEffectUsed, DrawsAtStart = v.DrawsAtStart,
                 KnownTop = v.KnownTop.ToList(), ForcedDraws = v.ForcedDraws.ToList(), RandomPicks = v.RandomPicks.ToList(),
                 ArrivedThisTurn = new(v.ArrivedThisTurn), EnemyArrivedThisTurn = new(v.EnemyArrivedThisTurn),
-                SkipTurns = v.SkipTurns, BlankNextDraw = v.BlankNextDraw, EnemyKnownExtra = v.EnemyKnownExtra.ToList(), EnemyDeckTop = v.EnemyDeckTop.ToList(),
+                SkipTurns = v.SkipTurns, BlankNextDraw = v.BlankNextDraw, EnemyKnownExtra = v.EnemyKnownExtra.ToList(), EnemyDeckTop = v.EnemyDeckTop.ToList(), EnemyDeckKnown = v.EnemyDeckKnown.ToList(), EnemyDeckRest = v.EnemyDeckRest.ToList(),
                 EnemyLikelySetDefense = v.EnemyLikelySetDefense, EnemyHonestSuspected = v.EnemyHonestSuspected,
             };
 
@@ -250,7 +255,7 @@ namespace BotTest.Game.AI.Search
                 v.KnownTop.AddRange(KnownTop); v.ForcedDraws.AddRange(ForcedDraws); v.RandomPicks.AddRange(RandomPicks);
                 foreach (var kv in ArrivedThisTurn) v.ArrivedThisTurn[kv.Key] = kv.Value;
                 foreach (var kv in EnemyArrivedThisTurn) v.EnemyArrivedThisTurn[kv.Key] = kv.Value;
-                v.EnemyKnownExtra.AddRange(EnemyKnownExtra); v.EnemyDeckTop.AddRange(EnemyDeckTop);
+                v.EnemyKnownExtra.AddRange(EnemyKnownExtra); v.EnemyDeckTop.AddRange(EnemyDeckTop); v.EnemyDeckKnown.AddRange(EnemyDeckKnown); v.EnemyDeckRest.AddRange(EnemyDeckRest);
                 return v;
             }
         }

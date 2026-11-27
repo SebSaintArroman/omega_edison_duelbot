@@ -66,6 +66,28 @@ namespace BotTest.Game.AI.Brains
                 .Select(offer => offer.Index).ToHashSet();
         }
 
+        /// <summary>
+        /// THE attack-boost rule, in one place (user, 2026-11-26: "don't write it in three places then. write it just once"): which of our
+        /// offered boosts may be chained in a battle. Only the fewest that make our battling monster win its battle (or the game), counting
+        /// the boosts already on the chain (<paramref name="pending"/>); none with no battle, no attacker of ours, or nothing to win: an unknown
+        /// face-down defender reads as DEF 0, so a boost into it is never needed. Callers add their own "doomed: use it anyway" exception.
+        /// The search's chain filter (SearchMoveRules.ChainOptions) and the brain's chain rules (CardRulesInBrain) both call this.
+        /// </summary>
+        internal static HashSet<int> AllowedAttackBoosts(IEnumerable<(int Index, int Id, int Location)> boosts, DynamicCard? attacker,
+            DynamicCard? defender, bool direct, bool ourTurn, int opponentLifePoints, int pending)
+        {
+            if (attacker is not { } battler)
+                return new();
+            // Our battler targeted by their chain (Dimensional Prison, Sakuretsu Armor): it's about to go, a boost is thrown away (DuelSim
+            // 2026-11-26: Skill Successor on Darius in answer to their Dimensional Prison; the rule gate stopped it).
+            if ((battler.ChainOnlyOwnTargets ?? Array.Empty<CardCoordinate>()).Any(link => link.Controller == 1))
+                return new();
+            int required = RequiredAttackBoost(battler, defender, direct, ourTurn, opponentLifePoints);
+            if (required == int.MaxValue)
+                return new();
+            return MinimumAttackBoosts(boosts.Select(b => (b.Index, AttackBoost(b.Id, b.Location, battler, defender))), required - pending);
+        }
+
         internal static int RequiredAttackBoost(DynamicCard ours, DynamicCard? opponent, bool direct, bool ourTurn,
             int opponentLifePoints)
         {

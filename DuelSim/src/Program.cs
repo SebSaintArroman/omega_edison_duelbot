@@ -139,7 +139,7 @@ public static class Program
                 // Turns downloaded deck lists (Format Library, see README) into the bot's opponent-deck data: official
                 // ids (alt arts / server ids resolved), counts per list, and each card's kind (M/S/T/X), so the bot needs
                 // no card lookups mid-duel.
-                var cards = CardStore.Load(paths.CardDb);
+                var cards = CardStore.Load(paths.CardDbs);
                 using var input = System.Text.Json.JsonDocument.Parse(File.ReadAllText(args[1]));
                 int Official(int id) => cards.Get(id) is { Alias: > 0 } c && cards.Get(c.Alias) != null ? c.Alias : id;
                 var kinds = new SortedDictionary<int, string>();
@@ -296,7 +296,7 @@ public static class Program
             case "gy-plays":
             {
                 // Which cards in the Edison data count as graveyard fuel for the big-turn read (BotTest EffectEvaluator).
-                var cards = CardStore.Load(paths.CardDb);
+                var cards = CardStore.Load(paths.CardDbs);
                 using var data = System.Text.Json.JsonDocument.Parse(File.ReadAllText(args[1]));
                 foreach (var card in data.RootElement.GetProperty("cards").EnumerateObject())
                     if (cards.Get(int.Parse(card.Name)) is { } c && BotTest.Game.AI.Brains.EffectEvaluator.HasGraveyardPlay(c.Text))
@@ -307,7 +307,7 @@ public static class Program
             case "cards":
             {
                 // A deck code's cards with their stats and text (for writing a new deck's bot).
-                var cards = CardStore.Load(paths.CardDb);
+                var cards = CardStore.Load(paths.CardDbs);
                 var scripts = new ScriptStore(paths.Scripts, paths.CustomScripts);
                 var list = DeckCode.Decode("deck", args[1], cards, scripts, console.WriteLine);
                 foreach (var (section, ids) in new[] { ("MAIN", list.Main), ("EXTRA", list.Extra), ("SIDE", list.Side) })
@@ -573,7 +573,7 @@ public static class Program
             {
                 var (major, minor) = OcgDuel.Version();
                 console.WriteLine($"ocgcore API {major}.{minor}");
-                var cards = CardStore.Load(paths.CardDb);
+                var cards = CardStore.Load(paths.CardDbs);
                 console.WriteLine($"cards: {cards.Count}");
                 var scripts = new ScriptStore(paths.Scripts, paths.CustomScripts);
                 console.WriteLine($"constant.lua: {(scripts.Read("constant.lua")?.Length ?? 0)} bytes");
@@ -629,7 +629,7 @@ public static class Program
                 if (args.Contains("--search-horizon"))
                     BotTest.Game.AI.Brains.DeckBotBrain.DefaultSearchHorizon = int.Parse(Option("--search-horizon", "2"));
 
-                var cards = CardStore.Load(paths.CardDb);
+                var cards = CardStore.Load(paths.CardDbs);
                 var scripts = new ScriptStore(paths.Scripts, paths.CustomScripts);
                 using var cts = new CancellationTokenSource();
                 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
